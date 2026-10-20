@@ -1,0 +1,127 @@
+{
+ "run_id": "claude-opus-5__default__cal.com__14943__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 1,
+ "started_at": "2026-10-18T20:43:02Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 28652,
+    "output": 3687,
+    "reasoning": 2135,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 48631,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4152,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 28652,
+    "output_tokens": 3687,
+    "output_tokens_details": {
+     "thinking_tokens": 2135
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T20:43:02Z",
+   "first_chunk_ms": 2275,
+   "first_text_ms": 31025,
+   "response_id": "msg_bdrk_ztxq4bntnnltewmndhqckgjr7vfjbcyd5oafwunwp4fwx5jwwaia",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 28652,
+  "output": 3687,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2135
+ },
+ "cost_reported": null,
+ "latency_ms": 48631,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 38, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"retryCount delete branch is not scoped to SMS reminders or to unscheduled rows\", \"body\": \"The new `OR` branch in the `deleteMany` matches **any** `WorkflowReminder` whose `retryCount > 1`, with no `method: WorkflowMethods.SMS` and no `scheduled: false` constraint. Consequences: (1) the SMS cron will delete EMAIL and WHATSAPP reminders as soon as some other code path (e.g. a future whatsapp/email cron reusing the same column) increments their retryCount, destroying reminders this endpoint is not responsible for; (2) a row that already has `scheduled: true` and a `referenceId` (a message really scheduled in Twilio) would also be deleted if its retryCount ever reached 2, leaving an orphaned scheduled Twilio message that can no longer be cancelled when the booking is cancelled/rescheduled. The branch should at minimum be `{ method: WorkflowMethods.SMS, scheduled: false, retryCount: { gt: 1 } }`.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unguarded prisma.update inside catch can abort the whole cron run\", \"body\": \"In the `catch` block the `prisma.workflowReminder.update(...)` call is not itself wrapped in a try/catch. If the original error was caused by database unavailability (or the row was deleted concurrently, producing a Prisma P2025 record-not-found error), this update throws from inside the catch, the exception propagates out of the `for` loop and the handler, so every remaining unscheduled reminder in the batch is skipped and the request fails with a 500 instead of a partial success. Wrap the bookkeeping update in its own try/catch (or use `updateMany`) so one bad reminder cannot abort the batch.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"retryCount is not incremented when message or sendTo is missing\", \"body\": \"The retry bookkeeping only happens inside `if (message?.length && message?.length > 0 && sendTo)`. A reminder whose resolved `sendTo` is null/empty (e.g. attendee never provided `smsReminderNumber`) or whose template renders to an empty string silently falls through: nothing is scheduled, `scheduled` stays false and `retryCount` stays 0, so the cron keeps re-picking this row on every invocation until `scheduledDate` passes \u2014 exactly the unbounded-retry behaviour this PR aims to stop. These cases should also increment retryCount (or the row should be deleted).\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 29, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"OR'ed deleteMany on unindexed retryCount forces a full table scan each cron run\", \"body\": \"`retryCount` has no index (see schema: only `[bookingUid]`, `[workflowStepId]`, `[seatReferenceId]`, `[method, scheduled, scheduledDate]`, `[cancelled, scheduledDate]`). Wrapping the previous predicate in an `OR` with `retryCount > 1` means Postgres can no longer satisfy the delete with the `[method, scheduled, scheduledDate]` index alone and will likely sequentially scan `WorkflowReminder`, which is one of the largest tables, on every run of this cron. Either add an index covering the new predicate or keep the retry cleanup as a second, method-scoped `deleteMany` that can use the existing index.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the new retry/delete behaviour\", \"body\": \"The PR introduces a destructive rule (reminders are permanently deleted after two failed scheduling attempts) with no accompanying test. There is no coverage for: incrementing retryCount when `twilio.scheduleSMS` returns falsy, incrementing on thrown errors, and the deleteMany removing only rows that should be removed. Given that a wrong predicate silently deletes customer reminders, at least a unit test around the delete/where clause and the increment paths is warranted.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 38,
+   "severity": "medium",
+   "category": "data",
+   "title": "retryCount delete branch is not scoped to SMS reminders or to unscheduled rows",
+   "body": "The new `OR` branch in the `deleteMany` matches **any** `WorkflowReminder` whose `retryCount > 1`, with no `method: WorkflowMethods.SMS` and no `scheduled: false` constraint. Consequences: (1) the SMS cron will delete EMAIL and WHATSAPP reminders as soon as some other code path (e.g. a future whatsapp/email cron reusing the same column) increments their retryCount, destroying reminders this endpoint is not responsible for; (2) a row that already has `scheduled: true` and a `referenceId` (a message really scheduled in Twilio) would also be deleted if its retryCount ever reached 2, leaving an orphaned scheduled Twilio message that can no longer be cancelled when the booking is cancelled/rescheduled. The branch should at minimum be `{ method: WorkflowMethods.SMS, scheduled: false, retryCount: { gt: 1 } }`."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unguarded prisma.update inside catch can abort the whole cron run",
+   "body": "In the `catch` block the `prisma.workflowReminder.update(...)` call is not itself wrapped in a try/catch. If the original error was caused by database unavailability (or the row was deleted concurrently, producing a Prisma P2025 record-not-found error), this update throws from inside the catch, the exception propagates out of the `for` loop and the handler, so every remaining unscheduled reminder in the batch is skipped and the request fails with a 500 instead of a partial success. Wrap the bookkeeping update in its own try/catch (or use `updateMany`) so one bad reminder cannot abort the batch."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "low",
+   "category": "bug",
+   "title": "retryCount is not incremented when message or sendTo is missing",
+   "body": "The retry bookkeeping only happens inside `if (message?.length && message?.length > 0 && sendTo)`. A reminder whose resolved `sendTo` is null/empty (e.g. attendee never provided `smsReminderNumber`) or whose template renders to an empty string silently falls through: nothing is scheduled, `scheduled` stays false and `retryCount` stays 0, so the cron keeps re-picking this row on every invocation until `scheduledDate` passes \u2014 exactly the unbounded-retry behaviour this PR aims to stop. These cases should also increment retryCount (or the row should be deleted)."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 29,
+   "severity": "low",
+   "category": "perf",
+   "title": "OR'ed deleteMany on unindexed retryCount forces a full table scan each cron run",
+   "body": "`retryCount` has no index (see schema: only `[bookingUid]`, `[workflowStepId]`, `[seatReferenceId]`, `[method, scheduled, scheduledDate]`, `[cancelled, scheduledDate]`). Wrapping the previous predicate in an `OR` with `retryCount > 1` means Postgres can no longer satisfy the delete with the `[method, scheduled, scheduledDate]` index alone and will likely sequentially scan `WorkflowReminder`, which is one of the largest tables, on every run of this cron. Either add an index covering the new predicate or keep the retry cleanup as a second, method-scoped `deleteMany` that can use the existing index."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the new retry/delete behaviour",
+   "body": "The PR introduces a destructive rule (reminders are permanently deleted after two failed scheduling attempts) with no accompanying test. There is no coverage for: incrementing retryCount when `twilio.scheduleSMS` returns falsy, incrementing on thrown errors, and the deleteMany removing only rows that should be removed. Given that a wrong predicate silently deletes customer reminders, at least a unit test around the delete/where clause and the increment paths is warranted."
+  }
+ ],
+ "finding_count": 5
+}

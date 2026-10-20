@@ -1,0 +1,138 @@
+{
+ "run_id": "claude-opus-5__xhigh__sentry__77754__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 1,
+ "started_at": "2026-10-18T22:40:47Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29951,
+    "output": 8896,
+    "reasoning": 6939,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 108013,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5553,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 29951,
+    "output_tokens": 8896,
+    "output_tokens_details": {
+     "thinking_tokens": 6939
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:40:47Z",
+   "first_chunk_ms": 1794,
+   "first_text_ms": 86288,
+   "response_id": "msg_bdrk_pyvrwzsmcobaaoyh22ibbczmwxdtbfwezziujb4mgh4ei6uebm5a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29951,
+  "output": 8896,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 6939
+ },
+ "cost_reported": null,
+ "latency_ms": 108013,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 18, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`queued` default is evaluated once at import time, so every AssignmentSource shares the same timestamp\", \"body\": \"`queued: datetime = timezone.now()` is a dataclass default, which Python evaluates a single time when the class body executes (i.e. at module import). Every `AssignmentSource` created for the lifetime of the process therefore carries the process-start timestamp rather than the time the assignment was queued, making the field useless for debugging/ordering and misleading to anyone who later relies on it (e.g. to expire stale sources). Use `field(default_factory=timezone.now)` instead. As a secondary effect, evaluating `timezone.now()` in the class body touches Django settings (`USE_TZ`) at import time of a module that is imported by `sentry/models/groupassignee.py`.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 33, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"AssignmentSource round-trip through Celery kwargs corrupts the `queued` type and silently drops the source on any mismatch\", \"body\": \"`to_dict()` (via `asdict`) emits a raw `datetime` for `queued`, and that dict is passed as a Celery task kwarg in `sync_group_assignee_outbound`. With the JSON task serializer the datetime is encoded as an ISO string and is never decoded back, so `from_dict` reconstructs an instance whose `queued` field is a `str` even though it is annotated `datetime` (and with a stricter serializer the publish would fail outright, breaking assignee sync). `from_dict` performs no type validation and only catches `ValueError`/`TypeError`, returning `None` without logging, which means any future schema drift (renamed/extra key) silently yields no assignment source and re-enables the sync loop this PR is meant to fix. Serialize `queued` explicitly (e.g. isoformat string) and log when parsing fails.\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 397, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"Abstract `sync_assignee_outbound` was not updated for the new `assignment_source` kwarg that the task now passes\", \"body\": \"`sync_assignee_outbound` in `src/sentry/integrations/tasks/sync_assignee_outbound.py` now calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)`, but the abstract declaration here still only lists `external_issue, user, assign, **kwargs`. The new keyword is only tolerated because concrete implementations happen to declare `**kwargs`; any implementation (current or third-party/plugin shim) that does not will raise `TypeError`, which the `@retry` decorator will retry and then drop, silently disabling outbound assignee sync for that provider. The contract should declare `assignment_source` explicitly so implementers know it exists.\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 416, \"severity\": \"low\", \"category\": \"api\", \"title\": \"`assignment_source` added to abstract `sync_status_outbound` but never passed or implemented\", \"body\": \"The abstract `sync_status_outbound` signature gains `assignment_source: AssignmentSource | None = None` before `**kwargs`, yet no call site (e.g. `sentry/integrations/tasks/sync_status_outbound.py`) passes it and no concrete integration implementation declares it. The result is a parameter in the published contract that is positionally inconsistent with subclass signatures (`(external_issue, is_resolved, project_id, **kwargs)`), so a positional call would bind the value to the wrong argument in subclasses, and keyword calls are silently swallowed into `**kwargs`. Either wire status sync through the same loop-breaking check or drop the parameter until it is implemented.\"}, {\"file\": \"src/sentry/integrations/tasks/sync_assignee_outbound.py\", \"line\": 56, \"severity\": \"low\", \"category\": \"api\", \"title\": \"`should_sync` is called with the new argument positionally, breaking any one-argument override\", \"body\": \"`installation.should_sync(\\\"outbound_assignee\\\", parsed_assignment_source)` passes the new source positionally. Only `IssueBasicIntegration.should_sync` and `IssueSyncIntegration.should_sync` were widened in this PR; any installation class that overrides `should_sync(self, attribute)` with the old single-argument signature will now raise `TypeError` inside a retried task, disabling assignee sync for that provider. Passing it as a keyword (and/or defaulting it) would at least make such breakage explicit and greppable.\"}, {\"file\": \"tests/sentry/integrations/services/test_assignment_source.py\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test covers the task-level dict round trip, and `test_to_dict` cannot detect the frozen `queued` default\", \"body\": \"`assert result.get(\\\"queued\\\") is not None` always passes because `queued` has a class-level default, so the test gives no coverage of the timestamp actually reflecting when the source was created, nor of the dict surviving a serialize/deserialize cycle (`to_dict()` -> Celery JSON -> `from_dict()`), which is the path that actually breaks the loop. Tests using `self.tasks()` run tasks eagerly and skip kwarg serialization, so the datetime handling is untested end to end. Add a test that feeds `to_dict()` output through JSON encode/decode into `from_dict` and asserts the resulting `integration_id`/`queued` types, plus a deassign-with-matching-source case mirroring the new assign test.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`queued` default is evaluated once at import time, so every AssignmentSource shares the same timestamp",
+   "body": "`queued: datetime = timezone.now()` is a dataclass default, which Python evaluates a single time when the class body executes (i.e. at module import). Every `AssignmentSource` created for the lifetime of the process therefore carries the process-start timestamp rather than the time the assignment was queued, making the field useless for debugging/ordering and misleading to anyone who later relies on it (e.g. to expire stale sources). Use `field(default_factory=timezone.now)` instead. As a secondary effect, evaluating `timezone.now()` in the class body touches Django settings (`USE_TZ`) at import time of a module that is imported by `sentry/models/groupassignee.py`."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 33,
+   "severity": "medium",
+   "category": "data",
+   "title": "AssignmentSource round-trip through Celery kwargs corrupts the `queued` type and silently drops the source on any mismatch",
+   "body": "`to_dict()` (via `asdict`) emits a raw `datetime` for `queued`, and that dict is passed as a Celery task kwarg in `sync_group_assignee_outbound`. With the JSON task serializer the datetime is encoded as an ISO string and is never decoded back, so `from_dict` reconstructs an instance whose `queued` field is a `str` even though it is annotated `datetime` (and with a stricter serializer the publish would fail outright, breaking assignee sync). `from_dict` performs no type validation and only catches `ValueError`/`TypeError`, returning `None` without logging, which means any future schema drift (renamed/extra key) silently yields no assignment source and re-enables the sync loop this PR is meant to fix. Serialize `queued` explicitly (e.g. isoformat string) and log when parsing fails."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 397,
+   "severity": "medium",
+   "category": "api",
+   "title": "Abstract `sync_assignee_outbound` was not updated for the new `assignment_source` kwarg that the task now passes",
+   "body": "`sync_assignee_outbound` in `src/sentry/integrations/tasks/sync_assignee_outbound.py` now calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)`, but the abstract declaration here still only lists `external_issue, user, assign, **kwargs`. The new keyword is only tolerated because concrete implementations happen to declare `**kwargs`; any implementation (current or third-party/plugin shim) that does not will raise `TypeError`, which the `@retry` decorator will retry and then drop, silently disabling outbound assignee sync for that provider. The contract should declare `assignment_source` explicitly so implementers know it exists."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 416,
+   "severity": "low",
+   "category": "api",
+   "title": "`assignment_source` added to abstract `sync_status_outbound` but never passed or implemented",
+   "body": "The abstract `sync_status_outbound` signature gains `assignment_source: AssignmentSource | None = None` before `**kwargs`, yet no call site (e.g. `sentry/integrations/tasks/sync_status_outbound.py`) passes it and no concrete integration implementation declares it. The result is a parameter in the published contract that is positionally inconsistent with subclass signatures (`(external_issue, is_resolved, project_id, **kwargs)`), so a positional call would bind the value to the wrong argument in subclasses, and keyword calls are silently swallowed into `**kwargs`. Either wire status sync through the same loop-breaking check or drop the parameter until it is implemented."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+   "line": 56,
+   "severity": "low",
+   "category": "api",
+   "title": "`should_sync` is called with the new argument positionally, breaking any one-argument override",
+   "body": "`installation.should_sync(\"outbound_assignee\", parsed_assignment_source)` passes the new source positionally. Only `IssueBasicIntegration.should_sync` and `IssueSyncIntegration.should_sync` were widened in this PR; any installation class that overrides `should_sync(self, attribute)` with the old single-argument signature will now raise `TypeError` inside a retried task, disabling assignee sync for that provider. Passing it as a keyword (and/or defaulting it) would at least make such breakage explicit and greppable."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/integrations/services/test_assignment_source.py",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test covers the task-level dict round trip, and `test_to_dict` cannot detect the frozen `queued` default",
+   "body": "`assert result.get(\"queued\") is not None` always passes because `queued` has a class-level default, so the test gives no coverage of the timestamp actually reflecting when the source was created, nor of the dict surviving a serialize/deserialize cycle (`to_dict()` -> Celery JSON -> `from_dict()`), which is the path that actually breaks the loop. Tests using `self.tasks()` run tasks eagerly and skip kwarg serialization, so the datetime handling is untested end to end. Add a test that feeds `to_dict()` output through JSON encode/decode into `from_dict` and asserts the resulting `integration_id`/`queued` types, plus a deassign-with-matching-source case mirroring the new assign test."
+  }
+ ],
+ "finding_count": 6
+}

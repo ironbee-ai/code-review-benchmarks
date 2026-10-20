@@ -1,0 +1,133 @@
+{
+ "run_id": "gemini-4-argon__low__grafana__97529__r3",
+ "model_id": "gemini-4-argon",
+ "family": "google",
+ "route": "openrouter",
+ "provider_model": "google/gemini-4-argon",
+ "provider_pin": {
+  "order": [
+   "google-ai-studio"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:40:08Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 44893,
+    "output": 1016,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.099946,
+   "latency_ms": 24357,
+   "finish_reason": "stop",
+   "served_model": "google/gemini-4-argon",
+   "provider_served": "Google AI Studio",
+   "http_attempts": 1,
+   "text_chars": 3744,
+   "raw_usage": {
+    "completion_tokens": 1016,
+    "prompt_tokens": 44893,
+    "total_tokens": 45909,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.099946,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.099946,
+     "upstream_inference_prompt_cost": 0.089786,
+     "upstream_inference_completions_cost": 0.01016
+    }
+   },
+   "started_at": "2026-10-18T11:40:08Z",
+   "first_chunk_ms": 10394,
+   "first_text_ms": 10394,
+   "response_id": "gen-1792323608-bYjE8EGwdh8A9X4sgqPb",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 44893,
+  "output": 1016,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.099946,
+ "latency_ms": 24357,
+ "served_model": "google/gemini-4-argon",
+ "provider_served": "Google AI Studio",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Data race on shared `err` and `totalBatchesIndexed` inside `errgroup.Go`\", \"body\": \"Inside the `for _, info := range stats` loop in `s.init`, the goroutines launched via `group.Go` mutate two outer-scope variables without synchronization:\\n\\n1. `_, _, err = s.build(...)` assigns to the outer `err` variable (declared at line 181), rather than a goroutine-local `err`. When `s.initWorkers > 1`, multiple goroutines concurrently write to and read from `err`, causing a data race and potentially returning another goroutine's value.\\n2. `totalBatchesIndexed++` (line 189) is also incremented concurrently without synchronization or atomic operations.\\n\\nBefore this PR, `bleveBackend.BuildIndex` held `b.cacheMu.Lock()` for its entire duration, which largely serialized the goroutines after `s.builders.get`. Removing that coarse lock in `bleve.go` now exposes this race whenever `s.initWorkers > 1`. Use `_, _, err := s.build(...)` inside the closure and `atomic.Int64` (or `len(stats)`) for `totalBatchesIndexed`.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"`TotalDocs()` iterates over `b.cache` without acquiring `b.cacheMu`\", \"body\": \"`bleveBackend.TotalDocs()` ranges over `b.cache` without holding `b.cacheMu.RLock()`. If `TotalDocs()` is called concurrently with `BuildIndex` (for example via `getOrCreateIndex` triggered by a `Search` request or watch event while another call is reading `TotalDocs()`), Go will panic with `fatal error: concurrent map iteration and map write`. Acquire `b.cacheMu.RLock()` / `defer b.cacheMu.RUnlock()` in `TotalDocs()`.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 98, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing coarse lock in `BuildIndex` allows concurrent builds for the same key to collide or overwrite each other\", \"body\": \"Previously, `BuildIndex` locked `b.cacheMu` for the entire build. With the lock moved to only cover `b.cache[key] = idx` at the end of `BuildIndex`, two concurrent callers to `getOrCreateIndex` for the same `NamespacedResource` (e.g., two concurrent `Search` requests for an unindexed namespace or a `Search` racing with `handleEvent`) will both see a cache miss in `GetIndex` and run `BuildIndex` concurrently.\\n\\n- For file-backed indexes (`size > b.opts.FileThreshold`), the second `bleve.New(dir, mapper)` call on the same directory will fail because the directory/boltdb lock already exists.\\n- For in-memory indexes, both will build separate `bleve.Index` instances, double-increment `IndexMetrics.IndexTenants` and `IndexMetrics.IndexedKinds`, and the second will overwrite `b.cache[key]` without closing the first index.\\n\\nConsider synchronizing builds per key (e.g., `singleflight` or a per-key lock) or re-checking `b.cache[key]` before building.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`NewResourceServer` leaks the watch context and blob bucket if `s.Init` fails\", \"body\": \"`NewResourceServer` creates a cancelable context (`ctx, cancel := context.WithCancel(...)` at line 229) and optionally opens a blob `bucket` (line 208), and now calls `s.Init(ctx)` at line 258. If `s.Init(ctx)` returns an error, `NewResourceServer` returns `nil, err` without calling `cancel()` (or closing `bucket`), leaking the context and any background goroutines started during partial initialization (such as the watcher goroutine started by `s.search.init` if `s.initWatcher()` fails afterward). Call `cancel()` on the error path before returning.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Data race on shared `err` and `totalBatchesIndexed` inside `errgroup.Go`",
+   "body": "Inside the `for _, info := range stats` loop in `s.init`, the goroutines launched via `group.Go` mutate two outer-scope variables without synchronization:\n\n1. `_, _, err = s.build(...)` assigns to the outer `err` variable (declared at line 181), rather than a goroutine-local `err`. When `s.initWorkers > 1`, multiple goroutines concurrently write to and read from `err`, causing a data race and potentially returning another goroutine's value.\n2. `totalBatchesIndexed++` (line 189) is also incremented concurrently without synchronization or atomic operations.\n\nBefore this PR, `bleveBackend.BuildIndex` held `b.cacheMu.Lock()` for its entire duration, which largely serialized the goroutines after `s.builders.get`. Removing that coarse lock in `bleve.go` now exposes this race whenever `s.initWorkers > 1`. Use `_, _, err := s.build(...)` inside the closure and `atomic.Int64` (or `len(stats)`) for `totalBatchesIndexed`."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "`TotalDocs()` iterates over `b.cache` without acquiring `b.cacheMu`",
+   "body": "`bleveBackend.TotalDocs()` ranges over `b.cache` without holding `b.cacheMu.RLock()`. If `TotalDocs()` is called concurrently with `BuildIndex` (for example via `getOrCreateIndex` triggered by a `Search` request or watch event while another call is reading `TotalDocs()`), Go will panic with `fatal error: concurrent map iteration and map write`. Acquire `b.cacheMu.RLock()` / `defer b.cacheMu.RUnlock()` in `TotalDocs()`."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 98,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing coarse lock in `BuildIndex` allows concurrent builds for the same key to collide or overwrite each other",
+   "body": "Previously, `BuildIndex` locked `b.cacheMu` for the entire build. With the lock moved to only cover `b.cache[key] = idx` at the end of `BuildIndex`, two concurrent callers to `getOrCreateIndex` for the same `NamespacedResource` (e.g., two concurrent `Search` requests for an unindexed namespace or a `Search` racing with `handleEvent`) will both see a cache miss in `GetIndex` and run `BuildIndex` concurrently.\n\n- For file-backed indexes (`size > b.opts.FileThreshold`), the second `bleve.New(dir, mapper)` call on the same directory will fail because the directory/boltdb lock already exists.\n- For in-memory indexes, both will build separate `bleve.Index` instances, double-increment `IndexMetrics.IndexTenants` and `IndexMetrics.IndexedKinds`, and the second will overwrite `b.cache[key]` without closing the first index.\n\nConsider synchronizing builds per key (e.g., `singleflight` or a per-key lock) or re-checking `b.cache[key]` before building."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`NewResourceServer` leaks the watch context and blob bucket if `s.Init` fails",
+   "body": "`NewResourceServer` creates a cancelable context (`ctx, cancel := context.WithCancel(...)` at line 229) and optionally opens a blob `bucket` (line 208), and now calls `s.Init(ctx)` at line 258. If `s.Init(ctx)` returns an error, `NewResourceServer` returns `nil, err` without calling `cancel()` (or closing `bucket`), leaking the context and any background goroutines started during partial initialization (such as the watcher goroutine started by `s.search.init` if `s.initWatcher()` fails afterward). Call `cancel()` on the error path before returning."
+  }
+ ],
+ "finding_count": 4
+}

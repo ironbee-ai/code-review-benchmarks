@@ -1,0 +1,115 @@
+{
+ "run_id": "gemini-4-argon__low__sentry-greptile__2__r1",
+ "model_id": "gemini-4-argon",
+ "family": "google",
+ "route": "openrouter",
+ "provider_model": "google/gemini-4-argon",
+ "provider_pin": {
+  "order": [
+   "google-ai-studio"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__2",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:24:47Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134937,
+  "sha": "12fcc907f4816f00",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 45079,
+    "output": 1012,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.100278,
+   "latency_ms": 19483,
+   "finish_reason": "stop",
+   "served_model": "google/gemini-4-argon",
+   "provider_served": "Google AI Studio",
+   "http_attempts": 1,
+   "text_chars": 3591,
+   "raw_usage": {
+    "completion_tokens": 1012,
+    "prompt_tokens": 45079,
+    "total_tokens": 46091,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.100278,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.100278,
+     "upstream_inference_prompt_cost": 0.090158,
+     "upstream_inference_completions_cost": 0.01012
+    }
+   },
+   "started_at": "2026-10-17T11:24:47Z",
+   "first_chunk_ms": 6254,
+   "first_text_ms": 6254,
+   "response_id": "gen-1792236287-kxwn3Bb6cLXUNl4NVHpR",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 45079,
+  "output": 1012,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.100278,
+ "latency_ms": 19483,
+ "served_model": "google/gemini-4-argon",
+ "provider_served": "Google AI Studio",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 71, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"Unrelated audit log and paginator changes with broken pagination logic and crash risks\", \"body\": \"The changes in `src/sentry/api/endpoints/organization_auditlogs.py`, `src/sentry/api/paginator.py`, and `src/sentry/utils/cursors.py` are completely unrelated to the PR's purpose (span buffer eviction) and introduce multiple severe defects:\\n\\n1. **Null dereference on `organization_context.member` (`organization_auditlogs.py:71`)**: For superusers or requests using an organization integration token who are not members of the organization, `organization_context.member` is `None`. If `request.user.is_superuser` is `False` (or for non-member tokens), evaluating `organization_context.member.has_global_access` raises an `AttributeError`.\\n2. **Type mismatch on `datetime` field (`organization_auditlogs.py:79`, `paginator.py:839-843`)**: `OrganizationAuditLogsEndpoint` orders by `-datetime` (a `DateTimeField`), which is why the standard path uses `DateTimePaginator`. `OptimizedCursorPaginator.get_item_key` passes `getattr(item, 'datetime')` (a `datetime` instance) to `math.floor()` / `math.ceil()`, raising `TypeError: must be real number, not datetime.datetime`. Furthermore, `value_from_cursor` returns an integer cursor value directly instead of converting it to a `datetime`, causing invalid comparisons against the timestamp column in SQL.\\n3. **`ValueError: Negative indexing is not supported` in Django QuerySets (`paginator.py:182-184` and `paginator.py:877-886`)**: Contrary to the comments claiming Django ORM handles negative slicing, Django's `QuerySet.__getitem__` explicitly raises `ValueError(\\\"Negative indexing is not supported.\\\")` whenever `start < 0` or `stop < 0`. Passing a cursor with a negative `offset` (e.g., `cursor=0:-10:1` or with `enable_advanced_features=True`) will crash with an unhandled 500 error.\"}, {\"file\": \"src/sentry/spans/buffer.py\", \"line\": 470, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Evicted spans leave orphaned entries in the redirect hash and can evict the root span\", \"body\": \"In `src/sentry/scripts/spans/add-buffer.lua` (lines 62-64), when a segment's sorted set exceeds 1000 spans, `zpopmin` evicts the spans with the lowest `end_timestamp_precise`. This causes two problems when flushing in `src/sentry/spans/buffer.py`:\\n\\n1. **Orphaned redirects and split segments**: `add-buffer.lua` (line 40) records `hset(main_redirect_key, span_id, set_span_id)` for every incoming span before eviction. In `done_flush_segments` (lines 478-482), `hdel` only removes `span_id`s present in `flushed_segment.spans`. Any span that was evicted by `zpopmin` is no longer in the sorted set, so its redirect entry in `span-buf:sr:{project_id:trace_id}` is never deleted (until the 1-hour TTL expires). Worse, if `set_span_id` itself is evicted from the sorted set, `done_flush_segments` will not delete `set_span_id` from `main_redirect_key`, while future child spans will still redirect to `set_span_id`. Additionally, the root/segment span itself can be evicted if it has an earlier `end_timestamp_precise` than its children (e.g. async child spans finishing after the root span), resulting in a flushed segment with `has_root_span = False` and no root span.\\n2. **Inconsistent `max_segment_spans`**: `SpansBuffer.__init__` still defines `self.max_segment_spans = max_segment_spans` (default 1001, line 150/158), which is now unused because the limit is hardcoded to `1000` in `add-buffer.lua`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 71,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Unrelated audit log and paginator changes with broken pagination logic and crash risks",
+   "body": "The changes in `src/sentry/api/endpoints/organization_auditlogs.py`, `src/sentry/api/paginator.py`, and `src/sentry/utils/cursors.py` are completely unrelated to the PR's purpose (span buffer eviction) and introduce multiple severe defects:\n\n1. **Null dereference on `organization_context.member` (`organization_auditlogs.py:71`)**: For superusers or requests using an organization integration token who are not members of the organization, `organization_context.member` is `None`. If `request.user.is_superuser` is `False` (or for non-member tokens), evaluating `organization_context.member.has_global_access` raises an `AttributeError`.\n2. **Type mismatch on `datetime` field (`organization_auditlogs.py:79`, `paginator.py:839-843`)**: `OrganizationAuditLogsEndpoint` orders by `-datetime` (a `DateTimeField`), which is why the standard path uses `DateTimePaginator`. `OptimizedCursorPaginator.get_item_key` passes `getattr(item, 'datetime')` (a `datetime` instance) to `math.floor()` / `math.ceil()`, raising `TypeError: must be real number, not datetime.datetime`. Furthermore, `value_from_cursor` returns an integer cursor value directly instead of converting it to a `datetime`, causing invalid comparisons against the timestamp column in SQL.\n3. **`ValueError: Negative indexing is not supported` in Django QuerySets (`paginator.py:182-184` and `paginator.py:877-886`)**: Contrary to the comments claiming Django ORM handles negative slicing, Django's `QuerySet.__getitem__` explicitly raises `ValueError(\"Negative indexing is not supported.\")` whenever `start < 0` or `stop < 0`. Passing a cursor with a negative `offset` (e.g., `cursor=0:-10:1` or with `enable_advanced_features=True`) will crash with an unhandled 500 error."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/buffer.py",
+   "line": 470,
+   "severity": "high",
+   "category": "bug",
+   "title": "Evicted spans leave orphaned entries in the redirect hash and can evict the root span",
+   "body": "In `src/sentry/scripts/spans/add-buffer.lua` (lines 62-64), when a segment's sorted set exceeds 1000 spans, `zpopmin` evicts the spans with the lowest `end_timestamp_precise`. This causes two problems when flushing in `src/sentry/spans/buffer.py`:\n\n1. **Orphaned redirects and split segments**: `add-buffer.lua` (line 40) records `hset(main_redirect_key, span_id, set_span_id)` for every incoming span before eviction. In `done_flush_segments` (lines 478-482), `hdel` only removes `span_id`s present in `flushed_segment.spans`. Any span that was evicted by `zpopmin` is no longer in the sorted set, so its redirect entry in `span-buf:sr:{project_id:trace_id}` is never deleted (until the 1-hour TTL expires). Worse, if `set_span_id` itself is evicted from the sorted set, `done_flush_segments` will not delete `set_span_id` from `main_redirect_key`, while future child spans will still redirect to `set_span_id`. Additionally, the root/segment span itself can be evicted if it has an earlier `end_timestamp_precise` than its children (e.g. async child spans finishing after the root span), resulting in a flushed segment with `has_root_span = False` and no root span.\n2. **Inconsistent `max_segment_spans`**: `SpansBuffer.__init__` still defines `self.max_segment_spans = max_segment_spans` (default 1001, line 150/158), which is now unused because the limit is hardcoded to `1000` in `add-buffer.lua`."
+  }
+ ],
+ "finding_count": 2
+}

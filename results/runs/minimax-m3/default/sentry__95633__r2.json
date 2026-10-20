@@ -1,0 +1,158 @@
+{
+ "run_id": "minimax-m3__default__sentry__95633__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:15:23Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30846,
+    "output": 26470,
+    "reasoning": 24927,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04102548,
+   "latency_ms": 129733,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6676,
+   "raw_usage": {
+    "completion_tokens": 26470,
+    "prompt_tokens": 30974,
+    "total_tokens": 57444,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 24927,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04102548,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04102548,
+     "upstream_inference_prompt_cost": 0.00926148,
+     "upstream_inference_completions_cost": 0.031764
+    }
+   },
+   "started_at": "2026-10-17T21:15:23Z",
+   "first_chunk_ms": 1757,
+   "first_text_ms": 121576,
+   "response_id": "gen-1792271723-zcdwgMJZLWsvu67UKZtj",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30846,
+  "output": 26470,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 24927
+ },
+ "cost_reported": 0.04102548,
+ "latency_ms": 129733,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\"findings\": [{\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1869, \"severity\": \"high\", \"category\": \"test_gap\", \"title\": \"Wrong assertion in test_thread_queue_parallel_error_handling\", \"body\": \"The test 'test_thread_queue_parallel_error_handling' sends two messages to the same subscription (so they end up in the same queue) and asserts `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`. However, `OrderedQueueWorker.run()` wraps `self.result_processor(...)` in `try/except Exception/finally`, and the `finally` block always calls `self.offset_tracker.complete_offset(...)`. So even after the first call raises, the offset is still marked complete and the commit thread will commit it. The assertion expects no commit to happen, which is the opposite of what the code actually does. The test passes for the wrong reason and would still pass even if error handling was broken. Additionally, because both messages go to the same group/queue, the test does not exercise cross-group error isolation as its docstring claims - to actually verify that an error in one group does not block commits in another, the two results need different subscription_ids so they land in different queues.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Unbounded queues with no backpressure despite docstring claim\", \"body\": \"In `FixedQueuePool.__init__`, each work queue is created with `queue.Queue()` (no maxsize). The class docstring promises 'Natural backpressure when queues fill up', but there is no fill - the queues are infinite. If a single group is slow or backed up (e.g. one subscription id hashes to the same queue and processing of one item blocks for a long time, or that group simply gets a burst of messages), items accumulate forever. Each `WorkItem` holds a reference to the original `Message` (and therefore the decoded `result` plus `KafkaPayload`), so the memory footprint is non-trivial. An unbounded queue in front of a single-worker-per-queue setup is a straightforward OOM risk and contradicts the docstring.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 344, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"SimpleQueueProcessingStrategy.join ignores its timeout parameter\", \"body\": \"`SimpleQueueProcessingStrategy.join(self, timeout: float | None = None)` accepts a timeout but does not use it - it just calls `self.close()`. The arroyo framework passes a deadline via this argument so it knows how long to wait for graceful shutdown before forcefully terminating. By ignoring the timeout the strategy can exceed the caller's deadline, causing the consumer to be killed by the orchestrator and any in-flight offsets to be left as 'outstanding' (forcing re-delivery on the next start). `join` should propagate `timeout` to `self.commit_thread.join(timeout=...)` and to `FixedQueuePool.shutdown`/worker joins, and `close()` should also respect a deadline.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 287, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"commit_function failure leaves offsets un-committed in the tracker and is silently retried forever\", \"body\": \"In `_commit_loop`, `self.commit_function(committable)` is called and only on success does the loop mark the offsets via `mark_committed`. If the commit raises (Kafka unavailable, broker timeout, etc.), the whole `except Exception` just logs and the same offsets are returned by the next `get_committable_offsets()` call and retried. Two problems: (1) if the commit partially succeeded before raising, the same offsets get re-committed to Kafka (duplicate commit), and (2) there is no backoff or alerting, so a persistent failure becomes an infinite tight retry loop that floods the logs and pegs CPU. The metric `remote_subscriptions.queue_pool.offsets_committed` is also incremented before the commit call, so it counts 'attempted' rather than 'succeeded' commits, which is misleading.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 89, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"get_committable_offsets does an O(max_offset) scan per partition\", \"body\": \"`get_committable_offsets` iterates `for offset in range(start, max_offset + 1)` looking for the highest contiguous committed offset. If a partition has a small offset (e.g. 100) and a very large one (e.g. 1_000_000) - whether from a bug, rebalance after restart, or just a sparse stream - this allocates and walks ~1M ints per call, every second, from the commit thread. For a multi-partition topic with any sparse offsets this can dominate CPU. The check should walk the sorted `outstanding` set instead of scanning the integer range.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 202, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Group-to-queue assignment uses Python's randomized hash()\", \"body\": \"`get_queue_for_group` is `return hash(group_key) % self.num_queues`. Python's built-in `hash()` for strings is salted by `PYTHONHASHSEED` and is therefore not stable across processes. Within a single consumer lifetime the assignment is consistent (so per-group ordering is preserved), but after a restart the same subscription id may land on a different queue and worker. This is undocumented and brittle - if anything ever relies on a stable group->queue mapping across restarts (e.g. for deterministic drain order on partial shutdown, or for replay tooling), it will silently break. Use a stable hash like `hashlib.md5(group_key.encode()).digest()` or `zlib.crc32(group_key.encode())`.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 317, \"severity\": \"low\", \"category\": \"data\", \"title\": \"submit() silently drops messages whose value is not a BrokerValue when an error occurs\", \"body\": \"In `SimpleQueueProcessingStrategy.submit`, the `except Exception` handler only marks the offset complete when `isinstance(message.value, BrokerValue)`. If the message value is anything else (e.g. an `ImpulseValue` or any future arroyo value type) and either the decoder raises or the `assert isinstance(message.value, BrokerValue)` itself fails, the offset is never recorded. The message disappears from the strategy but arroyo will not have been told to commit it, so on restart the same message is re-delivered. If the failure is permanent (e.g. the codec can never decode that value type) this becomes an infinite redelivery of poison messages, with no observability beyond the one log entry.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1869,
+   "severity": "high",
+   "category": "test_gap",
+   "title": "Wrong assertion in test_thread_queue_parallel_error_handling",
+   "body": "The test 'test_thread_queue_parallel_error_handling' sends two messages to the same subscription (so they end up in the same queue) and asserts `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`. However, `OrderedQueueWorker.run()` wraps `self.result_processor(...)` in `try/except Exception/finally`, and the `finally` block always calls `self.offset_tracker.complete_offset(...)`. So even after the first call raises, the offset is still marked complete and the commit thread will commit it. The assertion expects no commit to happen, which is the opposite of what the code actually does. The test passes for the wrong reason and would still pass even if error handling was broken. Additionally, because both messages go to the same group/queue, the test does not exercise cross-group error isolation as its docstring claims - to actually verify that an error in one group does not block commits in another, the two results need different subscription_ids so they land in different queues."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "data",
+   "title": "Unbounded queues with no backpressure despite docstring claim",
+   "body": "In `FixedQueuePool.__init__`, each work queue is created with `queue.Queue()` (no maxsize). The class docstring promises 'Natural backpressure when queues fill up', but there is no fill - the queues are infinite. If a single group is slow or backed up (e.g. one subscription id hashes to the same queue and processing of one item blocks for a long time, or that group simply gets a burst of messages), items accumulate forever. Each `WorkItem` holds a reference to the original `Message` (and therefore the decoded `result` plus `KafkaPayload`), so the memory footprint is non-trivial. An unbounded queue in front of a single-worker-per-queue setup is a straightforward OOM risk and contradicts the docstring."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 344,
+   "severity": "medium",
+   "category": "bug",
+   "title": "SimpleQueueProcessingStrategy.join ignores its timeout parameter",
+   "body": "`SimpleQueueProcessingStrategy.join(self, timeout: float | None = None)` accepts a timeout but does not use it - it just calls `self.close()`. The arroyo framework passes a deadline via this argument so it knows how long to wait for graceful shutdown before forcefully terminating. By ignoring the timeout the strategy can exceed the caller's deadline, causing the consumer to be killed by the orchestrator and any in-flight offsets to be left as 'outstanding' (forcing re-delivery on the next start). `join` should propagate `timeout` to `self.commit_thread.join(timeout=...)` and to `FixedQueuePool.shutdown`/worker joins, and `close()` should also respect a deadline."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 287,
+   "severity": "medium",
+   "category": "data",
+   "title": "commit_function failure leaves offsets un-committed in the tracker and is silently retried forever",
+   "body": "In `_commit_loop`, `self.commit_function(committable)` is called and only on success does the loop mark the offsets via `mark_committed`. If the commit raises (Kafka unavailable, broker timeout, etc.), the whole `except Exception` just logs and the same offsets are returned by the next `get_committable_offsets()` call and retried. Two problems: (1) if the commit partially succeeded before raising, the same offsets get re-committed to Kafka (duplicate commit), and (2) there is no backoff or alerting, so a persistent failure becomes an infinite tight retry loop that floods the logs and pegs CPU. The metric `remote_subscriptions.queue_pool.offsets_committed` is also incremented before the commit call, so it counts 'attempted' rather than 'succeeded' commits, which is misleading."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 89,
+   "severity": "medium",
+   "category": "perf",
+   "title": "get_committable_offsets does an O(max_offset) scan per partition",
+   "body": "`get_committable_offsets` iterates `for offset in range(start, max_offset + 1)` looking for the highest contiguous committed offset. If a partition has a small offset (e.g. 100) and a very large one (e.g. 1_000_000) - whether from a bug, rebalance after restart, or just a sparse stream - this allocates and walks ~1M ints per call, every second, from the commit thread. For a multi-partition topic with any sparse offsets this can dominate CPU. The check should walk the sorted `outstanding` set instead of scanning the integer range."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 202,
+   "severity": "low",
+   "category": "bug",
+   "title": "Group-to-queue assignment uses Python's randomized hash()",
+   "body": "`get_queue_for_group` is `return hash(group_key) % self.num_queues`. Python's built-in `hash()` for strings is salted by `PYTHONHASHSEED` and is therefore not stable across processes. Within a single consumer lifetime the assignment is consistent (so per-group ordering is preserved), but after a restart the same subscription id may land on a different queue and worker. This is undocumented and brittle - if anything ever relies on a stable group->queue mapping across restarts (e.g. for deterministic drain order on partial shutdown, or for replay tooling), it will silently break. Use a stable hash like `hashlib.md5(group_key.encode()).digest()` or `zlib.crc32(group_key.encode())`."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 317,
+   "severity": "low",
+   "category": "data",
+   "title": "submit() silently drops messages whose value is not a BrokerValue when an error occurs",
+   "body": "In `SimpleQueueProcessingStrategy.submit`, the `except Exception` handler only marks the offset complete when `isinstance(message.value, BrokerValue)`. If the message value is anything else (e.g. an `ImpulseValue` or any future arroyo value type) and either the decoder raises or the `assert isinstance(message.value, BrokerValue)` itself fails, the offset is never recorded. The message disappears from the strategy but arroyo will not have been told to commit it, so on restart the same message is re-delivered. If the failure is permanent (e.g. the codec can never decode that value type) this becomes an infinite redelivery of poison messages, with no observability beyond the one log entry."
+  }
+ ],
+ "finding_count": 7
+}

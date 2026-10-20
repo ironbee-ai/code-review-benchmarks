@@ -1,0 +1,153 @@
+{
+ "run_id": "muse-wonder__default__grafana__90045__r2",
+ "model_id": "muse-wonder",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-wonder",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__90045",
+ "golden_url": "https://github.com/grafana/grafana/pull/90045",
+ "repeat": 2,
+ "started_at": "2026-10-18T21:45:10Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 95721,
+  "sha": "77e3d2aa5b0c8a17",
+  "patch_only": [
+   "go.work.sum"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29327,
+    "output": 3466,
+    "reasoning": 2086,
+    "cache_read": 244,
+    "cache_write": 0
+   },
+   "cost_reported": 0.1866768,
+   "latency_ms": 38457,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-wonder",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 5853,
+   "raw_usage": {
+    "completion_tokens": 3466,
+    "prompt_tokens": 29571,
+    "total_tokens": 33037,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 2086,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 244,
+     "video_tokens": 0
+    },
+    "cost": 0.1866768,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.1866768,
+     "upstream_inference_prompt_cost": 0.1173568,
+     "upstream_inference_completions_cost": 0.06932
+    }
+   },
+   "started_at": "2026-10-18T21:45:10Z",
+   "first_chunk_ms": 3838,
+   "first_text_ms": 27769,
+   "response_id": "gen-1792359910-jrfQ88TVUVcIfRpBVPlZ",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29327,
+  "output": 3466,
+  "cache_read": 244,
+  "cache_write": 0,
+  "reasoning": 2086
+ },
+ "cost_reported": 0.1866768,
+ "latency_ms": 38457,
+ "served_model": "meta/muse-wonder",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 51, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Async legacy writes use the request-scoped context and will usually be cancelled\", \"body\": \"Create, Update, Delete and DeleteCollection all launch the legacy write in a goroutine using `context.WithTimeoutCause(ctx, ...)` where ctx is the incoming request context (Create line 51, Update line 135, Delete line 110, DeleteCollection line 163). The handler returns immediately after spawning the goroutine, at which point the apiserver cancels the request context, which cancels the derived timeout context. The legacy 'safety net' writes will therefore routinely fail with context-canceled before they run, silently diverging legacy storage from unified storage exactly as mode 3 is meant to prevent. The goroutine needs a detached context (e.g. context.WithoutCancel(ctx) or a background context preserving values) with its own timeout.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 55, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Async legacy Create races with the caller on the same object\", \"body\": \"Create passes the exact same `obj` to Storage.Create, then hands that same object to Legacy.Create in a background goroutine while returning `created` (which typically aliases obj) to the caller. The apiserver will read/serialize/mutate the returned object concurrently with the legacy store reading and mutating the same object (e.g. setting resource version, name, timestamps), which is a data race and can corrupt the response or the legacy write. The legacy goroutine must be given a DeepCopy of the object (ideally made before Storage.Create mutates it), not the shared pointer.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 139, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Async legacy Update reuses the same UpdatedObjectInfo already consumed by unified storage\", \"body\": \"Update passes the identical `objInfo` instance to Storage.Update and then, asynchronously, to Legacy.Update. The previous implementation computed the updated object once and passed legacy an updateWrapper around that fixed object; now Legacy.Update will call objInfo.UpdatedObject a second time, against the legacy store's old object and after the request has returned. UpdatedObjectInfo implementations are not guaranteed to be idempotent or safe to invoke twice (they may apply deltas, bump fields, or capture request-scoped state), so the legacy write can store different content than unified storage, or fail spuriously. Legacy should receive a wrapper carrying the already-computed/returned object, as before.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 45, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Storage failures in Create/Update are recorded as legacy durations\", \"body\": \"When Storage.Create fails, line 45 calls d.recordLegacyDuration(true, ...) for the time spent in storage, and Update does the same at line 129. No storage-duration sample is recorded and the legacy histogram is polluted with a failure/duration for an operation that never touched legacy storage. Dashboards/alerts on dual-writer latency and error rate per store will misattribute unified-storage failures to legacy. These should call recordStorageDuration(true, ...).\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 106, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Delete records the object name in the metric kind label and DeleteCollection mislabels its legacy metric\", \"body\": \"On successful Delete, line 106 calls recordStorageDuration(false, mode3Str, name, method, ...) passing the object `name` where every other call site passes options.Kind as the kind label. This produces unbounded metric cardinality (one series per deleted object name) and breaks kind-based aggregation. Separately, the legacy DeleteCollection goroutine at line 166 calls recordStorageDuration instead of recordLegacyDuration, so legacy delete-collection latency/errors are never recorded and storage gets a spurious second sample. Fix line 106 to options.Kind and line 166 to recordLegacyDuration.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 56, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Async legacy failures are never logged\", \"body\": \"In all four async legacy goroutines the error is used only to set the metric's error flag (e.g. Create lines 55-56) and is otherwise discarded, with no log.Error via the request logger. Since mode 3 returns success to the client regardless, operators get no diagnosable record of which object failed to reach legacy storage or why; divergence will be discovered only via missing data. Log the error with the object name/kind inside each goroutine before recording the metric.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3_test.go\", \"line\": 63, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Mode 3 tests never verify the async legacy writes and share one mock for both stores\", \"body\": \"The new Mode 3 tests construct legacyStoreMock and storageMock over a single shared testify mock.Mock, so a Storage call can be satisfied by an expectation registered for Legacy and vice versa (e.g. the TestMode3_Create 'storage fails' case at lines 37-44 registers only a Create expectation via setupLegacyFn yet the error surfaces from the Storage.Create call). The tests also return immediately without waiting for or asserting the background legacy goroutines (no AssertCalled/Eventually on Create/Update/Delete/DeleteCollection), so the defining behavior of mode 3 - the async legacy write - is untested, and stray goroutines can fire mock calls after the subtest ends, causing flaky cross-test interference under -race. Use separate mocks per store and synchronize/assert the legacy call in each test.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 51,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Async legacy writes use the request-scoped context and will usually be cancelled",
+   "body": "Create, Update, Delete and DeleteCollection all launch the legacy write in a goroutine using `context.WithTimeoutCause(ctx, ...)` where ctx is the incoming request context (Create line 51, Update line 135, Delete line 110, DeleteCollection line 163). The handler returns immediately after spawning the goroutine, at which point the apiserver cancels the request context, which cancels the derived timeout context. The legacy 'safety net' writes will therefore routinely fail with context-canceled before they run, silently diverging legacy storage from unified storage exactly as mode 3 is meant to prevent. The goroutine needs a detached context (e.g. context.WithoutCancel(ctx) or a background context preserving values) with its own timeout."
+  },
+  {
+   "index": 1,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 55,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Async legacy Create races with the caller on the same object",
+   "body": "Create passes the exact same `obj` to Storage.Create, then hands that same object to Legacy.Create in a background goroutine while returning `created` (which typically aliases obj) to the caller. The apiserver will read/serialize/mutate the returned object concurrently with the legacy store reading and mutating the same object (e.g. setting resource version, name, timestamps), which is a data race and can corrupt the response or the legacy write. The legacy goroutine must be given a DeepCopy of the object (ideally made before Storage.Create mutates it), not the shared pointer."
+  },
+  {
+   "index": 2,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 139,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Async legacy Update reuses the same UpdatedObjectInfo already consumed by unified storage",
+   "body": "Update passes the identical `objInfo` instance to Storage.Update and then, asynchronously, to Legacy.Update. The previous implementation computed the updated object once and passed legacy an updateWrapper around that fixed object; now Legacy.Update will call objInfo.UpdatedObject a second time, against the legacy store's old object and after the request has returned. UpdatedObjectInfo implementations are not guaranteed to be idempotent or safe to invoke twice (they may apply deltas, bump fields, or capture request-scoped state), so the legacy write can store different content than unified storage, or fail spuriously. Legacy should receive a wrapper carrying the already-computed/returned object, as before."
+  },
+  {
+   "index": 3,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 45,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Storage failures in Create/Update are recorded as legacy durations",
+   "body": "When Storage.Create fails, line 45 calls d.recordLegacyDuration(true, ...) for the time spent in storage, and Update does the same at line 129. No storage-duration sample is recorded and the legacy histogram is polluted with a failure/duration for an operation that never touched legacy storage. Dashboards/alerts on dual-writer latency and error rate per store will misattribute unified-storage failures to legacy. These should call recordStorageDuration(true, ...)."
+  },
+  {
+   "index": 4,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 106,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Delete records the object name in the metric kind label and DeleteCollection mislabels its legacy metric",
+   "body": "On successful Delete, line 106 calls recordStorageDuration(false, mode3Str, name, method, ...) passing the object `name` where every other call site passes options.Kind as the kind label. This produces unbounded metric cardinality (one series per deleted object name) and breaks kind-based aggregation. Separately, the legacy DeleteCollection goroutine at line 166 calls recordStorageDuration instead of recordLegacyDuration, so legacy delete-collection latency/errors are never recorded and storage gets a spurious second sample. Fix line 106 to options.Kind and line 166 to recordLegacyDuration."
+  },
+  {
+   "index": 5,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 56,
+   "severity": "low",
+   "category": "bug",
+   "title": "Async legacy failures are never logged",
+   "body": "In all four async legacy goroutines the error is used only to set the metric's error flag (e.g. Create lines 55-56) and is otherwise discarded, with no log.Error via the request logger. Since mode 3 returns success to the client regardless, operators get no diagnosable record of which object failed to reach legacy storage or why; divergence will be discovered only via missing data. Log the error with the object name/kind inside each goroutine before recording the metric."
+  },
+  {
+   "index": 6,
+   "file": "pkg/apiserver/rest/dualwriter_mode3_test.go",
+   "line": 63,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Mode 3 tests never verify the async legacy writes and share one mock for both stores",
+   "body": "The new Mode 3 tests construct legacyStoreMock and storageMock over a single shared testify mock.Mock, so a Storage call can be satisfied by an expectation registered for Legacy and vice versa (e.g. the TestMode3_Create 'storage fails' case at lines 37-44 registers only a Create expectation via setupLegacyFn yet the error surfaces from the Storage.Create call). The tests also return immediately without waiting for or asserting the background legacy goroutines (no AssertCalled/Eventually on Create/Update/Delete/DeleteCollection), so the defining behavior of mode 3 - the async legacy write - is untested, and stray goroutines can fire mock calls after the subtest ends, causing flaky cross-test interference under -race. Use separate mocks per store and synchronize/assert the legacy call in each test."
+  }
+ ],
+ "finding_count": 7
+}

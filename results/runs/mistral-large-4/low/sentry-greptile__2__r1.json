@@ -1,0 +1,224 @@
+{
+ "run_id": "mistral-large-4__low__sentry-greptile__2__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__2",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:41:27Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134937,
+  "sha": "12fcc907f4816f00",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33935,
+    "output": 4019,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03147551,
+   "latency_ms": 116031,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 17404,
+   "raw_usage": {
+    "completion_tokens": 4019,
+    "prompt_tokens": 33935,
+    "total_tokens": 37954,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.03147551,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03147551,
+     "upstream_inference_prompt_cost": 0.0230758,
+     "upstream_inference_completions_cost": 0.00839971
+    }
+   },
+   "started_at": "2026-10-17T11:41:27Z",
+   "first_chunk_ms": 3771,
+   "first_text_ms": 3771,
+   "response_id": "gen-1792237287-Ah55yWxyOcJUiP0QVpZe",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33935,
+  "output": 4019,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.03147551,
+ "latency_ms": 116031,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/api/paginator.py\",\n      \"line\": 877,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"OptimizedCursorPaginator passes negative offsets to Django queryset slicing, which raises AssertionError\",\n      \"body\": \"In OptimizedCursorPaginator.get_result, when enable_advanced_features is true and cursor.offset < 0, the code executes `queryset[start_offset:stop]` with a negative start_offset (line 880-882). Django's QuerySet.__getitem__ asserts that slice indices are non-negative ('Negative indexing is not supported.'), so any request with a negative cursor offset will raise an unhandled AssertionError and return a 500 to the client. The comment claiming 'The underlying Django ORM properly handles negative slicing automatically' is factually wrong. Additionally, the BasePaginator.get_result change at line 182 (`start_offset = max(0, offset) if not cursor.is_prev else offset`) silently clamps negative offsets to 0 for forward pagination, which changes cursor semantics: a client-supplied negative offset is silently treated as offset 0, producing incorrect/duplicated results rather than an error. Negative offsets are never legitimately produced by build_cursor, so this 'feature' only creates a crash vector and a silent data-correctness bug.\"\n    },\n    {\n      \"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\",\n      \"line\": 71,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Undocumented query parameter switches audit log endpoint to a paginator with broken negative-offset handling, gated only on a client-controlled flag plus superuser status\",\n      \"body\": \"The endpoint now branches on `request.GET.get(\\\"optimized_pagination\\\") == \\\"true\\\"` combined with `request.user.is_superuser or organization_context.member.has_global_access`, and passes `enable_advanced_features=True` to OptimizedCursorPaginator. This introduces an undocumented, experimental API surface on an EXPERIMENTAL publish-status endpoint: (1) the `optimized_pagination` query parameter is not documented anywhere and silently changes response/cursor semantics for admins; (2) OptimizedCursorPaginator.get_item_key uses `getattr(item, self.key)` and treats the value as a number (`math.floor(value)`), but the endpoint orders by `-datetime`, so the key is a datetime object \u2014 `math.floor(datetime)` raises TypeError, meaning the optimized path will crash whenever build_cursor computes keys (i.e., on any non-empty result set). The paginator is effectively untested (no tests reference OptimizedCursorPaginator) and broken for its only intended use.\"\n    },\n    {\n      \"file\": \"src/sentry/api/paginator.py\",\n      \"line\": 838,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"OptimizedCursorPaginator.get_item_key crashes on datetime keys (TypeError from math.floor on datetime)\",\n      \"body\": \"OptimizedCursorPaginator.get_item_key does `value = getattr(item, self.key); return int(math.floor(value) ...)`. It is used by organization_auditlogs.py with order_by=\\\"-datetime\\\", so self.key == \\\"datetime\\\" and value is a datetime. math.floor() requires a number (__floor__/__index__), so this raises TypeError: 'datetime.datetime' object cannot be interpreted as an integer. The class was clearly copied from Paginator (integer keys) without adapting to DateTimePaginator's millisecond conversion. Any paginated request through this paginator with results will 500. There are no tests for OptimizedCursorPaginator, so this ships broken.\"\n    },\n    {\n      \"file\": \"src/sentry/api/paginator.py\",\n      \"line\": 182,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"BasePaginator.get_result silently clamps negative offsets to 0, corrupting pagination for all existing paginator users\",\n      \"body\": \"The change to BasePaginator.get_result (shared by Paginator, DateTimePaginator, and all existing endpoints) replaces `results = list(queryset[offset:stop])` with `start_offset = max(0, offset) if not cursor.is_prev else offset`. Previously a negative offset would hit Django's 'Negative indexing is not supported' assertion (a loud failure); now it is silently clamped to 0, so a malformed/hostile cursor with a negative offset returns the first page of results instead of an error. This changes behavior for every endpoint using BasePaginator subclasses and masks client bugs; it also makes the subsequent `elif len(results) == offset + limit + extra` check at line 192 inconsistent (comparing against a negative offset that was never used). Other paginator classes in the same file (OffsetPaginator line 287, ChainPaginator line 748, etc.) explicitly raise BadPaginationError on negative offsets \u2014 this change makes BasePaginator inconsistent with the file's own convention.\"\n    },\n    {\n      \"file\": \"src/sentry/scripts/spans/add-buffer.lua\",\n      \"line\": 62,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"Eviction via ZPOPMIN drops the oldest spans by end_timestamp score, silently losing span data and breaking segment completeness\",\n      \"body\": \"The script now caps each segment set at 1000 members with `redis.call(\\\"zpopmin\\\", set_key, span_count - 1000)`. Because the buffer is now a sorted set scored by end_timestamp_precise (see buffer.py zadd), ZPOPMIN evicts the spans with the *earliest* end timestamps \u2014 i.e., it silently discards real span data whenever a segment exceeds 1000 spans. Previously the Python side enforced max_segment_spans=1001 only at flush time (logging an error and skipping the oversized segment); now data is destroyed at insert time with no metric, no log, and no signal. Consequences: (1) silently incomplete traces shipped downstream \u2014 a correctness/data-integrity regression; (2) the eviction happens inside the Lua script where the Python-side `spans.buffer.flush_segments.segment_span_count_exceeded` metric can no longer fire; (3) the eviction count is computed from `span_count`, which is only set when a ZUNIONSTORE ran \u2014 when neither union branch executes (e.g., root span arriving first, or set_span_id == parent_span_id with no existing set), span_count is recomputed via zcard (line 58-60), but when a union *did* run, ZUNIONSTORE's return value is the cardinality *after* the union, which is correct \u2014 however if both unions run, the second assignment overwrites with the post-second-union count, which is also correct; the real issue is the silent data loss itself. Also note the eviction threshold (1000) is hardcoded in Lua while SpansBuffer.max_segment_spans (1001) still exists in Python, creating two divergent limits.\"\n    },\n    {\n      \"file\": \"src/sentry/scripts/spans/add-buffer.lua\",\n      \"line\": 30,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Redirect-chain traversal limit reduced from 10000 to 1000 without handling the overflow case\",\n      \"body\": \"The loop `for i = 0, 1000 do` follows redirect mappings in the `span-buf:sr:` hash. The original code used 10000 with an explicit comment that the limit means segment trees deeper than 10k may not be joined correctly. The new limit of 1000 silently exits the loop after 1001 iterations *without* breaking \u2014 when the loop exhausts, `set_span_id` still holds an intermediate (non-root) span id, and the script proceeds to merge into that intermediate set and write a redirect from span_id to it. This is functionally the same failure mode as before but at a 10x lower depth, and the returned `redirect_depth` (1000) is indistinguishable from a legitimate depth-1000 chain, so the Python metrics (min/max_redirect_depth gauges) cannot alert on truncation. Deep chains (e.g., from long-running traces or pathological redirect accumulation) will now be split into multiple segments more often, producing duplicate/partial segments downstream.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/buffer.py\",\n      \"line\": 197,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"ZADD keyed by raw payload bytes makes duplicate spans overwrite each other and breaks set semantics for identical payloads\",\n      \"body\": \"process_spans now writes spans with `p.zadd(set_key, {span.payload: span.end_timestamp_precise for span in subsegment})`. In a Redis sorted set, the *member* is the payload bytes and the score is the timestamp. Two consequences: (1) If the same span payload is processed twice (at-least-once Kafka delivery, consumer rebalance replay, or the same span appearing in two batches), the second ZADD silently overwrites the first \u2014 previously SADD also deduplicated, so this is not a regression per se, but combined with the score it means the *latest* end_timestamp wins, which is fine; (2) more importantly, the dict comprehension `{span.payload: ... for span in subsegment}` collapses multiple spans with identical payload bytes within the same batch into a single entry *before* Redis is involved \u2014 if a batch legitimately contains two distinct Span objects whose serialized payloads are byte-identical (possible when end_timestamp_precise differs but... actually payload includes the timestamp, so identical payload implies identical span), this is mostly benign. The real issue: the member being the full payload means ZSCAN in _load_segment_data returns (payload, score) tuples \u2014 handled \u2014 but ZUNIONSTORE in the Lua script aggregates scores with SUM by default across the two source sets, so a span present in both set_key and span_key gets its end_timestamp *doubled* as its score after merge. Since scores now drive ZPOPMIN eviction order (see add-buffer.lua finding), merged segments have corrupted eviction ordering: spans that participated in a merge are ranked as if they had ~2x their end timestamp and will be evicted last / retained incorrectly, and the flush ordering semantics change. The score is no longer a pure end_timestamp.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/buffer.py\",\n      \"line\": 150,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"max_segment_spans limit silently removed from flush path while Lua now evicts at 1000 \u2014 the Python-side guard and metric are dead code\",\n      \"body\": \"The diff removes the `if len(payloads[key]) > self.max_segment_spans:` check (and its `spans.buffer.flush_segments.segment_span_count_exceeded` metric + error log) from _load_segment_data, on the assumption that the Lua script now caps segments at 1000 spans. But the constructor still accepts and stores `max_segment_spans: int = 1001` (line 150), which is now unused \u2014 dead configuration that misleads operators into thinking the flush path enforces a span-count limit. Worse, the two limits disagree (Lua 1000 vs Python 1001), and the Python-side metric that alerted on oversized segments no longer exists, so dashboards/alerts on `segment_span_count_exceeded` silently stop firing. Either remove the unused parameter or keep a defensive check in Python.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/buffer.py\",\n      \"line\": 167,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"__reduce__ drops segment_page_size and max_segment_bytes/max_segment_spans when pickling SpansBuffer for multiprocessing\",\n      \"body\": \"SpansBuffer.__reduce__ returns `(SpansBuffer, (self.assigned_shards, self.span_buffer_timeout_secs, self.span_buffer_root_timeout_secs, self.redis_ttl))` \u2014 it omits segment_page_size, max_segment_bytes, and max_segment_spans. This is pre-existing (not introduced by this diff), but the diff makes it more impactful: since max_segment_spans is now only a constructor default and the Lua script hardcodes 1000, a pickled buffer (used by run_task_with_multiprocessing in factory.py) silently uses defaults for the byte-size limit too. Not introduced by this PR, but worth noting the pickle path now diverges further from configured behavior. (Reporting as low since it's pre-existing; flagging because the PR touches this class's limits.)\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/factory.py\",\n      \"line\": 141,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"process_batch assumes end_timestamp_precise is always present in the span payload \u2014 KeyError on older Relay payloads\",\n      \"body\": \"process_batch now does `end_timestamp_precise=val[\\\"end_timestamp_precise\\\"]` (direct indexing, line 141). The ingest-spans schema may mark this field optional or older Relay versions may omit it; direct [] indexing raises KeyError, which would crash the consumer task and block offset commits for the entire batch (poison-pill message). The neighboring fields use .get() with defaults (parent_span_id, is_remote). If the field can be absent, this should be `val.get(\\\"end_timestamp_precise\\\", 0.0)` or the schema must be verified to guarantee presence. A missing field would halt span ingestion for affected partitions until the message is skipped/dead-lettered.\"\n    },\n    {\n      \"file\": \"src/sentry/api/paginator.py\",\n      \"line\": 105,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Pre-existing typo `queryset.query.order_b` (should be `order_by`) in BasePaginator.build_queryset, now reachable via OptimizedCursorPaginator\",\n      \"body\": \"Line 105 reads `queryset.query.order_b = tuple(new_order_by)` \u2014 a typo for `order_by`. This is pre-existing, but it means that when the queryset is already ordered by `-key` and an ascending traversal is requested, the re-ordering is silently dropped (the attribute assignment creates a new unused attribute), so the queryset keeps its original descending order and pagination returns wrongly-ordered/duplicated rows. OptimizedCursorPaginator inherits build_queryset unchanged, so the new paginator inherits this latent bug. Worth fixing while touching this code, since the new paginator is presented as an 'optimized' path.\"\n    },\n    {\n      \"file\": \"src/sentry/utils/cursors.py\",\n      \"line\": 26,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Comment claims negative offsets are allowed, but Cursor.from_string and all paginators either reject or mishandle them\",\n      \"body\": \"The added comment on Cursor.__init__ says 'Performance optimization: Allow negative offsets for advanced pagination scenarios'. In reality, Cursor.from_string will parse a negative offset from a client-supplied cursor string (int(bits[1]) accepts '-5'), and the only consumer that 'supports' it is OptimizedCursorPaginator's broken negative-slicing path (which crashes on Django's assertion), while BasePaginator now silently clamps it to 0 and OffsetPaginator/ChainPaginator raise BadPaginationError. The comment documents an intent that the codebase does not safely implement; it should be removed or the behavior made consistent (reject negative offsets at parse time).\"\n    },\n    {\n      \"file\": \"tests/sentry/spans/test_buffer.py\",\n      \"line\": 1,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test covers the new 1000-span eviction behavior or the sorted-set migration of existing buffer keys\",\n      \"body\": \"The PR changes the buffer from Redis sets (SADD/SSCAN/SUNIONSTORE) to sorted sets (ZADD/ZSCAN/ZUNIONSTORE) with eviction at 1000 spans. The test suite updates Span construction for the new end_timestamp_precise field but adds no test that: (1) a segment exceeding 1000 spans is truncated by the Lua script (data loss is untested and unasserted); (2) ZUNIONSTORE score aggregation (SUM across merged sets) doesn't corrupt eviction order; (3) mixed old-format (set) and new-format (zset) keys during a rolling deploy are handled \u2014 the Lua script calls ZCARD/ZUNIONSTORE on keys that may still be plain sets from before the deploy, which returns a WRONGTYPE error and fails the whole EVALSHA pipeline for that batch. A rolling deploy of this consumer will hit WRONGTYPE errors on any segment key created by the old code until its TTL (redis_ttl=3600s) expires. There is no migration/compatibility handling and no test for it.\"\n    },\n    {\n      \"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\",\n      \"line\": 70,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"Behavior change on audit log endpoint gated by an undocumented query parameter \u2014 API contract break for admin users\",\n      \"body\": \"Clients (including Sentry's own frontend and any admin tooling) that append `optimized_pagination=true` \u2014 or, more realistically, once this flag is documented/adopted \u2014 will get different cursor semantics (OptimizedCursorPaginator emits integer-floor datetime keys via the broken get_item_key, different cursor value encoding than DateTimePaginator's millisecond timestamps). DateTimePaginator encodes cursor values as milliseconds-since-epoch floats; OptimizedCursorPaginator.get_item_key returns math.floor(datetime) which crashes, and value_from_cursor returns the raw cursor value (a number) which build_queryset then interpolates into a `datetime >= %s` SQL comparison \u2014 comparing a datetime column to an integer. The two paginators are not cursor-compatible, so a client that switches the flag mid-pagination gets corrupt cursors. The endpoint's publish_status is EXPERIMENTAL, but the flag is undocumented and the branch is controlled by request.user.is_superuser, meaning Sentry staff hitting the endpoint with the flag get a different (broken) response shape with no warning.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/paginator.py",
+   "line": 877,
+   "severity": "critical",
+   "category": "bug",
+   "title": "OptimizedCursorPaginator passes negative offsets to Django queryset slicing, which raises AssertionError",
+   "body": "In OptimizedCursorPaginator.get_result, when enable_advanced_features is true and cursor.offset < 0, the code executes `queryset[start_offset:stop]` with a negative start_offset (line 880-882). Django's QuerySet.__getitem__ asserts that slice indices are non-negative ('Negative indexing is not supported.'), so any request with a negative cursor offset will raise an unhandled AssertionError and return a 500 to the client. The comment claiming 'The underlying Django ORM properly handles negative slicing automatically' is factually wrong. Additionally, the BasePaginator.get_result change at line 182 (`start_offset = max(0, offset) if not cursor.is_prev else offset`) silently clamps negative offsets to 0 for forward pagination, which changes cursor semantics: a client-supplied negative offset is silently treated as offset 0, producing incorrect/duplicated results rather than an error. Negative offsets are never legitimately produced by build_cursor, so this 'feature' only creates a crash vector and a silent data-correctness bug."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 71,
+   "severity": "high",
+   "category": "security",
+   "title": "Undocumented query parameter switches audit log endpoint to a paginator with broken negative-offset handling, gated only on a client-controlled flag plus superuser status",
+   "body": "The endpoint now branches on `request.GET.get(\"optimized_pagination\") == \"true\"` combined with `request.user.is_superuser or organization_context.member.has_global_access`, and passes `enable_advanced_features=True` to OptimizedCursorPaginator. This introduces an undocumented, experimental API surface on an EXPERIMENTAL publish-status endpoint: (1) the `optimized_pagination` query parameter is not documented anywhere and silently changes response/cursor semantics for admins; (2) OptimizedCursorPaginator.get_item_key uses `getattr(item, self.key)` and treats the value as a number (`math.floor(value)`), but the endpoint orders by `-datetime`, so the key is a datetime object \u2014 `math.floor(datetime)` raises TypeError, meaning the optimized path will crash whenever build_cursor computes keys (i.e., on any non-empty result set). The paginator is effectively untested (no tests reference OptimizedCursorPaginator) and broken for its only intended use."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/paginator.py",
+   "line": 838,
+   "severity": "high",
+   "category": "bug",
+   "title": "OptimizedCursorPaginator.get_item_key crashes on datetime keys (TypeError from math.floor on datetime)",
+   "body": "OptimizedCursorPaginator.get_item_key does `value = getattr(item, self.key); return int(math.floor(value) ...)`. It is used by organization_auditlogs.py with order_by=\"-datetime\", so self.key == \"datetime\" and value is a datetime. math.floor() requires a number (__floor__/__index__), so this raises TypeError: 'datetime.datetime' object cannot be interpreted as an integer. The class was clearly copied from Paginator (integer keys) without adapting to DateTimePaginator's millisecond conversion. Any paginated request through this paginator with results will 500. There are no tests for OptimizedCursorPaginator, so this ships broken."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/paginator.py",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "BasePaginator.get_result silently clamps negative offsets to 0, corrupting pagination for all existing paginator users",
+   "body": "The change to BasePaginator.get_result (shared by Paginator, DateTimePaginator, and all existing endpoints) replaces `results = list(queryset[offset:stop])` with `start_offset = max(0, offset) if not cursor.is_prev else offset`. Previously a negative offset would hit Django's 'Negative indexing is not supported' assertion (a loud failure); now it is silently clamped to 0, so a malformed/hostile cursor with a negative offset returns the first page of results instead of an error. This changes behavior for every endpoint using BasePaginator subclasses and masks client bugs; it also makes the subsequent `elif len(results) == offset + limit + extra` check at line 192 inconsistent (comparing against a negative offset that was never used). Other paginator classes in the same file (OffsetPaginator line 287, ChainPaginator line 748, etc.) explicitly raise BadPaginationError on negative offsets \u2014 this change makes BasePaginator inconsistent with the file's own convention."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/scripts/spans/add-buffer.lua",
+   "line": 62,
+   "severity": "high",
+   "category": "data",
+   "title": "Eviction via ZPOPMIN drops the oldest spans by end_timestamp score, silently losing span data and breaking segment completeness",
+   "body": "The script now caps each segment set at 1000 members with `redis.call(\"zpopmin\", set_key, span_count - 1000)`. Because the buffer is now a sorted set scored by end_timestamp_precise (see buffer.py zadd), ZPOPMIN evicts the spans with the *earliest* end timestamps \u2014 i.e., it silently discards real span data whenever a segment exceeds 1000 spans. Previously the Python side enforced max_segment_spans=1001 only at flush time (logging an error and skipping the oversized segment); now data is destroyed at insert time with no metric, no log, and no signal. Consequences: (1) silently incomplete traces shipped downstream \u2014 a correctness/data-integrity regression; (2) the eviction happens inside the Lua script where the Python-side `spans.buffer.flush_segments.segment_span_count_exceeded` metric can no longer fire; (3) the eviction count is computed from `span_count`, which is only set when a ZUNIONSTORE ran \u2014 when neither union branch executes (e.g., root span arriving first, or set_span_id == parent_span_id with no existing set), span_count is recomputed via zcard (line 58-60), but when a union *did* run, ZUNIONSTORE's return value is the cardinality *after* the union, which is correct \u2014 however if both unions run, the second assignment overwrites with the post-second-union count, which is also correct; the real issue is the silent data loss itself. Also note the eviction threshold (1000) is hardcoded in Lua while SpansBuffer.max_segment_spans (1001) still exists in Python, creating two divergent limits."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/scripts/spans/add-buffer.lua",
+   "line": 30,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Redirect-chain traversal limit reduced from 10000 to 1000 without handling the overflow case",
+   "body": "The loop `for i = 0, 1000 do` follows redirect mappings in the `span-buf:sr:` hash. The original code used 10000 with an explicit comment that the limit means segment trees deeper than 10k may not be joined correctly. The new limit of 1000 silently exits the loop after 1001 iterations *without* breaking \u2014 when the loop exhausts, `set_span_id` still holds an intermediate (non-root) span id, and the script proceeds to merge into that intermediate set and write a redirect from span_id to it. This is functionally the same failure mode as before but at a 10x lower depth, and the returned `redirect_depth` (1000) is indistinguishable from a legitimate depth-1000 chain, so the Python metrics (min/max_redirect_depth gauges) cannot alert on truncation. Deep chains (e.g., from long-running traces or pathological redirect accumulation) will now be split into multiple segments more often, producing duplicate/partial segments downstream."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/spans/buffer.py",
+   "line": 197,
+   "severity": "high",
+   "category": "data",
+   "title": "ZADD keyed by raw payload bytes makes duplicate spans overwrite each other and breaks set semantics for identical payloads",
+   "body": "process_spans now writes spans with `p.zadd(set_key, {span.payload: span.end_timestamp_precise for span in subsegment})`. In a Redis sorted set, the *member* is the payload bytes and the score is the timestamp. Two consequences: (1) If the same span payload is processed twice (at-least-once Kafka delivery, consumer rebalance replay, or the same span appearing in two batches), the second ZADD silently overwrites the first \u2014 previously SADD also deduplicated, so this is not a regression per se, but combined with the score it means the *latest* end_timestamp wins, which is fine; (2) more importantly, the dict comprehension `{span.payload: ... for span in subsegment}` collapses multiple spans with identical payload bytes within the same batch into a single entry *before* Redis is involved \u2014 if a batch legitimately contains two distinct Span objects whose serialized payloads are byte-identical (possible when end_timestamp_precise differs but... actually payload includes the timestamp, so identical payload implies identical span), this is mostly benign. The real issue: the member being the full payload means ZSCAN in _load_segment_data returns (payload, score) tuples \u2014 handled \u2014 but ZUNIONSTORE in the Lua script aggregates scores with SUM by default across the two source sets, so a span present in both set_key and span_key gets its end_timestamp *doubled* as its score after merge. Since scores now drive ZPOPMIN eviction order (see add-buffer.lua finding), merged segments have corrupted eviction ordering: spans that participated in a merge are ranked as if they had ~2x their end timestamp and will be evicted last / retained incorrectly, and the flush ordering semantics change. The score is no longer a pure end_timestamp."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/spans/buffer.py",
+   "line": 150,
+   "severity": "medium",
+   "category": "data",
+   "title": "max_segment_spans limit silently removed from flush path while Lua now evicts at 1000 \u2014 the Python-side guard and metric are dead code",
+   "body": "The diff removes the `if len(payloads[key]) > self.max_segment_spans:` check (and its `spans.buffer.flush_segments.segment_span_count_exceeded` metric + error log) from _load_segment_data, on the assumption that the Lua script now caps segments at 1000 spans. But the constructor still accepts and stores `max_segment_spans: int = 1001` (line 150), which is now unused \u2014 dead configuration that misleads operators into thinking the flush path enforces a span-count limit. Worse, the two limits disagree (Lua 1000 vs Python 1001), and the Python-side metric that alerted on oversized segments no longer exists, so dashboards/alerts on `segment_span_count_exceeded` silently stop firing. Either remove the unused parameter or keep a defensive check in Python."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/spans/buffer.py",
+   "line": 167,
+   "severity": "low",
+   "category": "bug",
+   "title": "__reduce__ drops segment_page_size and max_segment_bytes/max_segment_spans when pickling SpansBuffer for multiprocessing",
+   "body": "SpansBuffer.__reduce__ returns `(SpansBuffer, (self.assigned_shards, self.span_buffer_timeout_secs, self.span_buffer_root_timeout_secs, self.redis_ttl))` \u2014 it omits segment_page_size, max_segment_bytes, and max_segment_spans. This is pre-existing (not introduced by this diff), but the diff makes it more impactful: since max_segment_spans is now only a constructor default and the Lua script hardcodes 1000, a pickled buffer (used by run_task_with_multiprocessing in factory.py) silently uses defaults for the byte-size limit too. Not introduced by this PR, but worth noting the pickle path now diverges further from configured behavior. (Reporting as low since it's pre-existing; flagging because the PR touches this class's limits.)"
+  },
+  {
+   "index": 9,
+   "file": "src/sentry/spans/consumers/process/factory.py",
+   "line": 141,
+   "severity": "medium",
+   "category": "bug",
+   "title": "process_batch assumes end_timestamp_precise is always present in the span payload \u2014 KeyError on older Relay payloads",
+   "body": "process_batch now does `end_timestamp_precise=val[\"end_timestamp_precise\"]` (direct indexing, line 141). The ingest-spans schema may mark this field optional or older Relay versions may omit it; direct [] indexing raises KeyError, which would crash the consumer task and block offset commits for the entire batch (poison-pill message). The neighboring fields use .get() with defaults (parent_span_id, is_remote). If the field can be absent, this should be `val.get(\"end_timestamp_precise\", 0.0)` or the schema must be verified to guarantee presence. A missing field would halt span ingestion for affected partitions until the message is skipped/dead-lettered."
+  },
+  {
+   "index": 10,
+   "file": "src/sentry/api/paginator.py",
+   "line": 105,
+   "severity": "low",
+   "category": "bug",
+   "title": "Pre-existing typo `queryset.query.order_b` (should be `order_by`) in BasePaginator.build_queryset, now reachable via OptimizedCursorPaginator",
+   "body": "Line 105 reads `queryset.query.order_b = tuple(new_order_by)` \u2014 a typo for `order_by`. This is pre-existing, but it means that when the queryset is already ordered by `-key` and an ascending traversal is requested, the re-ordering is silently dropped (the attribute assignment creates a new unused attribute), so the queryset keeps its original descending order and pagination returns wrongly-ordered/duplicated rows. OptimizedCursorPaginator inherits build_queryset unchanged, so the new paginator inherits this latent bug. Worth fixing while touching this code, since the new paginator is presented as an 'optimized' path."
+  },
+  {
+   "index": 11,
+   "file": "src/sentry/utils/cursors.py",
+   "line": 26,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Comment claims negative offsets are allowed, but Cursor.from_string and all paginators either reject or mishandle them",
+   "body": "The added comment on Cursor.__init__ says 'Performance optimization: Allow negative offsets for advanced pagination scenarios'. In reality, Cursor.from_string will parse a negative offset from a client-supplied cursor string (int(bits[1]) accepts '-5'), and the only consumer that 'supports' it is OptimizedCursorPaginator's broken negative-slicing path (which crashes on Django's assertion), while BasePaginator now silently clamps it to 0 and OffsetPaginator/ChainPaginator raise BadPaginationError. The comment documents an intent that the codebase does not safely implement; it should be removed or the behavior made consistent (reject negative offsets at parse time)."
+  },
+  {
+   "index": 12,
+   "file": "tests/sentry/spans/test_buffer.py",
+   "line": 1,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test covers the new 1000-span eviction behavior or the sorted-set migration of existing buffer keys",
+   "body": "The PR changes the buffer from Redis sets (SADD/SSCAN/SUNIONSTORE) to sorted sets (ZADD/ZSCAN/ZUNIONSTORE) with eviction at 1000 spans. The test suite updates Span construction for the new end_timestamp_precise field but adds no test that: (1) a segment exceeding 1000 spans is truncated by the Lua script (data loss is untested and unasserted); (2) ZUNIONSTORE score aggregation (SUM across merged sets) doesn't corrupt eviction order; (3) mixed old-format (set) and new-format (zset) keys during a rolling deploy are handled \u2014 the Lua script calls ZCARD/ZUNIONSTORE on keys that may still be plain sets from before the deploy, which returns a WRONGTYPE error and fails the whole EVALSHA pipeline for that batch. A rolling deploy of this consumer will hit WRONGTYPE errors on any segment key created by the old code until its TTL (redis_ttl=3600s) expires. There is no migration/compatibility handling and no test for it."
+  },
+  {
+   "index": 13,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 70,
+   "severity": "medium",
+   "category": "api",
+   "title": "Behavior change on audit log endpoint gated by an undocumented query parameter \u2014 API contract break for admin users",
+   "body": "Clients (including Sentry's own frontend and any admin tooling) that append `optimized_pagination=true` \u2014 or, more realistically, once this flag is documented/adopted \u2014 will get different cursor semantics (OptimizedCursorPaginator emits integer-floor datetime keys via the broken get_item_key, different cursor value encoding than DateTimePaginator's millisecond timestamps). DateTimePaginator encodes cursor values as milliseconds-since-epoch floats; OptimizedCursorPaginator.get_item_key returns math.floor(datetime) which crashes, and value_from_cursor returns the raw cursor value (a number) which build_queryset then interpolates into a `datetime >= %s` SQL comparison \u2014 comparing a datetime column to an integer. The two paginators are not cursor-compatible, so a client that switches the flag mid-pagination gets corrupt cursors. The endpoint's publish_status is EXPERIMENTAL, but the flag is undocumented and the branch is controlled by request.user.is_superuser, meaning Sentry staff hitting the endpoint with the flag get a different (broken) response shape with no warning."
+  }
+ ],
+ "finding_count": 14
+}

@@ -1,0 +1,138 @@
+{
+ "run_id": "minimax-m3__default__cal.com__7232__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:49:33Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70656,
+    "output": 36840,
+    "reasoning": 35552,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.06543246,
+   "latency_ms": 153085,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5559,
+   "raw_usage": {
+    "completion_tokens": 36840,
+    "prompt_tokens": 71117,
+    "total_tokens": 107957,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 35552,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.06543246,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.06543246,
+     "upstream_inference_prompt_cost": 0.02122446,
+     "upstream_inference_completions_cost": 0.044208
+    }
+   },
+   "started_at": "2026-10-17T11:49:33Z",
+   "first_chunk_ms": 2770,
+   "first_text_ms": 146765,
+   "response_id": "gen-1792237773-HnrGGJzhHRXUWEnxtZ7I",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70656,
+  "output": 36840,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 35552
+ },
+ "cost_reported": 0.06543246,
+ "latency_ms": 153085,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\",\n      \"line\": 213,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"deleteScheduledEmailReminder with immediateDelete=true silently swallows SendGrid errors without a DB fallback\",\n      \"body\": \"When `deleteScheduledEmailReminder` is called with `immediateDelete=true` (used by `handleNewBooking.ts:969` for rescheduling and `workflows.tsx:214, 521` for workflow/step deletion), it sends a cancel request to SendGrid and returns. If that request fails (e.g., because the 100 pending-cancellation quota mentioned in the PR description is reached), the catch block at line 233 only logs the error and the function returns without writing anything to the database. The new CRON in `scheduleEmailReminders.ts:44-51` only selects reminders where `cancelled: true`, so the failed cancellation is never retried and SendGrid will still send the email. The function should set `cancelled: true` (or otherwise record that the DB row needs CRON handling) regardless of SendGrid success so the CRON can retry the cancellation.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\",\n      \"line\": 485,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Fire-and-forget pattern in workflow reminder cancellations across the codebase\",\n      \"body\": \"The workflow-reminder cancellation code uses `forEach` whose async callbacks are not awaited, so the cancellation calls run in the background while the caller continues and returns its HTTP response. Affected locations: `handleCancelBooking.ts:485-493`, `handleNewBooking.ts:967-973`, `bookings.tsx:488-494`, and `workflows.tsx:212-218, 376-382, 519-525, 574-580`. In serverless deployments the function instance can be frozen right after the response is returned, which may abort in-flight SendGrid/Twilio cancellation requests. Errors from these calls are also silently swallowed; for example, the `try/catch` in `handleNewBooking.ts:965-976` cannot catch anything from an unawaited `forEach` and the error log inside `deleteScheduledEmailReminder`/`deleteScheduledSMSReminder` is the only signal. These loops should use `Promise.all(items.map(...))` so cancellations and errors are observed before the response is sent. In `workflows.tsx:212-218` the forEach is followed immediately by `workflow.deleteMany`, so the cascade can delete the reminder rows before the SendGrid/Twilio requests even fire, making the cancellations effectively lost.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"CRON query for cancelled reminders is missing the method filter\",\n      \"body\": \"The `remindersToCancel` query at lines 44-51 selects `WorkflowReminder` rows with `cancelled: true` and `scheduledDate <= now+1h`. It does not include `method: WorkflowMethods.EMAIL`. Today only `deleteScheduledEmailReminder` sets `cancelled: true`, so in practice the rows are email rows, but the missing filter is fragile: if a future change (or a bad data fix) ever sets the flag on an SMS row, the CRON will call `client.request` against `/v3/user/scheduled_sends` with a Twilio SID as the `batch_id`, sending SendGrid a request it cannot honor and producing a misleading error in the catch block at line 75. Add `method: WorkflowMethods.EMAIL` to the `where` clause.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\n      \"line\": 56,\n      \"severity\": \"low\",\n      \"category\": \"perf\",\n      \"title\": \"Sequential SendGrid cancellation requests in the CRON\",\n      \"body\": \"The `for (const reminder of remindersToCancel)` loop at lines 56-74 awaits each SendGrid `client.request` call one after another, then collects the corresponding prisma deletes. When many cancelled reminders have accumulated (e.g., after a bulk cancellation or a long CRON outage), this serial processing stretches the CRON run time and may exceed its execution budget. The SendGrid requests should be parallelised with `Promise.all(remindersToCancel.map(...))`; the prisma deletes can still be awaited together afterward.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\",\n      \"line\": 197,\n      \"severity\": \"high\",\n      \"category\": \"test_gap\",\n      \"title\": \"No tests added for the new workflow-reminder cancellation logic\",\n      \"body\": \"The PR makes several non-trivial changes to a flow that previously had a production bug (#7225): a new nullable `cancelled` field on `WorkflowReminder`, a deferred SendGrid cancellation performed by the `scheduleEmailReminders` CRON inside a 1-hour window, a new `immediateDelete` branch in `deleteScheduledEmailReminder`, and new cancellation paths added to `handleNewBooking.ts`, `handleCancelBooking.ts`, `bookings.tsx`, and `workflows.tsx`. No unit or integration tests were added to verify any of: (1) cancelling a booking actually prevents a previously scheduled workflow email from being delivered, (2) rescheduling cancels old reminders and schedules new ones without duplicates, (3) the CRON handles reminders inside and outside the 1-hour window correctly, (4) the SendGrid quota failure path falls back to the CRON, (5) workflow/step deletion truly stops email delivery for the removed workflow. For a fix to a reported production bug this leaves the regression risk unaddressed.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "critical",
+   "category": "bug",
+   "title": "deleteScheduledEmailReminder with immediateDelete=true silently swallows SendGrid errors without a DB fallback",
+   "body": "When `deleteScheduledEmailReminder` is called with `immediateDelete=true` (used by `handleNewBooking.ts:969` for rescheduling and `workflows.tsx:214, 521` for workflow/step deletion), it sends a cancel request to SendGrid and returns. If that request fails (e.g., because the 100 pending-cancellation quota mentioned in the PR description is reached), the catch block at line 233 only logs the error and the function returns without writing anything to the database. The new CRON in `scheduleEmailReminders.ts:44-51` only selects reminders where `cancelled: true`, so the failed cancellation is never retried and SendGrid will still send the email. The function should set `cancelled: true` (or otherwise record that the DB row needs CRON handling) regardless of SendGrid success so the CRON can retry the cancellation."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Fire-and-forget pattern in workflow reminder cancellations across the codebase",
+   "body": "The workflow-reminder cancellation code uses `forEach` whose async callbacks are not awaited, so the cancellation calls run in the background while the caller continues and returns its HTTP response. Affected locations: `handleCancelBooking.ts:485-493`, `handleNewBooking.ts:967-973`, `bookings.tsx:488-494`, and `workflows.tsx:212-218, 376-382, 519-525, 574-580`. In serverless deployments the function instance can be frozen right after the response is returned, which may abort in-flight SendGrid/Twilio cancellation requests. Errors from these calls are also silently swallowed; for example, the `try/catch` in `handleNewBooking.ts:965-976` cannot catch anything from an unawaited `forEach` and the error log inside `deleteScheduledEmailReminder`/`deleteScheduledSMSReminder` is the only signal. These loops should use `Promise.all(items.map(...))` so cancellations and errors are observed before the response is sent. In `workflows.tsx:212-218` the forEach is followed immediately by `workflow.deleteMany`, so the cascade can delete the reminder rows before the SendGrid/Twilio requests even fire, making the cancellations effectively lost."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 44,
+   "severity": "medium",
+   "category": "bug",
+   "title": "CRON query for cancelled reminders is missing the method filter",
+   "body": "The `remindersToCancel` query at lines 44-51 selects `WorkflowReminder` rows with `cancelled: true` and `scheduledDate <= now+1h`. It does not include `method: WorkflowMethods.EMAIL`. Today only `deleteScheduledEmailReminder` sets `cancelled: true`, so in practice the rows are email rows, but the missing filter is fragile: if a future change (or a bad data fix) ever sets the flag on an SMS row, the CRON will call `client.request` against `/v3/user/scheduled_sends` with a Twilio SID as the `batch_id`, sending SendGrid a request it cannot honor and producing a misleading error in the catch block at line 75. Add `method: WorkflowMethods.EMAIL` to the `where` clause."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 56,
+   "severity": "low",
+   "category": "perf",
+   "title": "Sequential SendGrid cancellation requests in the CRON",
+   "body": "The `for (const reminder of remindersToCancel)` loop at lines 56-74 awaits each SendGrid `client.request` call one after another, then collects the corresponding prisma deletes. When many cancelled reminders have accumulated (e.g., after a bulk cancellation or a long CRON outage), this serial processing stretches the CRON run time and may exceed its execution budget. The SendGrid requests should be parallelised with `Promise.all(remindersToCancel.map(...))`; the prisma deletes can still be awaited together afterward."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 197,
+   "severity": "high",
+   "category": "test_gap",
+   "title": "No tests added for the new workflow-reminder cancellation logic",
+   "body": "The PR makes several non-trivial changes to a flow that previously had a production bug (#7225): a new nullable `cancelled` field on `WorkflowReminder`, a deferred SendGrid cancellation performed by the `scheduleEmailReminders` CRON inside a 1-hour window, a new `immediateDelete` branch in `deleteScheduledEmailReminder`, and new cancellation paths added to `handleNewBooking.ts`, `handleCancelBooking.ts`, `bookings.tsx`, and `workflows.tsx`. No unit or integration tests were added to verify any of: (1) cancelling a booking actually prevents a previously scheduled workflow email from being delivered, (2) rescheduling cancels old reminders and schedules new ones without duplicates, (3) the CRON handles reminders inside and outside the 1-hour window correctly, (4) the SendGrid quota failure path falls back to the CRON, (5) workflow/step deletion truly stops email delivery for the removed workflow. For a fix to a reported production bug this leaves the regression risk unaddressed."
+  }
+ ],
+ "finding_count": 5
+}

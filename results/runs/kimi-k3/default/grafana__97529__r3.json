@@ -1,0 +1,135 @@
+{
+ "run_id": "kimi-k3__default__grafana__97529__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T13:06:51Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33252,
+    "output": 12456,
+    "reasoning": 11197,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 575032,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5751,
+   "raw_usage": {
+    "completion_tokens": 12456,
+    "prompt_tokens": 33252,
+    "total_tokens": 45708,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 11197,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T13:06:51Z",
+   "first_chunk_ms": 6486,
+   "first_text_ms": 533075,
+   "response_id": "chatcmpl-utkgmnoavfirbn3bqencz7n2jkerksoclgont6emyuldy33lqama",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33252,
+  "output": 12456,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 11197
+ },
+ "cost_reported": null,
+ "latency_ms": 575032,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the index cache without holding cacheMu\", \"body\": \"TotalDocs ranges over b.cache with no lock, while BuildIndex writes to the same map under b.cacheMu.Lock() (bleve.go:137-139) and GetIndex reads it under RLock. This PR adds a new caller in searchSupport.init (pkg/storage/unified/resource/search.go) that invokes s.search.TotalDocs() in the 'search index initialized' log line immediately after starting the watch-event goroutine; that goroutine can concurrently trigger BuildIndex for a not-yet-indexed namespace (handleEvent -> getOrCreateIndex -> build). Concurrent map iteration and map insertion is a fatal, unrecoverable runtime error in Go (\\\"concurrent map read and map write\\\") and will crash the server. Fix: take b.cacheMu.RLock() around the iteration in TotalDocs.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 88, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing the function-wide lock allows concurrent duplicate builds of the same index\", \"body\": \"BuildIndex previously held cacheMu for its entire duration, which serialized builds; now nothing prevents two goroutines from building an index for the same NamespacedResource at the same time. This is reachable because getOrCreateIndex in pkg/storage/unified/resource/search.go does GetIndex-then-BuildIndex with no per-key coordination (its own TODO admits this) \u2014 e.g. two concurrent Search gRPC requests for a namespace below InitMinCount, or a search racing a watch-event-driven build. Consequences: for file-backed indexes both goroutines call bleve.New on the same directory concurrently (error or a corrupt/duplicated on-disk index), resource.IndexMetrics.IndexTenants is incremented twice, and the losing index is overwritten in b.cache without ever being closed, leaking the bleve index and its file handles. Consider a per-key mutex or singleflight so only one build per key runs and concurrent callers wait for it.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"errgroup workers in init race on shared err and totalBatchesIndexed\", \"body\": \"In searchSupport.init, each group.Go closure executes `_, _, err = s.build(...)` and then `return err`, writing to the err variable declared in the outer function scope, and also does `totalBatchesIndexed++` (line 189) without synchronization. Since this PR's goal is building many namespaces with high concurrency, these goroutines race: one worker can overwrite another worker's error between the assignment and the return, so group.Wait() can report nil even though a build failed \u2014 startup then proceeds with a missing or partial index for that namespace \u2014 and the unsynchronized counter increments corrupt the span attribute and will fail the Go race detector. Fix: use a closure-local variable (`_, _, berr := s.build(...); return berr`) and replace the counter with len(stats) or an atomic.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Init failure in NewResourceServer leaks the search watcher goroutine\", \"body\": \"When s.Init(ctx) fails, NewResourceServer returns without calling s.cancel() and without stopping whatever Init already started. The reordering in Init (search.init now runs before initWatcher) makes this concrete: if s.search.init(ctx) succeeds but s.initWatcher() then fails, search.init has already spawned a goroutine consuming WatchWriteEvents using context.Background() (search.go lines 202-213), which drives a DB poller every 100ms with no cancellation path. Previously initWatcher ran first, so its failure could not strand the search watcher. Call s.cancel() on the error path, and pass the server's cancellable context into the search watcher instead of context.Background() so it can actually be stopped.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 320, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Removing per-request Init checks also removes request rejection after Stop\", \"body\": \"The deleted `if err := s.Init(ctx); err != nil { return ... }` guards in every handler were also the mechanism that rejected traffic after shutdown: Stop() sets s.initErr (\\\"service is stopping\\\"/\\\"service is stopped\\\"), and each handler surfaced that error via s.Init. With the guards removed, a stopped server keeps serving Create/Update/Delete/Read/List/Watch/Search normally \u2014 only the internal watch context is cancelled \u2014 and the initErr writes in Stop() no longer have any effect on requests. If rejecting requests after Stop is still intended, add an explicit stopped check to the handlers; otherwise drop the now-dead initErr bookkeeping in Stop to avoid implying a guarantee that no longer exists.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Storage-server startup test disabled on postgres\", \"body\": \"This integration test is the one place exercising the PR's core change \u2014 initializing unified storage eagerly when the ResourceServer is constructed in the storage-server target \u2014 and the PR disables the postgres variant with a TODO. That leaves the new eager-init startup path (DB access plus index build during module init) without CI coverage on postgres, one of the two supported production databases, exactly when the startup behavior changed. If the failure indicates eager init breaks under postgres in some environments, skipping hides a real regression rather than a test-only problem; this should be root-caused or tracked before relying on the new startup behavior.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the index cache without holding cacheMu",
+   "body": "TotalDocs ranges over b.cache with no lock, while BuildIndex writes to the same map under b.cacheMu.Lock() (bleve.go:137-139) and GetIndex reads it under RLock. This PR adds a new caller in searchSupport.init (pkg/storage/unified/resource/search.go) that invokes s.search.TotalDocs() in the 'search index initialized' log line immediately after starting the watch-event goroutine; that goroutine can concurrently trigger BuildIndex for a not-yet-indexed namespace (handleEvent -> getOrCreateIndex -> build). Concurrent map iteration and map insertion is a fatal, unrecoverable runtime error in Go (\"concurrent map read and map write\") and will crash the server. Fix: take b.cacheMu.RLock() around the iteration in TotalDocs."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing the function-wide lock allows concurrent duplicate builds of the same index",
+   "body": "BuildIndex previously held cacheMu for its entire duration, which serialized builds; now nothing prevents two goroutines from building an index for the same NamespacedResource at the same time. This is reachable because getOrCreateIndex in pkg/storage/unified/resource/search.go does GetIndex-then-BuildIndex with no per-key coordination (its own TODO admits this) \u2014 e.g. two concurrent Search gRPC requests for a namespace below InitMinCount, or a search racing a watch-event-driven build. Consequences: for file-backed indexes both goroutines call bleve.New on the same directory concurrently (error or a corrupt/duplicated on-disk index), resource.IndexMetrics.IndexTenants is incremented twice, and the losing index is overwritten in b.cache without ever being closed, leaking the bleve index and its file handles. Consider a per-key mutex or singleflight so only one build per key runs and concurrent callers wait for it."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "errgroup workers in init race on shared err and totalBatchesIndexed",
+   "body": "In searchSupport.init, each group.Go closure executes `_, _, err = s.build(...)` and then `return err`, writing to the err variable declared in the outer function scope, and also does `totalBatchesIndexed++` (line 189) without synchronization. Since this PR's goal is building many namespaces with high concurrency, these goroutines race: one worker can overwrite another worker's error between the assignment and the return, so group.Wait() can report nil even though a build failed \u2014 startup then proceeds with a missing or partial index for that namespace \u2014 and the unsynchronized counter increments corrupt the span attribute and will fail the Go race detector. Fix: use a closure-local variable (`_, _, berr := s.build(...); return berr`) and replace the counter with len(stats) or an atomic."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "low",
+   "category": "bug",
+   "title": "Init failure in NewResourceServer leaks the search watcher goroutine",
+   "body": "When s.Init(ctx) fails, NewResourceServer returns without calling s.cancel() and without stopping whatever Init already started. The reordering in Init (search.init now runs before initWatcher) makes this concrete: if s.search.init(ctx) succeeds but s.initWatcher() then fails, search.init has already spawned a goroutine consuming WatchWriteEvents using context.Background() (search.go lines 202-213), which drives a DB poller every 100ms with no cancellation path. Previously initWatcher ran first, so its failure could not strand the search watcher. Call s.cancel() on the error path, and pass the server's cancellable context into the search watcher instead of context.Background() so it can actually be stopped."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 320,
+   "severity": "low",
+   "category": "api",
+   "title": "Removing per-request Init checks also removes request rejection after Stop",
+   "body": "The deleted `if err := s.Init(ctx); err != nil { return ... }` guards in every handler were also the mechanism that rejected traffic after shutdown: Stop() sets s.initErr (\"service is stopping\"/\"service is stopped\"), and each handler surfaced that error via s.Init. With the guards removed, a stopped server keeps serving Create/Update/Delete/Read/List/Watch/Search normally \u2014 only the internal watch context is cancelled \u2014 and the initErr writes in Stop() no longer have any effect on requests. If rejecting requests after Stop is still intended, add an explicit stopped check to the handlers; otherwise drop the now-dead initErr bookkeeping in Stop to avoid implying a guarantee that no longer exists."
+  },
+  {
+   "index": 5,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Storage-server startup test disabled on postgres",
+   "body": "This integration test is the one place exercising the PR's core change \u2014 initializing unified storage eagerly when the ResourceServer is constructed in the storage-server target \u2014 and the PR disables the postgres variant with a TODO. That leaves the new eager-init startup path (DB access plus index build during module init) without CI coverage on postgres, one of the two supported production databases, exactly when the startup behavior changed. If the failure indicates eager init breaks under postgres in some environments, skipping hides a real regression rather than a test-only problem; this should be root-caused or tracked before relying on the new startup behavior."
+  }
+ ],
+ "finding_count": 6
+}

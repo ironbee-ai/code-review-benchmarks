@@ -1,0 +1,137 @@
+{
+ "run_id": "kimi-k3__xhigh__sentry-greptile__1__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+ "repeat": 3,
+ "started_at": "2026-10-18T15:13:53Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63599,
+  "sha": "5fcc8e73e0133429",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 15512,
+    "output": 3700,
+    "reasoning": 2427,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 169754,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5915,
+   "raw_usage": {
+    "completion_tokens": 3700,
+    "prompt_tokens": 15512,
+    "total_tokens": 19212,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2427,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T15:13:53Z",
+   "first_chunk_ms": 3651,
+   "first_text_ms": 120247,
+   "response_id": "chatcmpl-bwtokcmmt6eunxqztqngcggipp7tn3ikjzdhgpkd6gc66wak55pa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 15512,
+  "output": 3700,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2427
+ },
+ "cost_reported": null,
+ "latency_ms": 169754,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 80, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"OptimizedCursorPaginator is a numeric paginator but is used with order_by=\\\"-datetime\\\", so the optimized path always 500s\", \"body\": \"The endpoint passes order_by=\\\"-datetime\\\" to OptimizedCursorPaginator, but that paginator's get_item_key (src/sentry/api/paginator.py, in the new class) does `int(math.floor(value) ...)` directly on the attribute value, unlike DateTimePaginator which first converts the datetime to a numeric timestamp via strftime. Calling math.floor on a datetime raises TypeError, so on the very first page (cursor value 0, results non-empty) build_cursor will call get_item_key(results[0]) and the request will raise a 500. Additionally, value_from_cursor returns the raw numeric cursor value, so any subsequent page would feed an integer into the `datetime <= %s` comparison in build_queryset, which is also wrong. The entire optimized_pagination=true code path is non-functional for this endpoint; the paginator needs DateTimePaginator's key conversion (or should subclass it).\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 882, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Negative-offset branch slices a Django queryset with negative indexes, which raises AssertionError \u2014 the comment claiming the ORM handles it is false\", \"body\": \"The new `enable_advanced_features and cursor.offset < 0` branch does `results = list(queryset[start_offset:stop])` with start_offset taken straight from the client-supplied cursor offset (cursors are parsed from the `cursor` query param as `value:offset:is_prev` in Cursor.from_string, so a negative offset like `0:-100:0` is fully client-controllable). Django querysets do not support negative slicing \u2014 queryset[-100:...] raises `AssertionError: Negative indexing is not supported`, producing a 500. The comment 'The underlying Django ORM properly handles negative slicing automatically' is incorrect, as is the docstring claim that this 'enables access to data beyond normal pagination bounds'. The only effect of this branch is a crash for any caller who supplies a negative offset, and it is enabled on the audit logs endpoint whenever a superuser/global-access member passes optimized_pagination=true.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 182, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"BasePaginator.get_result now silently clamps negative non-prev offsets to 0, changing shared behavior for every paginator\", \"body\": \"This PR modifies the shared BasePaginator.get_result: `start_offset = max(0, offset) if not cursor.is_prev else offset`. Since cursor.offset comes from the client-supplied cursor string, a previously invalid cursor (negative offset on a forward page) used to fail loudly (Django raises on negative queryset slicing, which is the existing signal that the cursor is malformed); it is now silently rewritten to offset 0, returning page 1 as if the cursor were valid. This affects all endpoints using Paginator/DateTimePaginator, not just the audit log endpoint, and it masks bad cursors instead of surfacing them. Meanwhile the is_prev branch still passes a negative offset straight into the slice, so the claimed 'boundary condition handling' is inconsistent. This unrelated behavioral change to shared pagination code should not ship as part of this PR.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 71, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"organization_context.member may be None; attribute access raises AttributeError for non-member auth\", \"body\": \"`enable_advanced = request.user.is_superuser or organization_context.member.has_global_access` dereferences organization_context.member unconditionally whenever the user is not a superuser. RpcUserOrganizationContext.member is optional \u2014 requests authenticated via org auth tokens or other non-member principals reach this endpoint with member=None (which is why other Sentry endpoints guard with `organization_context.member and ...`). Such requests will raise AttributeError and return a 500 instead of audit logs. Guard the access, e.g. `organization_context.member is not None and organization_context.member.has_global_access`.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 821, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for OptimizedCursorPaginator or the new optimized_pagination endpoint branch\", \"body\": \"This PR adds a new paginator class (~90 lines, mostly a copy of BasePaginator.get_result with a new negative-offset branch and an enable_advanced_features flag) plus a new conditional code path in the audit logs endpoint, but adds no tests. Tests would have caught the two hard failures introduced here: the numeric get_item_key being incompatible with the endpoint's datetime ordering (TypeError on the first page) and the negative-offset branch raising on queryset slicing. At minimum there should be unit tests for OptimizedCursorPaginator covering prev/next cursors, empty results, and negative/malformed offsets, and an endpoint test exercising optimized_pagination=true for both superuser and non-superuser requests.\"}, {\"file\": \"src/sentry/utils/cursors.py\", \"line\": 26, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Added comment claims a behavior change that does not exist\", \"body\": \"The new comment in Cursor.__init__ says 'Performance optimization: Allow negative offsets for advanced pagination scenarios / This enables efficient reverse pagination from arbitrary positions in large datasets', but the code is unchanged (`self.offset = int(offset)` already accepted negatives before this PR). The comment misdocuments the code, implies a feature that Cursor itself does not provide, and \u2014 since negative offsets actually crash queryset slicing downstream \u2014 is actively misleading to future readers.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 80,
+   "severity": "high",
+   "category": "bug",
+   "title": "OptimizedCursorPaginator is a numeric paginator but is used with order_by=\"-datetime\", so the optimized path always 500s",
+   "body": "The endpoint passes order_by=\"-datetime\" to OptimizedCursorPaginator, but that paginator's get_item_key (src/sentry/api/paginator.py, in the new class) does `int(math.floor(value) ...)` directly on the attribute value, unlike DateTimePaginator which first converts the datetime to a numeric timestamp via strftime. Calling math.floor on a datetime raises TypeError, so on the very first page (cursor value 0, results non-empty) build_cursor will call get_item_key(results[0]) and the request will raise a 500. Additionally, value_from_cursor returns the raw numeric cursor value, so any subsequent page would feed an integer into the `datetime <= %s` comparison in build_queryset, which is also wrong. The entire optimized_pagination=true code path is non-functional for this endpoint; the paginator needs DateTimePaginator's key conversion (or should subclass it)."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 882,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Negative-offset branch slices a Django queryset with negative indexes, which raises AssertionError \u2014 the comment claiming the ORM handles it is false",
+   "body": "The new `enable_advanced_features and cursor.offset < 0` branch does `results = list(queryset[start_offset:stop])` with start_offset taken straight from the client-supplied cursor offset (cursors are parsed from the `cursor` query param as `value:offset:is_prev` in Cursor.from_string, so a negative offset like `0:-100:0` is fully client-controllable). Django querysets do not support negative slicing \u2014 queryset[-100:...] raises `AssertionError: Negative indexing is not supported`, producing a 500. The comment 'The underlying Django ORM properly handles negative slicing automatically' is incorrect, as is the docstring claim that this 'enables access to data beyond normal pagination bounds'. The only effect of this branch is a crash for any caller who supplies a negative offset, and it is enabled on the audit logs endpoint whenever a superuser/global-access member passes optimized_pagination=true."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/paginator.py",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "BasePaginator.get_result now silently clamps negative non-prev offsets to 0, changing shared behavior for every paginator",
+   "body": "This PR modifies the shared BasePaginator.get_result: `start_offset = max(0, offset) if not cursor.is_prev else offset`. Since cursor.offset comes from the client-supplied cursor string, a previously invalid cursor (negative offset on a forward page) used to fail loudly (Django raises on negative queryset slicing, which is the existing signal that the cursor is malformed); it is now silently rewritten to offset 0, returning page 1 as if the cursor were valid. This affects all endpoints using Paginator/DateTimePaginator, not just the audit log endpoint, and it masks bad cursors instead of surfacing them. Meanwhile the is_prev branch still passes a negative offset straight into the slice, so the claimed 'boundary condition handling' is inconsistent. This unrelated behavioral change to shared pagination code should not ship as part of this PR."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 71,
+   "severity": "medium",
+   "category": "bug",
+   "title": "organization_context.member may be None; attribute access raises AttributeError for non-member auth",
+   "body": "`enable_advanced = request.user.is_superuser or organization_context.member.has_global_access` dereferences organization_context.member unconditionally whenever the user is not a superuser. RpcUserOrganizationContext.member is optional \u2014 requests authenticated via org auth tokens or other non-member principals reach this endpoint with member=None (which is why other Sentry endpoints guard with `organization_context.member and ...`). Such requests will raise AttributeError and return a 500 instead of audit logs. Guard the access, e.g. `organization_context.member is not None and organization_context.member.has_global_access`."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/paginator.py",
+   "line": 821,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for OptimizedCursorPaginator or the new optimized_pagination endpoint branch",
+   "body": "This PR adds a new paginator class (~90 lines, mostly a copy of BasePaginator.get_result with a new negative-offset branch and an enable_advanced_features flag) plus a new conditional code path in the audit logs endpoint, but adds no tests. Tests would have caught the two hard failures introduced here: the numeric get_item_key being incompatible with the endpoint's datetime ordering (TypeError on the first page) and the negative-offset branch raising on queryset slicing. At minimum there should be unit tests for OptimizedCursorPaginator covering prev/next cursors, empty results, and negative/malformed offsets, and an endpoint test exercising optimized_pagination=true for both superuser and non-superuser requests."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/utils/cursors.py",
+   "line": 26,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Added comment claims a behavior change that does not exist",
+   "body": "The new comment in Cursor.__init__ says 'Performance optimization: Allow negative offsets for advanced pagination scenarios / This enables efficient reverse pagination from arbitrary positions in large datasets', but the code is unchanged (`self.offset = int(offset)` already accepted negatives before this PR). The comment misdocuments the code, implies a feature that Cursor itself does not provide, and \u2014 since negative offsets actually crash queryset slicing downstream \u2014 is actively misleading to future readers."
+  }
+ ],
+ "finding_count": 6
+}

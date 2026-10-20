@@ -1,0 +1,169 @@
+{
+ "run_id": "grok-4.7__xhigh__sentry-greptile__2__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__2",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+ "repeat": 2,
+ "started_at": "2026-10-18T00:08:39Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134937,
+  "sha": "12fcc907f4816f00",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 37485,
+    "output": 50438,
+    "reasoning": 48501,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.378174,
+   "latency_ms": 753916,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 8278,
+   "raw_usage": {
+    "completion_tokens": 50438,
+    "prompt_tokens": 38637,
+    "total_tokens": 89075,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 48501,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.378174,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.378174,
+     "upstream_inference_prompt_cost": 0.075546,
+     "upstream_inference_completions_cost": 0.302628
+    }
+   },
+   "started_at": "2026-10-18T00:08:39Z",
+   "first_chunk_ms": 2753,
+   "first_text_ms": 730089,
+   "response_id": "gen-1792282120-Td2suorXTCKG9Lw8dh99",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 37485,
+  "output": 50438,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 48501
+ },
+ "cost_reported": 0.378174,
+ "latency_ms": 753916,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/buffer.py\", \"line\": 197, \"severity\": \"critical\", \"category\": \"data\", \"title\": \"SET to ZSET switch has no migration and breaks rollback\", \"body\": \"process_spans now ZADDs span payloads into span-buf:s:* keys, and add-buffer.lua plus _load_segment_data read those same keys with ZCARD, ZUNIONSTORE, ZPOPMIN, and ZSCAN. Existing deployments created those keys with SADD, so Redis returns WRONGTYPE for up to redis_ttl (default 3600s) after deploy. Flush of already-buffered segments fails the same way, so in-flight segments cannot be drained. Rollback is also unsafe: once this build writes a sorted set, the old SADD/SUNIONSTORE/SSCAN code cannot read it. Pipelines are transaction=False, so commands that succeed are committed even if a later command in the batch raises. A batch that touches both a new key and an old set can create sorted-set keys and then error before the Lua EXPIRE runs, leaving span payloads in Redis with no TTL and no queue entry (never flushed, never expired). There is no key-prefix change, dual-read, or conversion step.\"}, {\"file\": \"src/sentry/scripts/spans/add-buffer.lua\", \"line\": 47, \"severity\": \"high\", \"category\": \"data\", \"title\": \"ZUNIONSTORE sums scores and evicts the wrong spans on redelivery\", \"body\": \"Both ZUNIONSTORE calls (the span-key merge around line 47 and the parent-key merge around line 53) use Redis's default AGGREGATE SUM. Members are the raw span payload, and the score is end_timestamp_precise. Python ZADDs onto the pre-redirect parent key, then the script unions that key into the destination segment and unlinks the source. On the normal at-least-once path (crash after process_spans, before offset commit, then redelivery), the payload is ZADDed again onto the parent key while the same member still exists in the destination, so the scores are added. One redelivery doubles the timestamp; further redeliveries keep inflating it. zpopmin then treats redelivered spans as the newest and drops other spans that actually ended later. A crash between ZUNIONSTORE and UNLINK causes the same overlap on retry. The union needs AGGREGATE MIN or MAX so a member keeps a single timestamp.\"}, {\"file\": \"src/sentry/scripts/spans/add-buffer.lua\", \"line\": 63, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Eviction silently drops spans and the flush-time cap was removed\", \"body\": \"When a segment exceeds 1000 members the script ZPOPMINs the lowest end_timestamp_precise scores down to 1000 and discards those payloads with no metric or log. The limit is hardcoded, so SpansBuffer.max_segment_spans (default 1001) no longer does anything. Nothing protects the segment root: if the root span has the lowest score (clock skew, a zero timestamp, or equal scores), it is deleted, and the script still SETEXes the has-root-span flag afterward because that flag is based on the current call, not on whether the root payload survived. Downstream then flushes a short-timeout segment with no root span and no truncation marker, and offsets are committed, so the dropped spans are gone permanently. The previous flush backstop in _load_segment_data (skip the segment and increment spans.buffer.flush_segments.segment_span_count_exceeded when len(payloads) > max_segment_spans) was deleted, so a segment that slips past this cap is fully loaded and emitted instead of being rejected. zpopmin of a huge excess also runs inside the Lua script and can block the Redis shard.\"}, {\"file\": \"src/sentry/scripts/spans/add-buffer.lua\", \"line\": 30, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Redirect walk limit reduced from 10000 to 1000 splits deep segments\", \"body\": \"The parent-redirect walk used to allow 10000 hops, with a comment that a tree deeper than that limit would not be joined correctly. The limit is now 1000 and the warning is gone. The loop still does not fail or metric when it exhausts the budget: it HSETs the span to the intermediate id it reached and merges only that far. Segment trees deeper than 1000 redirects (possible with recursive instrumentation) are flushed as separate segments, so spans are missing from the root segment or attached to the wrong segment id. The only signal left is the existing max_redirect_depth gauge sitting at the cap.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 79, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Optimized audit-log paginator crashes on datetime ordering\", \"body\": \"The new optimized_pagination=true path, used by superusers and members with global access, paginates AuditLogEntry with OptimizedCursorPaginator and order_by=\\\"-datetime\\\". That class is a numeric Paginator clone: get_item_key does math.floor/math.ceil on the key, and value_from_cursor returns the raw cursor number. Audit log rows are ordered by a datetime, which is why this endpoint used DateTimePaginator (timestamp conversion in both directions). The first page that returns any rows calls get_item_key from build_cursor and raises TypeError (math.floor on a datetime), so the request 500s. Even if that cast were fixed, the queryset filter would compare the datetime column to an int instead of a datetime. Empty result sets happen to avoid the key callback, so the failure only shows up when there is data. There is no test for this query param. enable_advanced_features is forwarded into the paginator because paginate already forwards constructor kwargs such as order_by; it does not select a datetime-aware implementation.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 882, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Negative-offset slicing raises ValueError; comments falsely claim it is safe\", \"body\": \"OptimizedCursorPaginator, when enable_advanced_features is set and the client cursor offset is negative, slices the queryset with that negative start (queryset[cursor.offset:stop]). Django QuerySet rejects negative slices with ValueError before any SQL runs, so this path 500s instead of paginating. The comments say Django handles negative slicing and that this reaches data beyond normal pagination bounds while remaining safe because the queryset is permission-filtered. Neither is true: the call throws, and OffsetPaginator already treats a negative offset as BadPaginationError rather than something to pass through. The same mistaken change was applied to BasePaginator.get_result (line 182) for every DateTimePaginator and Paginator endpoint: a forward cursor with a negative offset is now clamped to 0 and returns the first page instead of failing, while a previous-page cursor with a negative offset is still passed through and 500s. cursors.py only adds a comment; Cursor.from_string already accepted a negative offset. This code should be removed, not papered over by evaluating the queryset to a list.\"}, {\"file\": \"src/sentry/spans/consumers/process/factory.py\", \"line\": 141, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Missing end_timestamp_precise stalls the span consumer\", \"body\": \"process_batch now requires val[\\\"end_timestamp_precise\\\"] and uses it as the Redis sorted-set score. The value is only cast to SpanEvent after rapidjson.loads; nothing validates the payload. A message that omits the field, or that has a non-numeric value, raises before any span in the batch is buffered. The previous consumer fixture did not include this field, and the old code never read it. Arroyo retries a failed batch, so one poison message stalls the partition indefinitely. A missing or non-numeric score needs an explicit drop or default plus a metric, not a KeyError.\"}, {\"file\": \"tests/sentry/spans/test_buffer.py\", \"line\": 157, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test covers eviction, score stability, or the 1000 cap\", \"body\": \"The buffer tests only add end_timestamp_precise so existing Span constructions still run. Every fixture is 4-5 spans with the same timestamp, then sorted by span_id before compare, so they cannot catch the new behavior: ZPOPMIN trimming to 1000, dropping the oldest scores, deleting a root span, ZUNIONSTORE doubling scores when the same payload is merged twice, or WRONGTYPE on a key that was previously a set. The insert-time cap and the removed flush-time span-count rejection can both ship while these tests stay green.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/buffer.py",
+   "line": 197,
+   "severity": "critical",
+   "category": "data",
+   "title": "SET to ZSET switch has no migration and breaks rollback",
+   "body": "process_spans now ZADDs span payloads into span-buf:s:* keys, and add-buffer.lua plus _load_segment_data read those same keys with ZCARD, ZUNIONSTORE, ZPOPMIN, and ZSCAN. Existing deployments created those keys with SADD, so Redis returns WRONGTYPE for up to redis_ttl (default 3600s) after deploy. Flush of already-buffered segments fails the same way, so in-flight segments cannot be drained. Rollback is also unsafe: once this build writes a sorted set, the old SADD/SUNIONSTORE/SSCAN code cannot read it. Pipelines are transaction=False, so commands that succeed are committed even if a later command in the batch raises. A batch that touches both a new key and an old set can create sorted-set keys and then error before the Lua EXPIRE runs, leaving span payloads in Redis with no TTL and no queue entry (never flushed, never expired). There is no key-prefix change, dual-read, or conversion step."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/scripts/spans/add-buffer.lua",
+   "line": 47,
+   "severity": "high",
+   "category": "data",
+   "title": "ZUNIONSTORE sums scores and evicts the wrong spans on redelivery",
+   "body": "Both ZUNIONSTORE calls (the span-key merge around line 47 and the parent-key merge around line 53) use Redis's default AGGREGATE SUM. Members are the raw span payload, and the score is end_timestamp_precise. Python ZADDs onto the pre-redirect parent key, then the script unions that key into the destination segment and unlinks the source. On the normal at-least-once path (crash after process_spans, before offset commit, then redelivery), the payload is ZADDed again onto the parent key while the same member still exists in the destination, so the scores are added. One redelivery doubles the timestamp; further redeliveries keep inflating it. zpopmin then treats redelivered spans as the newest and drops other spans that actually ended later. A crash between ZUNIONSTORE and UNLINK causes the same overlap on retry. The union needs AGGREGATE MIN or MAX so a member keeps a single timestamp."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/scripts/spans/add-buffer.lua",
+   "line": 63,
+   "severity": "high",
+   "category": "data",
+   "title": "Eviction silently drops spans and the flush-time cap was removed",
+   "body": "When a segment exceeds 1000 members the script ZPOPMINs the lowest end_timestamp_precise scores down to 1000 and discards those payloads with no metric or log. The limit is hardcoded, so SpansBuffer.max_segment_spans (default 1001) no longer does anything. Nothing protects the segment root: if the root span has the lowest score (clock skew, a zero timestamp, or equal scores), it is deleted, and the script still SETEXes the has-root-span flag afterward because that flag is based on the current call, not on whether the root payload survived. Downstream then flushes a short-timeout segment with no root span and no truncation marker, and offsets are committed, so the dropped spans are gone permanently. The previous flush backstop in _load_segment_data (skip the segment and increment spans.buffer.flush_segments.segment_span_count_exceeded when len(payloads) > max_segment_spans) was deleted, so a segment that slips past this cap is fully loaded and emitted instead of being rejected. zpopmin of a huge excess also runs inside the Lua script and can block the Redis shard."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/scripts/spans/add-buffer.lua",
+   "line": 30,
+   "severity": "medium",
+   "category": "data",
+   "title": "Redirect walk limit reduced from 10000 to 1000 splits deep segments",
+   "body": "The parent-redirect walk used to allow 10000 hops, with a comment that a tree deeper than that limit would not be joined correctly. The limit is now 1000 and the warning is gone. The loop still does not fail or metric when it exhausts the budget: it HSETs the span to the intermediate id it reached and merges only that far. Segment trees deeper than 1000 redirects (possible with recursive instrumentation) are flushed as separate segments, so spans are missing from the root segment or attached to the wrong segment id. The only signal left is the existing max_redirect_depth gauge sitting at the cap."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 79,
+   "severity": "high",
+   "category": "bug",
+   "title": "Optimized audit-log paginator crashes on datetime ordering",
+   "body": "The new optimized_pagination=true path, used by superusers and members with global access, paginates AuditLogEntry with OptimizedCursorPaginator and order_by=\"-datetime\". That class is a numeric Paginator clone: get_item_key does math.floor/math.ceil on the key, and value_from_cursor returns the raw cursor number. Audit log rows are ordered by a datetime, which is why this endpoint used DateTimePaginator (timestamp conversion in both directions). The first page that returns any rows calls get_item_key from build_cursor and raises TypeError (math.floor on a datetime), so the request 500s. Even if that cast were fixed, the queryset filter would compare the datetime column to an int instead of a datetime. Empty result sets happen to avoid the key callback, so the failure only shows up when there is data. There is no test for this query param. enable_advanced_features is forwarded into the paginator because paginate already forwards constructor kwargs such as order_by; it does not select a datetime-aware implementation."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/api/paginator.py",
+   "line": 882,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Negative-offset slicing raises ValueError; comments falsely claim it is safe",
+   "body": "OptimizedCursorPaginator, when enable_advanced_features is set and the client cursor offset is negative, slices the queryset with that negative start (queryset[cursor.offset:stop]). Django QuerySet rejects negative slices with ValueError before any SQL runs, so this path 500s instead of paginating. The comments say Django handles negative slicing and that this reaches data beyond normal pagination bounds while remaining safe because the queryset is permission-filtered. Neither is true: the call throws, and OffsetPaginator already treats a negative offset as BadPaginationError rather than something to pass through. The same mistaken change was applied to BasePaginator.get_result (line 182) for every DateTimePaginator and Paginator endpoint: a forward cursor with a negative offset is now clamped to 0 and returns the first page instead of failing, while a previous-page cursor with a negative offset is still passed through and 500s. cursors.py only adds a comment; Cursor.from_string already accepted a negative offset. This code should be removed, not papered over by evaluating the queryset to a list."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/spans/consumers/process/factory.py",
+   "line": 141,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Missing end_timestamp_precise stalls the span consumer",
+   "body": "process_batch now requires val[\"end_timestamp_precise\"] and uses it as the Redis sorted-set score. The value is only cast to SpanEvent after rapidjson.loads; nothing validates the payload. A message that omits the field, or that has a non-numeric value, raises before any span in the batch is buffered. The previous consumer fixture did not include this field, and the old code never read it. Arroyo retries a failed batch, so one poison message stalls the partition indefinitely. A missing or non-numeric score needs an explicit drop or default plus a metric, not a KeyError."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/spans/test_buffer.py",
+   "line": 157,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test covers eviction, score stability, or the 1000 cap",
+   "body": "The buffer tests only add end_timestamp_precise so existing Span constructions still run. Every fixture is 4-5 spans with the same timestamp, then sorted by span_id before compare, so they cannot catch the new behavior: ZPOPMIN trimming to 1000, dropping the oldest scores, deleting a root span, ZUNIONSTORE doubling scores when the same payload is merged twice, or WRONGTYPE on a key that was previously a set. The insert-time cap and the removed flush-time span-count rejection can both ship while these tests stay green."
+  }
+ ],
+ "finding_count": 8
+}

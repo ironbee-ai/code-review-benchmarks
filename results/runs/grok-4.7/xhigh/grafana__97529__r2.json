@@ -1,0 +1,169 @@
+{
+ "run_id": "grok-4.7__xhigh__grafana__97529__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-17T23:29:56Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 37193,
+    "output": 56103,
+    "reasoning": 54287,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.41158,
+   "latency_ms": 777559,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 8205,
+   "raw_usage": {
+    "completion_tokens": 56103,
+    "prompt_tokens": 38345,
+    "total_tokens": 94448,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 54287,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.41158,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.41158,
+     "upstream_inference_prompt_cost": 0.074962,
+     "upstream_inference_completions_cost": 0.336618
+    }
+   },
+   "started_at": "2026-10-17T23:29:56Z",
+   "first_chunk_ms": 3091,
+   "first_text_ms": 763957,
+   "response_id": "gen-1792279796-Irupeds88QIlB686YdWC",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 37193,
+  "output": 56103,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 54287
+ },
+ "cost_reported": 0.41158,
+ "latency_ms": 777559,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 138, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Same-key index builds are no longer serialized\", \"body\": \"BuildIndex used to hold bleveBackend.cacheMu for the entire build, including bleve.New and the document scan. GetIndex takes that same lock, so a caller that arrived while a build was in progress blocked and then saw the published index instead of starting a second build. The lock is now taken only for the unconditional `b.cache[key] = idx` at the end. getOrCreateIndex is still an unlocked check-then-act (GetIndex, and if nil, build); its own comment says that is unsafe. Two searches, or a search and a watch event, for a namespace that is not cached yet can both miss and both build. Each build creates a separate bleve index; the slower one overwrites the cache entry and the first index is never closed. Callers that already hold the first index keep writing into an object that is no longer served, so later searches miss those updates and the two views diverge. If size is above FileThreshold \u2014 including the zero default, where any positive size uses a file index, and getOrCreateIndex passes a placeholder size of 10 \u2014 both builds also call bleve.New on the same directory, which can fail or corrupt the index. Different keys can still build in parallel, but each NamespacedResource must be single-flighted, and a finished build must not replace an index already published for that key.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Index init workers share one err and can drop failures\", \"body\": \"searchSupport.init launches one errgroup goroutine per namespace, and each goroutine does `_, _, err = s.build(...)` then `return err`, using the single err variable from the outer function. Those goroutines run concurrently up to initWorkers. That assignment races with the other workers and with `err = group.Wait()` after they join. A worker can return another worker's error, or nil if a successful build overwrote err before the return, so group.Wait can return nil even though a namespace failed to index. Startup then logs success and starts the watch with that namespace missing from the search index and no error. The same closure also does totalBatchesIndexed++ with no synchronization, so the \\\"namespaces indexed\\\" span attribute is a data race and can be wrong. Each worker needs its own error variable, and the counter should be atomic or computed after Wait.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 203, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Writes during index build are never applied to the search index\", \"body\": \"Index init lists each namespace and builds its index, discards the resource version that build/ListIterator returns, and only then calls storage.WatchWriteEvents. That subscription samples the latest resource version at subscribe time, and the SQL poller only returns history rows newer than that version. A create, update, or delete committed after a namespace was snapshotted and before the subscription \u2014 including writes from another replica while this process is still building indexes \u2014 is neither in the snapshot nor replayed. Search keeps serving the stale index until that object is written again. The gap is the full index build, which this change says is long enough to exceed a request deadline, and it is now on the startup path. The watch needs to start first (or from the minimum version captured before listing), and events newer than each snapshot version must be applied when that build finishes.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 209, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Search index watch panics or leaks on shutdown\", \"body\": \"After indexing, init starts `for { v := <-events; s.handleEvent(watchctx, v) }` with watchctx set to context.Background(). The loop never checks whether the receive succeeded, and server Stop cannot cancel that context. WatchWriteEvents' poller closes the channel when the SQL backend stops (backend done / lifecycle.Stop). A receive on a closed channel returns a nil *WrittenEvent, and handleEvent immediately reads evt.Type, which nil-pointer panics and crashes the process during shutdown. If the backend is not stopped, the goroutine never exits either, because it is not tied to the server context. Init now runs inside NewResourceServer whenever search is configured, so this goroutine is always started, not only after a client triggers lazy init. The loop should use the server's cancellable context and return when that context is done or the channel is closed.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 128, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Failed file index build is left on disk and blocks every retry\", \"body\": \"BuildIndex calls bleve.New on a stable path (root/namespace/resource.group) when size > FileThreshold. If that succeeds and the builder callback or Flush then fails, the function returns the error (lines 128 and 134) without closing the index or deleting the directory. bleve.New fails if the path already exists, and this code never falls back to bleve.Open. The next build of that namespace, including the next process start, fails immediately. NewResourceServer now aborts startup when index init fails, so one document that fails to index during the startup build can leave a directory that prevents the storage server from ever starting again until it is deleted by hand. On any error after a successful bleve.New, close the index and remove a partially created on-disk index before returning.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 762, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Broadcaster watch goroutine panics when the event stream closes\", \"body\": \"initWatcher starts a goroutine that forever does `v := <-events` and then reads v.Type and v.ResourceVersion, with no check that the channel is still open. The SQL poller closes that channel when the backend stops. The next receive is a nil event, the dereference panics, and process shutdown crashes. NewResourceServer now always calls Init, which always calls initWatcher, so this goroutine is created on every storage-server start rather than only after the first RPC. The loop must exit when the receive fails or the server context is cancelled, and it must not touch the event after a closed channel.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 321, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"RPCs no longer fail after Stop\", \"body\": \"Stop stores \\\"service is stopping\\\" and then \\\"service is stopped\\\" in s.initErr. Init returns that value on every later call because sync.Once has already run, which is how handlers used to reject work after shutdown. Create, Update, Delete, Read, List, Watch, Search, History, Origin, IsHealthy, PutBlob, and GetBlob all called Init first and therefore returned that error instead of touching storage. Those calls were removed when initialization moved into NewResourceServer, and nothing else reads initErr. After Stop, those handlers still perform reads and writes against the backend while shutdown is in progress. Each RPC needs an explicit stopped check, or it must observe the cancelled server context, so a stopped server rejects new requests.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Postgres storage-server startup test is skipped\", \"body\": \"TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer is the integration test that boots the storage-server target and checks that it actually serves /metrics. This change initializes unified storage inside server construction, which is the startup path that test covers, but the patch skips it whenever GRAFANA_TEST_DB=postgres, with a TODO that it fails in Drone and works locally. Postgres is a supported backend (sqlite is already excluded). CI will not catch eager-init startup failures on Postgres \u2014 SQL errors, hangs, or the HTTP server never binding \u2014 and the known failure is skipped instead of fixed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 138,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Same-key index builds are no longer serialized",
+   "body": "BuildIndex used to hold bleveBackend.cacheMu for the entire build, including bleve.New and the document scan. GetIndex takes that same lock, so a caller that arrived while a build was in progress blocked and then saw the published index instead of starting a second build. The lock is now taken only for the unconditional `b.cache[key] = idx` at the end. getOrCreateIndex is still an unlocked check-then-act (GetIndex, and if nil, build); its own comment says that is unsafe. Two searches, or a search and a watch event, for a namespace that is not cached yet can both miss and both build. Each build creates a separate bleve index; the slower one overwrites the cache entry and the first index is never closed. Callers that already hold the first index keep writing into an object that is no longer served, so later searches miss those updates and the two views diverge. If size is above FileThreshold \u2014 including the zero default, where any positive size uses a file index, and getOrCreateIndex passes a placeholder size of 10 \u2014 both builds also call bleve.New on the same directory, which can fail or corrupt the index. Different keys can still build in parallel, but each NamespacedResource must be single-flighted, and a finished build must not replace an index already published for that key."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Index init workers share one err and can drop failures",
+   "body": "searchSupport.init launches one errgroup goroutine per namespace, and each goroutine does `_, _, err = s.build(...)` then `return err`, using the single err variable from the outer function. Those goroutines run concurrently up to initWorkers. That assignment races with the other workers and with `err = group.Wait()` after they join. A worker can return another worker's error, or nil if a successful build overwrote err before the return, so group.Wait can return nil even though a namespace failed to index. Startup then logs success and starts the watch with that namespace missing from the search index and no error. The same closure also does totalBatchesIndexed++ with no synchronization, so the \"namespaces indexed\" span attribute is a data race and can be wrong. Each worker needs its own error variable, and the counter should be atomic or computed after Wait."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 203,
+   "severity": "high",
+   "category": "data",
+   "title": "Writes during index build are never applied to the search index",
+   "body": "Index init lists each namespace and builds its index, discards the resource version that build/ListIterator returns, and only then calls storage.WatchWriteEvents. That subscription samples the latest resource version at subscribe time, and the SQL poller only returns history rows newer than that version. A create, update, or delete committed after a namespace was snapshotted and before the subscription \u2014 including writes from another replica while this process is still building indexes \u2014 is neither in the snapshot nor replayed. Search keeps serving the stale index until that object is written again. The gap is the full index build, which this change says is long enough to exceed a request deadline, and it is now on the startup path. The watch needs to start first (or from the minimum version captured before listing), and events newer than each snapshot version must be applied when that build finishes."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 209,
+   "severity": "high",
+   "category": "bug",
+   "title": "Search index watch panics or leaks on shutdown",
+   "body": "After indexing, init starts `for { v := <-events; s.handleEvent(watchctx, v) }` with watchctx set to context.Background(). The loop never checks whether the receive succeeded, and server Stop cannot cancel that context. WatchWriteEvents' poller closes the channel when the SQL backend stops (backend done / lifecycle.Stop). A receive on a closed channel returns a nil *WrittenEvent, and handleEvent immediately reads evt.Type, which nil-pointer panics and crashes the process during shutdown. If the backend is not stopped, the goroutine never exits either, because it is not tied to the server context. Init now runs inside NewResourceServer whenever search is configured, so this goroutine is always started, not only after a client triggers lazy init. The loop should use the server's cancellable context and return when that context is done or the channel is closed."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 128,
+   "severity": "high",
+   "category": "bug",
+   "title": "Failed file index build is left on disk and blocks every retry",
+   "body": "BuildIndex calls bleve.New on a stable path (root/namespace/resource.group) when size > FileThreshold. If that succeeds and the builder callback or Flush then fails, the function returns the error (lines 128 and 134) without closing the index or deleting the directory. bleve.New fails if the path already exists, and this code never falls back to bleve.Open. The next build of that namespace, including the next process start, fails immediately. NewResourceServer now aborts startup when index init fails, so one document that fails to index during the startup build can leave a directory that prevents the storage server from ever starting again until it is deleted by hand. On any error after a successful bleve.New, close the index and remove a partially created on-disk index before returning."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 762,
+   "severity": "high",
+   "category": "bug",
+   "title": "Broadcaster watch goroutine panics when the event stream closes",
+   "body": "initWatcher starts a goroutine that forever does `v := <-events` and then reads v.Type and v.ResourceVersion, with no check that the channel is still open. The SQL poller closes that channel when the backend stops. The next receive is a nil event, the dereference panics, and process shutdown crashes. NewResourceServer now always calls Init, which always calls initWatcher, so this goroutine is created on every storage-server start rather than only after the first RPC. The loop must exit when the receive fails or the server context is cancelled, and it must not touch the event after a closed channel."
+  },
+  {
+   "index": 6,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 321,
+   "severity": "medium",
+   "category": "bug",
+   "title": "RPCs no longer fail after Stop",
+   "body": "Stop stores \"service is stopping\" and then \"service is stopped\" in s.initErr. Init returns that value on every later call because sync.Once has already run, which is how handlers used to reject work after shutdown. Create, Update, Delete, Read, List, Watch, Search, History, Origin, IsHealthy, PutBlob, and GetBlob all called Init first and therefore returned that error instead of touching storage. Those calls were removed when initialization moved into NewResourceServer, and nothing else reads initErr. After Stop, those handlers still perform reads and writes against the backend while shutdown is in progress. Each RPC needs an explicit stopped check, or it must observe the cancelled server context, so a stopped server rejects new requests."
+  },
+  {
+   "index": 7,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Postgres storage-server startup test is skipped",
+   "body": "TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer is the integration test that boots the storage-server target and checks that it actually serves /metrics. This change initializes unified storage inside server construction, which is the startup path that test covers, but the patch skips it whenever GRAFANA_TEST_DB=postgres, with a TODO that it fails in Drone and works locally. Postgres is a supported backend (sqlite is already excluded). CI will not catch eager-init startup failures on Postgres \u2014 SQL errors, hangs, or the HTTP server never binding \u2014 and the known failure is skipped instead of fixed."
+  }
+ ],
+ "finding_count": 8
+}

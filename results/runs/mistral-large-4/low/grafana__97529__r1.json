@@ -1,0 +1,206 @@
+{
+ "run_id": "mistral-large-4__low__grafana__97529__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:34:54Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 35117,
+    "output": 3347,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03087479,
+   "latency_ms": 56497,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 14635,
+   "raw_usage": {
+    "completion_tokens": 3347,
+    "prompt_tokens": 35117,
+    "total_tokens": 38464,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.03087479,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03087479,
+     "upstream_inference_prompt_cost": 0.02387956,
+     "upstream_inference_completions_cost": 0.00699523
+    }
+   },
+   "started_at": "2026-10-17T11:34:54Z",
+   "first_chunk_ms": 3653,
+   "first_text_ms": 3653,
+   "response_id": "gen-1792236894-L5EyIMfMekErTGPKkaZc",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 35117,
+  "output": 3347,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.03087479,
+ "latency_ms": 56497,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 258,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Init is called from NewResourceServer with a context that is cancelled on Stop, but Init's search.init spawns a goroutine using context.Background() while the watcher uses the cancellable ctx\",\n      \"body\": \"NewResourceServer now calls s.Init(ctx) at construction time using the server's long-lived cancellable context (created at line 229). Inside Init, s.search.init(ctx) is called with this same ctx. In search.go's init (line 202), a new context.Background() is used for WatchWriteEvents, which is fine, but the initial index build (s.build -> s.storage.ListIterator) runs with the server ctx. More importantly, the ordering change in Init (search.init before initWatcher) combined with eager initialization means that if the process is shutting down or the context is cancelled during startup, the index build will fail with context cancelled \u2014 the exact problem the PR description says it is fixing for gRPC calls, now moved to startup. Additionally, because Init is now called inside NewResourceServer, any caller that constructs a ResourceServer but never starts it (e.g., tests, or code paths that create the server for validation) will now block on a full index build, which can be very slow on large datasets and has no timeout. This is a behavioral change that can cause startup hangs or test timeouts.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 293,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Init uses sync.Once but initErr is read/written without synchronization after Once.Do, and Stop writes initErr concurrently\",\n      \"body\": \"The server struct has `once sync.Once` and `initErr error` (lines 288-289). Init (line 293) uses s.once.Do to set initErr, which is safe for the first call. However, Stop (line 320) writes `s.initErr = fmt.Errorf(\\\"service is stopping\\\")` without any lock and without going through once.Do. If Stop is called concurrently with Init (e.g., during startup while the index is building), or if Init is called again after Stop (the once prevents re-execution but the read of s.initErr at line 317 is unsynchronized relative to Stop's write), this is a data race on initErr. The previous lazy-init pattern called Init on every gRPC method, making concurrent access more likely; now with eager init the window is smaller but Stop can still race with the in-flight Init. The initErr field should be protected by a mutex or atomic, or Stop should not write to it.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 320,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Stop overwrites initErr and returns nil even when lifecycle.Stop failed, losing the error and returning inconsistent state\",\n      \"body\": \"In Stop (lines 320-342), when s.lifecycle.Stop(ctx) returns an error, stopFailed is set to true and initErr is updated to include the error. However, the function then calls s.cancel() and at line 336-338, if stopFailed is true it returns s.initErr (the error). But if stopFailed is false, it overwrites initErr with \\\"service is stopped\\\" and returns nil. The problem: Stop sets `s.initErr = fmt.Errorf(\\\"service is stopping\\\")` at line 321 unconditionally at the start. This means any subsequent call to Init (which is now only called once from NewResourceServer, but could be called by other code paths or tests) will return \\\"service is stopping\\\" even if initialization had previously succeeded. More critically, the initErr field is being used both as the initialization error cache and as a general \\\"server state\\\" error, which is confusing and error-prone. After a successful Init followed by Stop, calling Init again (if once is bypassed or in tests) returns a stale \\\"service is stopping\\\" error rather than the original init result.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/search/bleve.go\",\n      \"line\": 72,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Removing the global lock from BuildIndex creates a race where two concurrent builds for the same key both create indexes and one overwrites the other, losing documents\",\n      \"body\": \"The PR removes the `b.cacheMu.Lock()` / `defer b.cacheMu.Unlock()` that previously wrapped the entire BuildIndex function (lines 88-90 in the diff), and replaces it with a lock only around the final cache insertion (lines 137-139). This means two concurrent calls to BuildIndex for the same NamespacedResource key can both execute simultaneously: both will create a new bleve index (line 98 or 104), both will run the builder callback to populate documents, and both will then write to b.cache[key]. The second write overwrites the first. The consequence: (1) wasted work building the same index twice, (2) the first index may still be in use by a reader (obtained via GetIndex before the second build completed) while the second build replaces it in the cache \u2014 the old index is now orphaned but still referenced, causing stale reads, (3) for file-based indexes (line 98), both builds will try to create/open the same directory path `filepath.Join(b.opts.Root, key.Namespace, ...)`, which can cause bleve.New to fail or corrupt the on-disk index because two bleve instances are writing to the same directory. The original code prevented this by holding the lock for the entire build. The PR description says 'finer grain locking' but the implementation does not add any per-key locking \u2014 it simply removes the lock entirely except for the map write. This is a regression that will cause data loss and index corruption under concurrent access to the same key.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/search/bleve.go\",\n      \"line\": 144,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"TotalDocs iterates over b.cache without holding cacheMu, racing with concurrent BuildIndex writes\",\n      \"body\": \"TotalDocs (lines 144-154) iterates over `b.cache` map directly without acquiring `b.cacheMu.RLock()`. Since BuildIndex now writes to b.cache at line 138 (with lock) but the map is being read here without lock, this is a concurrent map read/write race that can cause a panic (fatal error: concurrent map read and map write) or return incorrect counts. This function is called from search.go line 216 during init logging, and potentially from metrics. The GetIndex method correctly uses RLock (lines 61-62), but TotalDocs does not.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/search.go\",\n      \"line\": 189,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"totalBatchesIndexed is incremented inside a goroutine without synchronization, causing a data race and incorrect count\",\n      \"body\": \"In init (lines 186-193), `totalBatchesIndexed++` is executed inside `group.Go(func() error { ... })` closures. Multiple goroutines (limited by s.initWorkers) can execute this concurrently. The variable totalBatchesIndexed is a plain int declared at line 177, not an atomic. This is a data race that can cause lost updates and incorrect values. The Go race detector will flag this. The consequence is incorrect telemetry (the span event at line 199 reports wrong namespace count) and potential undefined behavior. It should use atomic.Int64 or be incremented after group.Wait() by using len(stats).\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/search.go\",\n      \"line\": 202,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Watch event goroutine in init has no shutdown mechanism and leaks, and uses context.Background() ignoring cancellation\",\n      \"body\": \"In init (lines 202-213), after building indexes, a goroutine is started that reads from `events` channel and calls s.handleEvent. This goroutine runs forever with no way to stop it: it uses `watchctx := context.Background()` (line 202) which is never cancelled, and the for loop (lines 208-212) has no exit condition (no select on ctx.Done() or a done channel). When the server is stopped (server.Stop calls s.cancel()), this goroutine continues running, leaking. Additionally, the events channel from s.storage.WatchWriteEvents(watchctx) is never closed by this code, so the goroutine blocks forever on `<-events`. This is a goroutine leak that will accumulate if the server is restarted (e.g., in tests or during reconfiguration). The goroutine should select on a done channel or the server's context.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/search.go\",\n      \"line\": 263,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"IndexMetrics.IndexedKinds is incremented/decremented without nil check in handleEvent, unlike other IndexMetrics usages\",\n      \"body\": \"In handleEvent (lines 262-271), `IndexMetrics.IndexedKinds.WithLabelValues(evt.Key.Resource).Inc()` and `.Dec()` are called without checking if IndexMetrics is nil. Every other usage of IndexMetrics in this file (lines 217, 282, 367) checks `if IndexMetrics != nil` first. If IndexMetrics is nil (e.g., in tests or if metrics registration failed), this will panic with a nil pointer dereference. The nil check is missing here, creating an inconsistency that can cause crashes.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 924,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"History and Origin methods dereference s.search without nil check after Init removal\",\n      \"body\": \"After removing the lazy `s.Init(ctx)` calls from all gRPC methods, the History (line 924) and Origin (line 929) methods now directly call `s.search.History(ctx, req)` and `s.search.Origin(ctx, req)` without checking if s.search is nil. The Search method (line 916) correctly checks `if s.search == nil` first. If the server was created without search configured (opts.Search.Resources == nil, line 250), s.search will be nil, and calling History or Origin will panic with a nil pointer dereference. Previously, the Init call would have run but not prevented this either \u2014 however, the Search method's nil check suggests this is a known case that must be handled. History and Origin need the same nil check.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 258,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"NewResourceServer now blocks on full index build with no timeout, changing the constructor contract from fast to potentially very slow\",\n      \"body\": \"NewResourceServer (line 182) now calls s.Init(ctx) at line 258, which calls s.search.init(ctx) which builds indexes for all namespaces with count > initMinSize. This can take minutes on large datasets. The constructor previously returned quickly and initialization was deferred to first use. Now any caller of NewResourceServer will block until the index is built. This is a significant API contract change: (1) callers may have timeouts on construction, (2) the context passed (line 229, derived from context.Background() with claims) has no deadline, so a hung index build will block forever, (3) tests that construct a ResourceServer will now pay the full index build cost even if they don't need search. The PR description asks 'Does anything else depend on initializing US lazily?' \u2014 this change breaks that assumption for all callers. A timeout or async initialization with readiness check should be considered.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/search.go\",\n      \"line\": 278,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Latency calculation uses evt.ResourceVersion as a timestamp, but ResourceVersion is a monotonically increasing counter, not a unix timestamp\",\n      \"body\": \"In handleEvent (line 278), `latencySeconds := float64(time.Now().UnixMicro()-evt.ResourceVersion) / 1e6` assumes evt.ResourceVersion is a unix timestamp in microseconds. However, looking at the SQL backend (backend.go line 763), ResourceVersion is generated as `max(res.CurrentEpoch, res.ResourceVersion+1)` where CurrentEpoch is the SQL server's microsecond timestamp. So it is a timestamp, but only when the SQL server clock is used. The comment in server.go line 906-907 says 'resource version is a unix timestamp in microseconds'. This is fragile: if the backend implementation changes or if ResourceVersion is ever a simple counter, this calculation will produce nonsensical (potentially negative or huge) latency values. The code should use an explicit timestamp field on the event rather than overloading ResourceVersion.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/search/bleve.go\",\n      \"line\": 172,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"bleveIndex.Write and Flush are not thread-safe but can be called concurrently from watch event handler and search\",\n      \"body\": \"The bleveIndex struct (lines 156-169) has a `batch *bleve.Batch` field with comment 'only valid in single thread' (line 166). After BuildIndex completes and Flush is called (line 132), batch is set to nil (line 202). However, the same index can now be accessed concurrently: (1) the watch event handler in search.go handleEvent calls index.Write (line 257) and index.Delete (line 266), (2) Search calls can happen concurrently via idx.Search. The Write method (lines 172-187) checks `if b.batch != nil` but after Flush, batch is nil so it calls `b.index.Index(...)` directly. Bleve's Index.Index is thread-safe, but the batch field access is not protected. More critically, if a Write happens while another Write is in progress (both see batch==nil), they both call b.index.Index concurrently which is safe in bleve, but the batch field is never re-initialized after Flush, so all writes go through the slower direct Index path. The original code held the cacheMu lock during BuildIndex which prevented concurrent access during build, but now that lock is removed, and the watch handler can call Write on an index that is still being built by another goroutine (if getOrCreateIndex returns an index that is mid-build). Actually, getOrCreateIndex calls build which calls BuildIndex which now inserts into cache only at the end, so a concurrent getOrCreateIndex for the same key will not find it in cache and will start a second build \u2014 see the race finding above. Once both builds complete, the second overwrites the first in cache, but the first index may have pending writes from the watch handler that are now lost.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Init is called from NewResourceServer with a context that is cancelled on Stop, but Init's search.init spawns a goroutine using context.Background() while the watcher uses the cancellable ctx",
+   "body": "NewResourceServer now calls s.Init(ctx) at construction time using the server's long-lived cancellable context (created at line 229). Inside Init, s.search.init(ctx) is called with this same ctx. In search.go's init (line 202), a new context.Background() is used for WatchWriteEvents, which is fine, but the initial index build (s.build -> s.storage.ListIterator) runs with the server ctx. More importantly, the ordering change in Init (search.init before initWatcher) combined with eager initialization means that if the process is shutting down or the context is cancelled during startup, the index build will fail with context cancelled \u2014 the exact problem the PR description says it is fixing for gRPC calls, now moved to startup. Additionally, because Init is now called inside NewResourceServer, any caller that constructs a ResourceServer but never starts it (e.g., tests, or code paths that create the server for validation) will now block on a full index build, which can be very slow on large datasets and has no timeout. This is a behavioral change that can cause startup hangs or test timeouts."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 293,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Init uses sync.Once but initErr is read/written without synchronization after Once.Do, and Stop writes initErr concurrently",
+   "body": "The server struct has `once sync.Once` and `initErr error` (lines 288-289). Init (line 293) uses s.once.Do to set initErr, which is safe for the first call. However, Stop (line 320) writes `s.initErr = fmt.Errorf(\"service is stopping\")` without any lock and without going through once.Do. If Stop is called concurrently with Init (e.g., during startup while the index is building), or if Init is called again after Stop (the once prevents re-execution but the read of s.initErr at line 317 is unsynchronized relative to Stop's write), this is a data race on initErr. The previous lazy-init pattern called Init on every gRPC method, making concurrent access more likely; now with eager init the window is smaller but Stop can still race with the in-flight Init. The initErr field should be protected by a mutex or atomic, or Stop should not write to it."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 320,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Stop overwrites initErr and returns nil even when lifecycle.Stop failed, losing the error and returning inconsistent state",
+   "body": "In Stop (lines 320-342), when s.lifecycle.Stop(ctx) returns an error, stopFailed is set to true and initErr is updated to include the error. However, the function then calls s.cancel() and at line 336-338, if stopFailed is true it returns s.initErr (the error). But if stopFailed is false, it overwrites initErr with \"service is stopped\" and returns nil. The problem: Stop sets `s.initErr = fmt.Errorf(\"service is stopping\")` at line 321 unconditionally at the start. This means any subsequent call to Init (which is now only called once from NewResourceServer, but could be called by other code paths or tests) will return \"service is stopping\" even if initialization had previously succeeded. More critically, the initErr field is being used both as the initialization error cache and as a general \"server state\" error, which is confusing and error-prone. After a successful Init followed by Stop, calling Init again (if once is bypassed or in tests) returns a stale \"service is stopping\" error rather than the original init result."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 72,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Removing the global lock from BuildIndex creates a race where two concurrent builds for the same key both create indexes and one overwrites the other, losing documents",
+   "body": "The PR removes the `b.cacheMu.Lock()` / `defer b.cacheMu.Unlock()` that previously wrapped the entire BuildIndex function (lines 88-90 in the diff), and replaces it with a lock only around the final cache insertion (lines 137-139). This means two concurrent calls to BuildIndex for the same NamespacedResource key can both execute simultaneously: both will create a new bleve index (line 98 or 104), both will run the builder callback to populate documents, and both will then write to b.cache[key]. The second write overwrites the first. The consequence: (1) wasted work building the same index twice, (2) the first index may still be in use by a reader (obtained via GetIndex before the second build completed) while the second build replaces it in the cache \u2014 the old index is now orphaned but still referenced, causing stale reads, (3) for file-based indexes (line 98), both builds will try to create/open the same directory path `filepath.Join(b.opts.Root, key.Namespace, ...)`, which can cause bleve.New to fail or corrupt the on-disk index because two bleve instances are writing to the same directory. The original code prevented this by holding the lock for the entire build. The PR description says 'finer grain locking' but the implementation does not add any per-key locking \u2014 it simply removes the lock entirely except for the map write. This is a regression that will cause data loss and index corruption under concurrent access to the same key."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 144,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates over b.cache without holding cacheMu, racing with concurrent BuildIndex writes",
+   "body": "TotalDocs (lines 144-154) iterates over `b.cache` map directly without acquiring `b.cacheMu.RLock()`. Since BuildIndex now writes to b.cache at line 138 (with lock) but the map is being read here without lock, this is a concurrent map read/write race that can cause a panic (fatal error: concurrent map read and map write) or return incorrect counts. This function is called from search.go line 216 during init logging, and potentially from metrics. The GetIndex method correctly uses RLock (lines 61-62), but TotalDocs does not."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "medium",
+   "category": "bug",
+   "title": "totalBatchesIndexed is incremented inside a goroutine without synchronization, causing a data race and incorrect count",
+   "body": "In init (lines 186-193), `totalBatchesIndexed++` is executed inside `group.Go(func() error { ... })` closures. Multiple goroutines (limited by s.initWorkers) can execute this concurrently. The variable totalBatchesIndexed is a plain int declared at line 177, not an atomic. This is a data race that can cause lost updates and incorrect values. The Go race detector will flag this. The consequence is incorrect telemetry (the span event at line 199 reports wrong namespace count) and potential undefined behavior. It should use atomic.Int64 or be incremented after group.Wait() by using len(stats)."
+  },
+  {
+   "index": 6,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 202,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Watch event goroutine in init has no shutdown mechanism and leaks, and uses context.Background() ignoring cancellation",
+   "body": "In init (lines 202-213), after building indexes, a goroutine is started that reads from `events` channel and calls s.handleEvent. This goroutine runs forever with no way to stop it: it uses `watchctx := context.Background()` (line 202) which is never cancelled, and the for loop (lines 208-212) has no exit condition (no select on ctx.Done() or a done channel). When the server is stopped (server.Stop calls s.cancel()), this goroutine continues running, leaking. Additionally, the events channel from s.storage.WatchWriteEvents(watchctx) is never closed by this code, so the goroutine blocks forever on `<-events`. This is a goroutine leak that will accumulate if the server is restarted (e.g., in tests or during reconfiguration). The goroutine should select on a done channel or the server's context."
+  },
+  {
+   "index": 7,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 263,
+   "severity": "medium",
+   "category": "bug",
+   "title": "IndexMetrics.IndexedKinds is incremented/decremented without nil check in handleEvent, unlike other IndexMetrics usages",
+   "body": "In handleEvent (lines 262-271), `IndexMetrics.IndexedKinds.WithLabelValues(evt.Key.Resource).Inc()` and `.Dec()` are called without checking if IndexMetrics is nil. Every other usage of IndexMetrics in this file (lines 217, 282, 367) checks `if IndexMetrics != nil` first. If IndexMetrics is nil (e.g., in tests or if metrics registration failed), this will panic with a nil pointer dereference. The nil check is missing here, creating an inconsistency that can cause crashes."
+  },
+  {
+   "index": 8,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 924,
+   "severity": "medium",
+   "category": "bug",
+   "title": "History and Origin methods dereference s.search without nil check after Init removal",
+   "body": "After removing the lazy `s.Init(ctx)` calls from all gRPC methods, the History (line 924) and Origin (line 929) methods now directly call `s.search.History(ctx, req)` and `s.search.Origin(ctx, req)` without checking if s.search is nil. The Search method (line 916) correctly checks `if s.search == nil` first. If the server was created without search configured (opts.Search.Resources == nil, line 250), s.search will be nil, and calling History or Origin will panic with a nil pointer dereference. Previously, the Init call would have run but not prevented this either \u2014 however, the Search method's nil check suggests this is a known case that must be handled. History and Origin need the same nil check."
+  },
+  {
+   "index": 9,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "api",
+   "title": "NewResourceServer now blocks on full index build with no timeout, changing the constructor contract from fast to potentially very slow",
+   "body": "NewResourceServer (line 182) now calls s.Init(ctx) at line 258, which calls s.search.init(ctx) which builds indexes for all namespaces with count > initMinSize. This can take minutes on large datasets. The constructor previously returned quickly and initialization was deferred to first use. Now any caller of NewResourceServer will block until the index is built. This is a significant API contract change: (1) callers may have timeouts on construction, (2) the context passed (line 229, derived from context.Background() with claims) has no deadline, so a hung index build will block forever, (3) tests that construct a ResourceServer will now pay the full index build cost even if they don't need search. The PR description asks 'Does anything else depend on initializing US lazily?' \u2014 this change breaks that assumption for all callers. A timeout or async initialization with readiness check should be considered."
+  },
+  {
+   "index": 10,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 278,
+   "severity": "low",
+   "category": "bug",
+   "title": "Latency calculation uses evt.ResourceVersion as a timestamp, but ResourceVersion is a monotonically increasing counter, not a unix timestamp",
+   "body": "In handleEvent (line 278), `latencySeconds := float64(time.Now().UnixMicro()-evt.ResourceVersion) / 1e6` assumes evt.ResourceVersion is a unix timestamp in microseconds. However, looking at the SQL backend (backend.go line 763), ResourceVersion is generated as `max(res.CurrentEpoch, res.ResourceVersion+1)` where CurrentEpoch is the SQL server's microsecond timestamp. So it is a timestamp, but only when the SQL server clock is used. The comment in server.go line 906-907 says 'resource version is a unix timestamp in microseconds'. This is fragile: if the backend implementation changes or if ResourceVersion is ever a simple counter, this calculation will produce nonsensical (potentially negative or huge) latency values. The code should use an explicit timestamp field on the event rather than overloading ResourceVersion."
+  },
+  {
+   "index": 11,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 172,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "bleveIndex.Write and Flush are not thread-safe but can be called concurrently from watch event handler and search",
+   "body": "The bleveIndex struct (lines 156-169) has a `batch *bleve.Batch` field with comment 'only valid in single thread' (line 166). After BuildIndex completes and Flush is called (line 132), batch is set to nil (line 202). However, the same index can now be accessed concurrently: (1) the watch event handler in search.go handleEvent calls index.Write (line 257) and index.Delete (line 266), (2) Search calls can happen concurrently via idx.Search. The Write method (lines 172-187) checks `if b.batch != nil` but after Flush, batch is nil so it calls `b.index.Index(...)` directly. Bleve's Index.Index is thread-safe, but the batch field access is not protected. More critically, if a Write happens while another Write is in progress (both see batch==nil), they both call b.index.Index concurrently which is safe in bleve, but the batch field is never re-initialized after Flush, so all writes go through the slower direct Index path. The original code held the cacheMu lock during BuildIndex which prevented concurrent access during build, but now that lock is removed, and the watch handler can call Write on an index that is still being built by another goroutine (if getOrCreateIndex returns an index that is mid-build). Actually, getOrCreateIndex calls build which calls BuildIndex which now inserts into cache only at the end, so a concurrent getOrCreateIndex for the same key will not find it in cache and will start a second build \u2014 see the race finding above. Once both builds complete, the second overwrites the first in cache, but the first index may have pending writes from the watch handler that are now lost."
+  }
+ ],
+ "finding_count": 12
+}

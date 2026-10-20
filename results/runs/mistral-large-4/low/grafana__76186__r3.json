@@ -1,0 +1,179 @@
+{
+ "run_id": "mistral-large-4__low__grafana__76186__r3",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__76186",
+ "golden_url": "https://github.com/grafana/grafana/pull/76186",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:48:41Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63619,
+  "sha": "8122890c10e880cb",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 17823,
+    "output": 2320,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01696844,
+   "latency_ms": 23953,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 11207,
+   "raw_usage": {
+    "completion_tokens": 2320,
+    "prompt_tokens": 17823,
+    "total_tokens": 20143,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01696844,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01696844,
+     "upstream_inference_prompt_cost": 0.01211964,
+     "upstream_inference_completions_cost": 0.0048488
+    }
+   },
+   "started_at": "2026-10-18T11:48:41Z",
+   "first_chunk_ms": 2067,
+   "first_text_ms": 2067,
+   "response_id": "gen-1792324121-Hp4u7ddVh28UtGW3eCFu",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 17823,
+  "output": 2320,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01696844,
+ "latency_ms": 23953,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/metrics_middleware.go\",\n      \"line\": 76,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"MetricsMiddleware shares a single mutable instance across all clients, causing a data race on the `next` field\",\n      \"body\": \"NewMetricsMiddleware creates one MetricsMiddleware instance (imw) and then, inside the returned ClientMiddlewareFunc closure, assigns `imw.next = next` every time the middleware is applied. The middleware factory is invoked once per plugin client (per plugin process/connection), so multiple goroutines concurrently execute `imw.next = next` on the same shared struct while other goroutines read `m.next` in QueryData/CallResource/etc. This is a data race: the last writer wins, so requests for one plugin can be routed to another plugin's client, sending queries/health checks/resources to the wrong backend plugin. The correct pattern (used by the other middlewares in this package, e.g. LoggerMiddleware and ContextualLoggerMiddleware) is to construct a new middleware struct per invocation: `return &MetricsMiddleware{pluginMetrics: imw.pluginMetrics, pluginRegistry: pluginRegistry, next: next}`. The metrics/registry can be shared, but the per-client `next` must not be.\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/metrics_middleware.go\",\n      \"line\": 144,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"QueryData and CallResource dereference req without a nil check, unlike the other methods\",\n      \"body\": \"MetricsMiddleware.QueryData iterates `req.Queries` and CallResource reads `req.Body`/`req.PluginContext` without first checking `req == nil`. Every other middleware in this package (LoggerMiddleware, ContextualLoggerMiddleware) guards each method with `if req == nil { return m.next.X(ctx, req) }` before touching the request, and the previous version of this middleware relied on callers passing non-nil requests. A nil request (which the SDK and other middlewares explicitly tolerate) will now cause a nil-pointer panic inside the metrics middleware, crashing the request path instead of being passed through. Add the same nil guards used in logger_middleware.go to QueryData and CallResource (and for consistency, CheckHealth/CollectMetrics, which also dereference req.PluginContext).\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/metrics_middleware.go\",\n      \"line\": 104,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"instrumentPluginRequest returns early on pluginTarget error, silently skipping request execution\",\n      \"body\": \"instrumentPluginRequest calls m.pluginTarget(ctx, pluginCtx.PluginID) and returns the error immediately if the plugin is not found in the registry, before invoking `fn(ctx)`. The same early-return exists in instrumentPluginRequestSize. This means that when the plugin registry lookup fails (e.g. plugin not yet registered, registry temporarily unavailable, or a race during plugin startup/removal), the middleware does not call m.next at all: QueryData returns (nil, ErrPluginNotRegistered), CallResource returns the error without forwarding the request, and CheckHealth/CollectMetrics return (nil, err). Previously the instrumentation middleware always executed the wrapped client and only enriched the context; now a registry miss turns into a hard failure of the plugin request. The request should still be forwarded to the next client (metrics can be skipped or recorded with an 'unknown' target), otherwise a registry hiccup breaks all plugin traffic. Note the existing test only covers the happy path where the plugin is registered, so this regression is untested.\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go\",\n      \"line\": 59,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"SubscribeStream, PublishStream and RunStream do not add contextual logger attributes, unlike all other endpoints\",\n      \"body\": \"The ContextualLoggerMiddleware (which replaced the context-enrichment responsibility of the old InstrumentationMiddleware) only calls instrumentContext for QueryData, CallResource, CheckHealth and CollectMetrics. SubscribeStream, PublishStream and RunStream pass the context through unchanged, so log lines emitted during streaming requests lack the endpoint/pluginId/dsName/dsUID/uname attributes that the previous InstrumentationMiddleware provided for those same code paths (the old middleware enriched the context inside instrumentPluginRequest, which was not used by the stream methods either, but the LoggerMiddleware previously logged pluginId/endpoint/uname/dsName/dsUID/traceID for every request type it wrapped). Since the LoggerMiddleware no longer includes pluginId/endpoint/uname/dsName/dsUID in its log params (they were removed in logger_middleware.go), streaming requests now produce 'Plugin Request Completed'-style logs (where applicable) and any downstream contextual logging without any plugin identity, making it impossible to correlate stream logs to a plugin or data source. Either instrument the context in the three stream methods as well, or document why streaming is excluded.\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/logger_middleware.go\",\n      \"line\": 58,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"LoggerMiddleware now depends on context enrichment that only happens if ContextualLoggerMiddleware is ordered before it; ordering coupling is undocumented and fragile\",\n      \"body\": \"logRequest now calls m.logger.FromContext(ctx).Info(...) instead of m.logger.Info(...), and the pluginId/endpoint/uname/dsName/dsUID/traceID log parameters were removed from logParams. Those attributes are now expected to come from the contextual logger stored in the context by ContextualLoggerMiddleware.instrumentContext (via log.WithContextualAttributes). This only works because pluginsintegration.go happens to place NewContextualLoggerMiddleware() immediately before NewLoggerMiddleware() in the middleware chain. The coupling is implicit: LoggerMiddleware silently produces logs without plugin identity if the chain is reordered, if ContextualLoggerMiddleware is removed, or if LoggerMiddleware is used standalone (it is an exported constructor, NewLoggerMiddleware, so any other caller composing middlewares gets degraded logs with no error). Additionally, the traceID parameter was dropped entirely from the log output \u2014 the old code appended \\\"traceID\\\" from tracing.TraceIDFromContext(ctx, false); the new code relies on the contextual logger, but instrumentContext does not add a traceID attribute, so trace correlation in plugin request logs is lost. At minimum this ordering dependency should be documented on NewLoggerMiddleware, and the traceID regression should be fixed (e.g. keep appending traceID in logRequest, or add it in instrumentContext).\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/metrics_middleware_test.go\",\n      \"line\": 21,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"Test function still named TestInstrumentationMiddleware after rename to MetricsMiddleware\",\n      \"body\": \"The test file was renamed from instrumentation_middleware_test.go to metrics_middleware_test.go and the constructor call was updated to newMetricsMiddleware, but the top-level test function is still named TestInstrumentationMiddleware. This is inconsistent with the rename performed throughout the PR (type MetricsMiddleware, NewMetricsMiddleware, newMetricsMiddleware) and will show up as 'TestInstrumentationMiddleware' in test output/CI reports, which is confusing now that no InstrumentationMiddleware exists. Rename it to TestMetricsMiddleware.\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/clientmiddleware/metrics_middleware_test.go\",\n      \"line\": 33,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test coverage for the new early-return behavior when the plugin is not registered, nor for nil requests\",\n      \"body\": \"The metrics middleware tests only exercise the happy path: a registered plugin and non-nil requests. Two new behaviors introduced by this PR are untested: (1) instrumentPluginRequest/instrumentPluginRequestSize return plugins.ErrPluginNotRegistered without invoking the wrapped client when the plugin is missing from the registry \u2014 the test always registers the plugin via pluginsRegistry.Add, so the request-blocking behavior described in the code is never asserted; (2) QueryData/CallResource dereference req without nil checks \u2014 there is no test passing a nil request, so the panic risk is unguarded. Add a subtest with an empty/unregistered plugin registry asserting that the next client is NOT called (or, if the intended behavior is to forward anyway, fix the code and test that), and nil-request tests for QueryData and CallResource.\"\n    },\n    {\n      \"file\": \"pkg/plugins/log/fake.go\",\n      \"line\": 46,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"TestLogger.FromContext discards the context and returns a fresh logger, losing contextual attributes\",\n      \"body\": \"TestLogger.FromContext(_ context.Context) returns NewTestLogger(), a brand-new logger with no accumulated context, ignoring the passed context entirely. The real implementation (grafanaInfraLogWrapper.FromContext in logger.go) extracts the contextual logger from the context so that attributes added via log.WithContextualAttributes (e.g. by ContextualLoggerMiddleware) are preserved. The fake does not capture or expose those attributes, so any test using TestLogger together with the new ContextualLoggerMiddleware/LoggerMiddleware FromContext path cannot assert on the contextual attributes (endpoint, pluginId, dsName, dsUID, uname) that the middleware injects \u2014 the fake silently drops them. If tests are expected to verify the contextual logging behavior, the fake should record the context (e.g. store it or extract attributes) rather than discarding it; otherwise tests will give false confidence that contextual logging works.\"\n    },\n    {\n      \"file\": \"pkg/services/pluginsintegration/pluginsintegration.go\",\n      \"line\": 161,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Logger name 'plugin.instrumentation' no longer matches the renamed middleware\",\n      \"body\": \"The LoggerMiddleware is still constructed with log.New(\\\"plugin.instrumentation\\\"), even though the PR renames the instrumentation middleware to MetricsMiddleware and moves contextual logging elsewhere. Log lines emitted by the logger middleware will carry the logger name 'plugin.instrumentation', which is now misleading (the middleware is named LoggerMiddleware and the metrics middleware is MetricsMiddleware). This affects log filtering/alerting/dashboards that key on the logger name. Rename to something consistent, e.g. log.New(\\\"plugin.logger\\\") or \\\"plugin.requests\\\", and check for any existing log queries/alerts referencing 'plugin.instrumentation'.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/metrics_middleware.go",
+   "line": 76,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "MetricsMiddleware shares a single mutable instance across all clients, causing a data race on the `next` field",
+   "body": "NewMetricsMiddleware creates one MetricsMiddleware instance (imw) and then, inside the returned ClientMiddlewareFunc closure, assigns `imw.next = next` every time the middleware is applied. The middleware factory is invoked once per plugin client (per plugin process/connection), so multiple goroutines concurrently execute `imw.next = next` on the same shared struct while other goroutines read `m.next` in QueryData/CallResource/etc. This is a data race: the last writer wins, so requests for one plugin can be routed to another plugin's client, sending queries/health checks/resources to the wrong backend plugin. The correct pattern (used by the other middlewares in this package, e.g. LoggerMiddleware and ContextualLoggerMiddleware) is to construct a new middleware struct per invocation: `return &MetricsMiddleware{pluginMetrics: imw.pluginMetrics, pluginRegistry: pluginRegistry, next: next}`. The metrics/registry can be shared, but the per-client `next` must not be."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/metrics_middleware.go",
+   "line": 144,
+   "severity": "medium",
+   "category": "bug",
+   "title": "QueryData and CallResource dereference req without a nil check, unlike the other methods",
+   "body": "MetricsMiddleware.QueryData iterates `req.Queries` and CallResource reads `req.Body`/`req.PluginContext` without first checking `req == nil`. Every other middleware in this package (LoggerMiddleware, ContextualLoggerMiddleware) guards each method with `if req == nil { return m.next.X(ctx, req) }` before touching the request, and the previous version of this middleware relied on callers passing non-nil requests. A nil request (which the SDK and other middlewares explicitly tolerate) will now cause a nil-pointer panic inside the metrics middleware, crashing the request path instead of being passed through. Add the same nil guards used in logger_middleware.go to QueryData and CallResource (and for consistency, CheckHealth/CollectMetrics, which also dereference req.PluginContext)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/metrics_middleware.go",
+   "line": 104,
+   "severity": "medium",
+   "category": "bug",
+   "title": "instrumentPluginRequest returns early on pluginTarget error, silently skipping request execution",
+   "body": "instrumentPluginRequest calls m.pluginTarget(ctx, pluginCtx.PluginID) and returns the error immediately if the plugin is not found in the registry, before invoking `fn(ctx)`. The same early-return exists in instrumentPluginRequestSize. This means that when the plugin registry lookup fails (e.g. plugin not yet registered, registry temporarily unavailable, or a race during plugin startup/removal), the middleware does not call m.next at all: QueryData returns (nil, ErrPluginNotRegistered), CallResource returns the error without forwarding the request, and CheckHealth/CollectMetrics return (nil, err). Previously the instrumentation middleware always executed the wrapped client and only enriched the context; now a registry miss turns into a hard failure of the plugin request. The request should still be forwarded to the next client (metrics can be skipped or recorded with an 'unknown' target), otherwise a registry hiccup breaks all plugin traffic. Note the existing test only covers the happy path where the plugin is registered, so this regression is untested."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go",
+   "line": 59,
+   "severity": "low",
+   "category": "bug",
+   "title": "SubscribeStream, PublishStream and RunStream do not add contextual logger attributes, unlike all other endpoints",
+   "body": "The ContextualLoggerMiddleware (which replaced the context-enrichment responsibility of the old InstrumentationMiddleware) only calls instrumentContext for QueryData, CallResource, CheckHealth and CollectMetrics. SubscribeStream, PublishStream and RunStream pass the context through unchanged, so log lines emitted during streaming requests lack the endpoint/pluginId/dsName/dsUID/uname attributes that the previous InstrumentationMiddleware provided for those same code paths (the old middleware enriched the context inside instrumentPluginRequest, which was not used by the stream methods either, but the LoggerMiddleware previously logged pluginId/endpoint/uname/dsName/dsUID/traceID for every request type it wrapped). Since the LoggerMiddleware no longer includes pluginId/endpoint/uname/dsName/dsUID in its log params (they were removed in logger_middleware.go), streaming requests now produce 'Plugin Request Completed'-style logs (where applicable) and any downstream contextual logging without any plugin identity, making it impossible to correlate stream logs to a plugin or data source. Either instrument the context in the three stream methods as well, or document why streaming is excluded."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/logger_middleware.go",
+   "line": 58,
+   "severity": "medium",
+   "category": "data",
+   "title": "LoggerMiddleware now depends on context enrichment that only happens if ContextualLoggerMiddleware is ordered before it; ordering coupling is undocumented and fragile",
+   "body": "logRequest now calls m.logger.FromContext(ctx).Info(...) instead of m.logger.Info(...), and the pluginId/endpoint/uname/dsName/dsUID/traceID log parameters were removed from logParams. Those attributes are now expected to come from the contextual logger stored in the context by ContextualLoggerMiddleware.instrumentContext (via log.WithContextualAttributes). This only works because pluginsintegration.go happens to place NewContextualLoggerMiddleware() immediately before NewLoggerMiddleware() in the middleware chain. The coupling is implicit: LoggerMiddleware silently produces logs without plugin identity if the chain is reordered, if ContextualLoggerMiddleware is removed, or if LoggerMiddleware is used standalone (it is an exported constructor, NewLoggerMiddleware, so any other caller composing middlewares gets degraded logs with no error). Additionally, the traceID parameter was dropped entirely from the log output \u2014 the old code appended \"traceID\" from tracing.TraceIDFromContext(ctx, false); the new code relies on the contextual logger, but instrumentContext does not add a traceID attribute, so trace correlation in plugin request logs is lost. At minimum this ordering dependency should be documented on NewLoggerMiddleware, and the traceID regression should be fixed (e.g. keep appending traceID in logRequest, or add it in instrumentContext)."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/metrics_middleware_test.go",
+   "line": 21,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test function still named TestInstrumentationMiddleware after rename to MetricsMiddleware",
+   "body": "The test file was renamed from instrumentation_middleware_test.go to metrics_middleware_test.go and the constructor call was updated to newMetricsMiddleware, but the top-level test function is still named TestInstrumentationMiddleware. This is inconsistent with the rename performed throughout the PR (type MetricsMiddleware, NewMetricsMiddleware, newMetricsMiddleware) and will show up as 'TestInstrumentationMiddleware' in test output/CI reports, which is confusing now that no InstrumentationMiddleware exists. Rename it to TestMetricsMiddleware."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/pluginsintegration/clientmiddleware/metrics_middleware_test.go",
+   "line": 33,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test coverage for the new early-return behavior when the plugin is not registered, nor for nil requests",
+   "body": "The metrics middleware tests only exercise the happy path: a registered plugin and non-nil requests. Two new behaviors introduced by this PR are untested: (1) instrumentPluginRequest/instrumentPluginRequestSize return plugins.ErrPluginNotRegistered without invoking the wrapped client when the plugin is missing from the registry \u2014 the test always registers the plugin via pluginsRegistry.Add, so the request-blocking behavior described in the code is never asserted; (2) QueryData/CallResource dereference req without nil checks \u2014 there is no test passing a nil request, so the panic risk is unguarded. Add a subtest with an empty/unregistered plugin registry asserting that the next client is NOT called (or, if the intended behavior is to forward anyway, fix the code and test that), and nil-request tests for QueryData and CallResource."
+  },
+  {
+   "index": 7,
+   "file": "pkg/plugins/log/fake.go",
+   "line": 46,
+   "severity": "low",
+   "category": "bug",
+   "title": "TestLogger.FromContext discards the context and returns a fresh logger, losing contextual attributes",
+   "body": "TestLogger.FromContext(_ context.Context) returns NewTestLogger(), a brand-new logger with no accumulated context, ignoring the passed context entirely. The real implementation (grafanaInfraLogWrapper.FromContext in logger.go) extracts the contextual logger from the context so that attributes added via log.WithContextualAttributes (e.g. by ContextualLoggerMiddleware) are preserved. The fake does not capture or expose those attributes, so any test using TestLogger together with the new ContextualLoggerMiddleware/LoggerMiddleware FromContext path cannot assert on the contextual attributes (endpoint, pluginId, dsName, dsUID, uname) that the middleware injects \u2014 the fake silently drops them. If tests are expected to verify the contextual logging behavior, the fake should record the context (e.g. store it or extract attributes) rather than discarding it; otherwise tests will give false confidence that contextual logging works."
+  },
+  {
+   "index": 8,
+   "file": "pkg/services/pluginsintegration/pluginsintegration.go",
+   "line": 161,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Logger name 'plugin.instrumentation' no longer matches the renamed middleware",
+   "body": "The LoggerMiddleware is still constructed with log.New(\"plugin.instrumentation\"), even though the PR renames the instrumentation middleware to MetricsMiddleware and moves contextual logging elsewhere. Log lines emitted by the logger middleware will carry the logger name 'plugin.instrumentation', which is now misleading (the middleware is named LoggerMiddleware and the metrics middleware is MetricsMiddleware). This affects log filtering/alerting/dashboards that key on the logger name. Rename to something consistent, e.g. log.New(\"plugin.logger\") or \"plugin.requests\", and check for any existing log queries/alerts referencing 'plugin.instrumentation'."
+  }
+ ],
+ "finding_count": 9
+}

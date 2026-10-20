@@ -1,0 +1,171 @@
+{
+ "run_id": "minimax-m3__low__cal.com__10600__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__10600",
+ "golden_url": "https://github.com/calcom/cal.com/pull/10600",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:27:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 163407,
+  "sha": "a0b3dbd651f84f95",
+  "patch_only": [
+   "apps/web/public/static/locales/en/common.json"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 42254,
+    "output": 24261,
+    "reasoning": 22640,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04179708,
+   "latency_ms": 103847,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6933,
+   "raw_usage": {
+    "completion_tokens": 24261,
+    "prompt_tokens": 42382,
+    "total_tokens": 66643,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 22640,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04179708,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04179708,
+     "upstream_inference_prompt_cost": 0.01268388,
+     "upstream_inference_completions_cost": 0.0291132
+    }
+   },
+   "started_at": "2026-10-17T20:27:04Z",
+   "first_chunk_ms": 2523,
+   "first_text_ms": 97271,
+   "response_id": "gen-1792268825-vzCdsBxuYxz1iDWqsY2h",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 42254,
+  "output": 24261,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 22640
+ },
+ "cost_reported": 0.04179708,
+ "latency_ms": 103847,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I'll focus on the security-sensitive backup code handling, concurrency, test gaps, and state management issues.\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/features/auth/lib/next-auth-options.ts\",\n      \"line\": 144,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Race condition lets backup codes be reused / resurrected\",\n      \"body\": \"The backup-code branch decrypts user.backupCodes, finds the matching index, sets the slot to null, and then writes the array back (lines 139-156). The read-decrypt-mutate-write cycle is non-atomic. If two concurrent authorize() calls hit it with the same backup code, both will decrypt the original array, both will find the match, and both will mark the slot null \u2014 so the same one-time code authenticates twice. With two different backup codes, each call mutates its own copy and the later write overwrites the earlier one, resurrecting the code that the first request already consumed. Because authorize() runs on every NextAuth credentials sign-in, a user with stolen credentials (or a session race) could keep re-using the same backup code. Replace the in-memory mutation with a single conditional Prisma update (e.g. a JSONB / array-element update that removes only the matched code) so the consumption is atomic at the database level.\"\n    },\n    {\n      \"file\": \"apps/web/pages/api/auth/two-factor/totp/disable.ts\",\n      \"line\": 61,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Disable endpoint has no rate limiting on backup-code guesses\",\n      \"body\": \"The disable endpoint verifies password (bcrypt-bounded) and then accepts a backup code by `backupCodes.indexOf(req.body.backupCode.replaceAll('-', ''))`. Unlike the NextAuth credentials authorize flow, this endpoint does NOT call `checkRateLimitAndThrowError`. An attacker who already has the user's password can therefore brute-force the ten 10-hex-char backup codes at full speed (only bcrypt on the password limits them, and that throttling is per user, not per attempt). The endpoint also never marks the consumed code, so even a correct guess leaves the rest usable. Add a rate limit per (userId, IP) and reuse the atomic consumption pattern from the credentials authorize flow.\"\n    },\n    {\n      \"file\": \"packages/features/auth/lib/next-auth-options.ts\",\n      \"line\": 137,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"All-codes-exhausted state is indistinguishable from a typo\",\n      \"body\": \"When a user has consumed every backup code, `backupCodes` is `[null, null, ..., null]`. `user.backupCodes` is still a non-empty encrypted string, so the `if (!user.backupCodes) throw MissingBackupCodes` guard never fires. The user instead gets `IncorrectBackupCode` on every attempt, with no way to tell that they've actually run out of codes. After decrypt+parse, detect the case where every element is null/missing and throw `MissingBackupCodes` (or a new dedicated error) so the UI can surface a clear message and the user knows to re-enable 2FA and regenerate codes.\"\n    },\n    {\n      \"file\": \"apps/web/playwright/login.2fa.e2e.ts\",\n      \"line\": 12,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"Backup-code login and disable paths are not end-to-end tested\",\n      \"body\": \"The new e2e additions only exercise the backup-codes dialog (download/copy/close) after enabling 2FA. The two security-critical paths this PR introduces \u2014 logging in via backup code from `apps/web/pages/auth/login.tsx` (`twoFactorLostAccess` flow) and disabling 2FA via the 'Lost access' path in `DisableTwoFactorModal.tsx` \u2014 have no test at all. The PR description itself acknowledges 'I haven't added tests that prove my fix is effective'. For an authentication feature, both the happy path and the wrong-code / exhausted-code negative paths must be covered, and the consumed-once invariant should be asserted (e.g. login with the same code twice, second attempt must fail).\"\n    },\n    {\n      \"file\": \"apps/web/components/settings/EnableTwoFactorModal.tsx\",\n      \"line\": 99,\n      \"severity\": \"medium\",\n      \"category\": \"perf\",\n      \"title\": \"Blob URL leaks until next setup round-trip\",\n      \"body\": \"`setBackupCodesUrl(URL.createObjectURL(textBlob))` is called on every setup response but the URL is only revoked when a *subsequent* setup response arrives. If the user reaches the backup codes screen and then closes the dialog (Cancel / Close) or the parent component unmounts without re-running setup, the latest object URL is never revoked. Combined with `resetState()` not clearing `backupCodesUrl`, opening the modal again can also bind to a stale URL. Revoke the previous URL inside `resetState` and on a `useEffect` cleanup that fires when the modal closes.\"\n    },\n    {\n      \"file\": \"apps/web/components/settings/EnableTwoFactorModal.tsx\",\n      \"line\": 71,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"resetState leaves isSubmitting, backupCodes, secret and dataUri in place\",\n      \"body\": \"`resetState()` only clears `password`, `errorMessage`, and `step`. It does not reset `isSubmitting`, `backupCodes`, `backupCodesUrl` (blob URL \u2014 see separate finding), `dataUri`, or `secret`. If the modal is closed and reopened, the next 'Continue' button can stay disabled (because `isSubmitting` may still be true from a previous round), and the stale `secret` / `dataUri` could be displayed against a brand-new secret if the user races the step transitions. Reset all transient state and revoke any pending blob URL inside `resetState`.\"\n    },\n    {\n      \"file\": \"apps/web/components/auth/BackupCode.tsx\",\n      \"line\": 7,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"BackupCode component is named TwoFactor\",\n      \"body\": \"`export default function TwoFactor({ center = true })` is the default export of `apps/web/components/auth/BackupCode.tsx`. The misleading function name makes the file confusing to navigate (especially since `TwoFactor.tsx` already exists in the same directory with a similar signature). Rename the function to `BackupCode` to match the file name.\"\n    },\n    {\n      \"file\": \"apps/web/components/settings/EnableTwoFactorModal.tsx\",\n      \"line\": 95,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"body.backupCodes assumed to be present and a string array\",\n      \"body\": \"Right after `await response.json()`, the code does `body.backupCodes.map(formatBackupCode)` with no guard. If the server ever returns an error body that lacks `backupCodes`, or returns it under a different key, or with non-string elements, the page crashes mid-setup and `setIsSubmitting(false)` runs but the user is left on a broken step. Validate the shape (Array.isArray and every element is a string) before using it, and fall back to the existing `something_went_wrong` error if it isn't.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/auth/lib/next-auth-options.ts",
+   "line": 144,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Race condition lets backup codes be reused / resurrected",
+   "body": "The backup-code branch decrypts user.backupCodes, finds the matching index, sets the slot to null, and then writes the array back (lines 139-156). The read-decrypt-mutate-write cycle is non-atomic. If two concurrent authorize() calls hit it with the same backup code, both will decrypt the original array, both will find the match, and both will mark the slot null \u2014 so the same one-time code authenticates twice. With two different backup codes, each call mutates its own copy and the later write overwrites the earlier one, resurrecting the code that the first request already consumed. Because authorize() runs on every NextAuth credentials sign-in, a user with stolen credentials (or a session race) could keep re-using the same backup code. Replace the in-memory mutation with a single conditional Prisma update (e.g. a JSONB / array-element update that removes only the matched code) so the consumption is atomic at the database level."
+  },
+  {
+   "index": 1,
+   "file": "apps/web/pages/api/auth/two-factor/totp/disable.ts",
+   "line": 61,
+   "severity": "high",
+   "category": "security",
+   "title": "Disable endpoint has no rate limiting on backup-code guesses",
+   "body": "The disable endpoint verifies password (bcrypt-bounded) and then accepts a backup code by `backupCodes.indexOf(req.body.backupCode.replaceAll('-', ''))`. Unlike the NextAuth credentials authorize flow, this endpoint does NOT call `checkRateLimitAndThrowError`. An attacker who already has the user's password can therefore brute-force the ten 10-hex-char backup codes at full speed (only bcrypt on the password limits them, and that throttling is per user, not per attempt). The endpoint also never marks the consumed code, so even a correct guess leaves the rest usable. Add a rate limit per (userId, IP) and reuse the atomic consumption pattern from the credentials authorize flow."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/auth/lib/next-auth-options.ts",
+   "line": 137,
+   "severity": "medium",
+   "category": "bug",
+   "title": "All-codes-exhausted state is indistinguishable from a typo",
+   "body": "When a user has consumed every backup code, `backupCodes` is `[null, null, ..., null]`. `user.backupCodes` is still a non-empty encrypted string, so the `if (!user.backupCodes) throw MissingBackupCodes` guard never fires. The user instead gets `IncorrectBackupCode` on every attempt, with no way to tell that they've actually run out of codes. After decrypt+parse, detect the case where every element is null/missing and throw `MissingBackupCodes` (or a new dedicated error) so the UI can surface a clear message and the user knows to re-enable 2FA and regenerate codes."
+  },
+  {
+   "index": 3,
+   "file": "apps/web/playwright/login.2fa.e2e.ts",
+   "line": 12,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Backup-code login and disable paths are not end-to-end tested",
+   "body": "The new e2e additions only exercise the backup-codes dialog (download/copy/close) after enabling 2FA. The two security-critical paths this PR introduces \u2014 logging in via backup code from `apps/web/pages/auth/login.tsx` (`twoFactorLostAccess` flow) and disabling 2FA via the 'Lost access' path in `DisableTwoFactorModal.tsx` \u2014 have no test at all. The PR description itself acknowledges 'I haven't added tests that prove my fix is effective'. For an authentication feature, both the happy path and the wrong-code / exhausted-code negative paths must be covered, and the consumed-once invariant should be asserted (e.g. login with the same code twice, second attempt must fail)."
+  },
+  {
+   "index": 4,
+   "file": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+   "line": 99,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Blob URL leaks until next setup round-trip",
+   "body": "`setBackupCodesUrl(URL.createObjectURL(textBlob))` is called on every setup response but the URL is only revoked when a *subsequent* setup response arrives. If the user reaches the backup codes screen and then closes the dialog (Cancel / Close) or the parent component unmounts without re-running setup, the latest object URL is never revoked. Combined with `resetState()` not clearing `backupCodesUrl`, opening the modal again can also bind to a stale URL. Revoke the previous URL inside `resetState` and on a `useEffect` cleanup that fires when the modal closes."
+  },
+  {
+   "index": 5,
+   "file": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+   "line": 71,
+   "severity": "medium",
+   "category": "bug",
+   "title": "resetState leaves isSubmitting, backupCodes, secret and dataUri in place",
+   "body": "`resetState()` only clears `password`, `errorMessage`, and `step`. It does not reset `isSubmitting`, `backupCodes`, `backupCodesUrl` (blob URL \u2014 see separate finding), `dataUri`, or `secret`. If the modal is closed and reopened, the next 'Continue' button can stay disabled (because `isSubmitting` may still be true from a previous round), and the stale `secret` / `dataUri` could be displayed against a brand-new secret if the user races the step transitions. Reset all transient state and revoke any pending blob URL inside `resetState`."
+  },
+  {
+   "index": 6,
+   "file": "apps/web/components/auth/BackupCode.tsx",
+   "line": 7,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "BackupCode component is named TwoFactor",
+   "body": "`export default function TwoFactor({ center = true })` is the default export of `apps/web/components/auth/BackupCode.tsx`. The misleading function name makes the file confusing to navigate (especially since `TwoFactor.tsx` already exists in the same directory with a similar signature). Rename the function to `BackupCode` to match the file name."
+  },
+  {
+   "index": 7,
+   "file": "apps/web/components/settings/EnableTwoFactorModal.tsx",
+   "line": 95,
+   "severity": "low",
+   "category": "bug",
+   "title": "body.backupCodes assumed to be present and a string array",
+   "body": "Right after `await response.json()`, the code does `body.backupCodes.map(formatBackupCode)` with no guard. If the server ever returns an error body that lacks `backupCodes`, or returns it under a different key, or with non-string elements, the page crashes mid-setup and `setIsSubmitting(false)` runs but the user is left on a broken step. Validate the shape (Array.isArray and every element is a string) before using it, and fall back to the existing `something_went_wrong` error if it isn't."
+  }
+ ],
+ "finding_count": 8
+}

@@ -1,0 +1,149 @@
+{
+ "run_id": "claude-opus-5__xhigh__discourse-graphite__3__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:48:03Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 27681,
+    "output": 8503,
+    "reasoning": 6555,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 107208,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5622,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 27681,
+    "output_tokens": 8503,
+    "output_tokens_details": {
+     "thinking_tokens": 6555
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:48:03Z",
+   "first_chunk_ms": 1790,
+   "first_text_ms": 84529,
+   "response_id": "msg_bdrk_vsu4ekxqcfdip6dzovndwlusf4sjgo2xclvwbw7ogro4f7yx3uta",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 27681,
+  "output": 8503,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 6555
+ },
+ "cost_reported": null,
+ "latency_ms": 107208,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Blocked-email lookup is case-sensitive, so the block is trivially bypassed\", \"body\": \"`BlockedEmail.should_block?` does an exact-match lookup (`where(email: email).first`) and nothing in the model or migration normalizes the stored or queried address (no `before_validation` downcase, no case-insensitive index). `User` passes the raw `params[:email]` through `User.new_from_params`, so a user blocked as `bad@spamclub.com` can register as `Bad@spamclub.com` or `BAD@SPAMCLUB.COM` and will not be blocked. The uniqueness validation on `BlockedEmail#email` is likewise case-sensitive, so two rows differing only by case can coexist and give inconsistent results. The address should be downcased on write and on lookup (and the unique index built on the normalized value).\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"match_count incremented with a non-atomic read-modify-write\", \"body\": \"`record.match_count += 1; record.save` reads the counter in Ruby and writes it back. Two concurrent signup attempts using the same blocked address will both read the same value and write the same incremented value, so matches are silently lost. Worse, `save` runs the full validation chain (including the uniqueness SELECT) on every email check. Use an atomic SQL update such as `BlockedEmail.where(id: record.id).update_all(\\\"match_count = match_count + 1, last_match_at = ...\\\")` (or `increment!`) instead.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 16, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Statistics write inside a validation is rolled back on block and double-counted otherwise\", \"body\": \"`should_block?` performs a database write, but it is invoked from `EmailValidator#validate_each`, i.e. from inside `User#valid?`/`User#save`. Two consequences: (1) when the email *is* blocked, `user.save` fails, and because ActiveRecord wraps validations in the save transaction and rolls it back when the status is false, the `match_count`/`last_match_at` update made during that save is discarded \u2014 the very case the statistics are meant to record is lost; (2) `UsersController#create` calls `user.valid?` and then `user.save`, so the validator runs twice per request and an entry with `action_type = :do_nothing` gets `match_count` incremented twice for a single signup attempt. The counter is therefore unreliable. The match bookkeeping should happen outside the validation (e.g. in the controller/creator after the check) or at least be made idempotent per request.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 5, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"No validation that action_type is a known action\", \"body\": \"`action_type` is only defaulted in `set_defaults`; there is no `validates :action_type, inclusion: {in: actions.values}`. Any out-of-range integer (e.g. loaded by a bulk import or admin script, since the column is `null: false` with no DB default) makes `should_block?` return false, so the row silently never blocks anything and the misconfiguration is invisible.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 11, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test exercises the real blocking path or the relocated whitelist/blacklist logic\", \"body\": \"Both examples stub `BlockedEmail.should_block?`, so nothing verifies that a real `BlockedEmail` row causes `User#valid?` to fail, that the error message key `user.email.blocked` resolves, or that a differently-cased address is (not) matched. In addition, the whitelist/blacklist logic was moved verbatim from `User#email_validator` into this new class and has no spec here; a regression in `email_in_restriction_setting?` (e.g. the nil-value path when email is blank) would go unnoticed. Add at least one end-to-end spec creating a `BlockedEmail` fabricator and asserting the user is invalid, plus whitelist/blacklist examples.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 17, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"rejectedEmails array is defined on the class prototype and shared/never reset\", \"body\": \"`rejectedEmails: Em.A([])` is evaluated once when the class is defined, so the array object is shared by every instance of `CreateAccountController` and is mutated in place by `pushObject`. State leaks across instances (and across modal opens within a page lifetime), and the list is never cleared when the modal is closed. Initialize it per instance (e.g. in `init`, or `rejectedEmails: function(){ return Em.A([]); }.property()`) and clear it when the modal is reopened.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 274, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Any email error permanently marks the address invalid with a misleading message\", \"body\": \"The client pushes `result.values.email` into `rejectedEmails` whenever `result.errors.email` is present, and `emailValidation` then reports `user.email.invalid` (\\\"Email is invalid\\\"). Since the server now returns the whole errors hash, this also triggers for errors like \\\"Email has already been taken\\\" or a domain whitelist rejection: the user is told the address is malformed instead of the real reason, and the address stays permanently un-submittable for the life of the controller even if the condition was transient. Use the server-supplied error message as the reason rather than the generic `invalid` string.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "high",
+   "category": "security",
+   "title": "Blocked-email lookup is case-sensitive, so the block is trivially bypassed",
+   "body": "`BlockedEmail.should_block?` does an exact-match lookup (`where(email: email).first`) and nothing in the model or migration normalizes the stored or queried address (no `before_validation` downcase, no case-insensitive index). `User` passes the raw `params[:email]` through `User.new_from_params`, so a user blocked as `bad@spamclub.com` can register as `Bad@spamclub.com` or `BAD@SPAMCLUB.COM` and will not be blocked. The uniqueness validation on `BlockedEmail#email` is likewise case-sensitive, so two rows differing only by case can coexist and give inconsistent results. The address should be downcased on write and on lookup (and the unique index built on the normalized value)."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "match_count incremented with a non-atomic read-modify-write",
+   "body": "`record.match_count += 1; record.save` reads the counter in Ruby and writes it back. Two concurrent signup attempts using the same blocked address will both read the same value and write the same incremented value, so matches are silently lost. Worse, `save` runs the full validation chain (including the uniqueness SELECT) on every email check. Use an atomic SQL update such as `BlockedEmail.where(id: record.id).update_all(\"match_count = match_count + 1, last_match_at = ...\")` (or `increment!`) instead."
+  },
+  {
+   "index": 2,
+   "file": "app/models/blocked_email.rb",
+   "line": 16,
+   "severity": "medium",
+   "category": "data",
+   "title": "Statistics write inside a validation is rolled back on block and double-counted otherwise",
+   "body": "`should_block?` performs a database write, but it is invoked from `EmailValidator#validate_each`, i.e. from inside `User#valid?`/`User#save`. Two consequences: (1) when the email *is* blocked, `user.save` fails, and because ActiveRecord wraps validations in the save transaction and rolls it back when the status is false, the `match_count`/`last_match_at` update made during that save is discarded \u2014 the very case the statistics are meant to record is lost; (2) `UsersController#create` calls `user.valid?` and then `user.save`, so the validator runs twice per request and an entry with `action_type = :do_nothing` gets `match_count` incremented twice for a single signup attempt. The counter is therefore unreliable. The match bookkeeping should happen outside the validation (e.g. in the controller/creator after the check) or at least be made idempotent per request."
+  },
+  {
+   "index": 3,
+   "file": "app/models/blocked_email.rb",
+   "line": 5,
+   "severity": "low",
+   "category": "bug",
+   "title": "No validation that action_type is a known action",
+   "body": "`action_type` is only defaulted in `set_defaults`; there is no `validates :action_type, inclusion: {in: actions.values}`. Any out-of-range integer (e.g. loaded by a bulk import or admin script, since the column is `null: false` with no DB default) makes `should_block?` return false, so the row silently never blocks anything and the misconfiguration is invisible."
+  },
+  {
+   "index": 4,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 11,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test exercises the real blocking path or the relocated whitelist/blacklist logic",
+   "body": "Both examples stub `BlockedEmail.should_block?`, so nothing verifies that a real `BlockedEmail` row causes `User#valid?` to fail, that the error message key `user.email.blocked` resolves, or that a differently-cased address is (not) matched. In addition, the whitelist/blacklist logic was moved verbatim from `User#email_validator` into this new class and has no spec here; a regression in `email_in_restriction_setting?` (e.g. the nil-value path when email is blank) would go unnoticed. Add at least one end-to-end spec creating a `BlockedEmail` fabricator and asserting the user is invalid, plus whitelist/blacklist examples."
+  },
+  {
+   "index": 5,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 17,
+   "severity": "low",
+   "category": "bug",
+   "title": "rejectedEmails array is defined on the class prototype and shared/never reset",
+   "body": "`rejectedEmails: Em.A([])` is evaluated once when the class is defined, so the array object is shared by every instance of `CreateAccountController` and is mutated in place by `pushObject`. State leaks across instances (and across modal opens within a page lifetime), and the list is never cleared when the modal is closed. Initialize it per instance (e.g. in `init`, or `rejectedEmails: function(){ return Em.A([]); }.property()`) and clear it when the modal is reopened."
+  },
+  {
+   "index": 6,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 274,
+   "severity": "low",
+   "category": "bug",
+   "title": "Any email error permanently marks the address invalid with a misleading message",
+   "body": "The client pushes `result.values.email` into `rejectedEmails` whenever `result.errors.email` is present, and `emailValidation` then reports `user.email.invalid` (\"Email is invalid\"). Since the server now returns the whole errors hash, this also triggers for errors like \"Email has already been taken\" or a domain whitelist rejection: the user is told the address is malformed instead of the real reason, and the address stays permanently un-submittable for the life of the controller even if the condition was transient. Use the server-supplied error message as the reason rather than the generic `invalid` string."
+  }
+ ],
+ "finding_count": 7
+}

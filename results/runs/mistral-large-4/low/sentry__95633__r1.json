@@ -1,0 +1,235 @@
+{
+ "run_id": "mistral-large-4__low__sentry__95633__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:45:26Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 31296,
+    "output": 4560,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03081168,
+   "latency_ms": 47994,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 20737,
+   "raw_usage": {
+    "completion_tokens": 4560,
+    "prompt_tokens": 31296,
+    "total_tokens": 35856,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.03081168,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03081168,
+     "upstream_inference_prompt_cost": 0.02128128,
+     "upstream_inference_completions_cost": 0.0095304
+    }
+   },
+   "started_at": "2026-10-17T11:45:26Z",
+   "first_chunk_ms": 3422,
+   "first_text_ms": 3422,
+   "response_id": "gen-1792237526-xQqQwUaajdiE3DZab13u",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 31296,
+  "output": 4560,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.03081168,
+ "latency_ms": 47994,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 202,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Python's built-in hash() is randomized per process, breaking consistent group-to-queue assignment across restarts and workers\",\n      \"body\": \"FixedQueuePool.get_queue_for_group uses `hash(group_key) % self.num_queues`. In Python 3, `hash()` of strings is salted per process (PYTHONHASHSEED randomization), so the same subscription/group key maps to a different queue index in every process and after every restart. The class docstring claims 'Each group is consistently assigned to the same queue', but this is only true within a single process lifetime. Consequences: (1) ordering guarantees for a group are silently violated across consumer restarts or when multiple consumer processes run, because messages for the same subscription can land in different queues processed by different threads concurrently; (2) if num_queues differs between deployments, all groups reshuffle. Use a stable hash (e.g. `int(hashlib.md5(group_key.encode()).hexdigest(), 16)` or `zlib.crc32`) so assignment is deterministic across processes and restarts.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 89,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"OffsetTracker.get_committable_offsets is O(max_offset - min_offset) per partition and can scan millions of offsets, stalling the commit thread\",\n      \"body\": \"get_committable_offsets iterates `for offset in range(start, max_offset + 1)` and checks set membership for every integer in the range. Kafka offsets are monotonically increasing and long-lived (often in the millions or billions on a busy topic). If a partition has tracked offsets 1,000,000 and 5,000,000 with a gap (or after mark_committed pruning leaves a sparse set), each call to get_committable_offsets \u2014 which runs every second from the commit thread \u2014 will iterate up to 4,000,000 times doing set lookups while holding the per-partition lock. This blocks add_offset/complete_offset calls from worker threads (they contend on the same lock), stalls offset completion, and burns CPU on the commit thread. The algorithm should instead sort the completed offsets (or maintain a sorted structure / min-heap of outstanding offsets) and find the highest contiguous completed offset without scanning the full integer range. As written this is a performance and lock-contention bug that will get worse as topic offsets grow.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 105,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"mark_committed prunes all_offsets but leaves outstanding entries, causing unbounded memory growth and incorrect committable computation\",\n      \"body\": \"mark_committed removes offsets <= the committed offset from `all_offsets` but does not remove them from `outstanding`. Since complete_offset only does `outstanding.discard(offset)`, entries for already-committed offsets that were never completed (e.g. a worker crashed, or the offset was added via the exception path in SimpleQueueProcessingStrategy.submit and completed before commit) remain in `outstanding` forever. get_committable_offsets then checks `offset not in outstanding` for offsets in all_offsets \u2014 but because all_offsets was pruned, those stale outstanding entries are mostly harmless for the range scan; however `outstanding` itself grows without bound for any offset that is added but never completed (worker thread death, exceptions before the finally block, or double-add paths), leaking memory for the lifetime of the consumer. Additionally, because `outstanding` is never pruned on commit, the set grows monotonically with every processed message that had a transient add without a matching complete, which is a slow memory leak in a long-running consumer.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 47,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"OffsetTracker.partition_locks dict is read and written from multiple threads without synchronization, causing a race on lock creation\",\n      \"body\": \"_get_partition_lock does `self.partition_locks.get(partition)` then `self.partition_locks.setdefault(partition, threading.Lock())` without holding any lock. Two threads (e.g. two workers completing offsets for a newly-seen partition, or the commit thread calling get_committable_offsets while a worker calls add_offset) can race: both see no lock, both create a Lock, and setdefault keeps one while the other thread uses a different Lock instance. The two threads then operate on the shared all_offsets/outstanding sets under different locks, allowing concurrent mutation of the sets (a data race on CPython dict/set internals). This can corrupt the offset tracking state or cause lost updates, leading to incorrect commit decisions (committing offsets whose messages were not actually processed, or never committing). The partition_locks dict needs its own guard lock, or locks should be pre-created for all assigned partitions before workers start.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 211,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"Offset is registered as outstanding before the item is enqueued; a put() failure or shutdown between add_offset and put permanently blocks commits for that partition\",\n      \"body\": \"FixedQueuePool.submit calls `self.offset_tracker.add_offset(...)` and then `work_queue.put(work_item)`. If put() raises (e.g. queue.ShutDown during shutdown, or any exception), the offset remains in `outstanding` forever because nothing ever calls complete_offset for it. Since get_committable_offsets only advances past contiguous completed offsets, one permanently-outstanding offset at position N blocks committing any offset > N on that partition for the rest of the process lifetime \u2014 Kafka offsets stop advancing and the consumer falls further and further behind (and on restart reprocesses everything after N). The same window exists in SimpleQueueProcessingStrategy.submit's exception handler ordering and in the result-is-None path (which is fine because it completes immediately), but the submit path has no rollback. add_offset should happen only after the item is successfully enqueued, or the exception path must call complete_offset.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 129,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"Worker checks self.shutdown without synchronization and blocks indefinitely on queue.get() during shutdown, so shutdown() can hang and items can be dropped\",\n      \"body\": \"OrderedQueueWorker.run loops on `while not self.shutdown` and then blocks on `self.work_queue.get()` with no timeout. `self.shutdown` is a plain bool written by another thread (FixedQueuePool.shutdown sets `worker.shutdown = True`) with no lock or Event, so the worker may never observe the update promptly (no memory barrier guarantee in Python, though GIL makes it eventually visible \u2014 the real issue is the blocking get). The shutdown sequence sets shutdown=True then calls q.shutdown(immediate=False). Python's queue.Queue.shutdown(immediate=False) causes blocked getters to receive remaining items then ShutDown, but items already in the queue are still delivered; however the worker loop condition `while not self.shutdown` is checked before get(), and after shutdown is set the worker will exit after finishing the current item, potentially leaving queued items unprocessed \u2014 but their offsets were already added to the tracker and will never be completed, which (per the OffsetTracker design) blocks future commits for those offsets. More importantly, if q.shutdown() raises or the worker is mid-processing, join(timeout=5.0) may time out and shutdown returns with threads still alive and offsets permanently outstanding. The worker should use a sentinel/timeout-based get and the shutdown flag should be a threading.Event; also, on shutdown, remaining items' offsets should be completed (or never added) so commits are not blocked.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 297,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"SimpleQueueProcessingStrategy.submit asserts message.value is BrokerValue, but FilteredPayload messages crash the assert and take the exception path\",\n      \"body\": \"submit() does `assert isinstance(message.value, BrokerValue)` unconditionally. When arroyo filters a message (e.g. via a preceding FilterStep), message.value is a FilteredPayload and the assert raises AssertionError. The except handler then checks `isinstance(message.value, BrokerValue)` which is False, so it just logs and returns \u2014 meaning the offset is never added to the tracker and never completed. This is actually safe for commits (the offset is simply not tracked, so it won't block), but it means filtered messages are silently dropped without being counted, and more importantly the assert-based control flow is fragile: running Python with -O strips asserts, after which `message.value.partition` on a FilteredPayload raises AttributeError inside the try, again hitting the except path. The code should explicitly check isinstance(message.value, BrokerValue) and handle FilteredPayload as a skip (complete the offset immediately, like the result-is-None path) rather than relying on assert.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 335,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"close() joins the commit thread before shutting down workers, so in-flight items can complete after the final commit and their offsets are never committed\",\n      \"body\": \"SimpleQueueProcessingStrategy.close() sets shutdown_event, joins commit_thread (timeout 5s), then calls queue_pool.shutdown(). The commit thread stops as soon as shutdown_event is set \u2014 it does not do a final commit pass. Meanwhile workers may still be processing items (queue_pool.shutdown is only called after the commit thread join). Any item that completes after the commit thread's last iteration will have complete_offset called, but no further get_committable_offsets/commit_function run will ever happen, so those offsets are never committed to Kafka. On restart, those messages are reprocessed. The correct order is: stop accepting new work, drain/finish workers (queue_pool.shutdown), then do a final commit of all committable offsets, then stop the commit thread. As written, close() systematically loses the last batch of commits.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\",\n      \"line\": 133,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"FixedQueuePool is created once per factory but create_with_partitions can be called multiple times, creating multiple SimpleQueueProcessingStrategy instances (and commit threads) sharing one pool\",\n      \"body\": \"ResultsStrategyFactory.__init__ creates a single FixedQueuePool when mode == 'thread-queue-parallel'. create_with_partitions then calls create_thread_queue_parallel_worker, which constructs a new SimpleQueueProcessingStrategy (with its own commit thread) each time it is invoked. In arroyo, create_with_partitions is called on partition assignment changes (rebalances): a consumer that loses and regains partitions, or is assigned multiple partition sets over its lifetime, will call this repeatedly. Each call spawns a new commit thread that calls commit_function (the arroyo Commit) \u2014 but the Commit object passed in is only valid for the partition assignment of that specific strategy instance. After a rebalance, the old strategy's commit thread is never stopped (close/terminate is only called on the old strategy by arroyo, but the factory-level queue_pool is shared and never shut down between rebalances), so multiple commit threads will concurrently call stale Commit objects and race on the shared OffsetTracker. This can commit offsets for partitions the consumer no longer owns, or double-commit. The strategy lifecycle needs to ensure only one active SimpleQueueProcessingStrategy exists per factory, or the pool should be created per create_with_partitions call and properly torn down.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\",\n      \"line\": 180,\n      \"severity\": \"low\",\n      \"category\": \"concurrency\",\n      \"title\": \"shutdown() shuts down the queue pool but never joins the SimpleQueueProcessingStrategy commit thread or waits for in-flight work\",\n      \"body\": \"ResultsStrategyFactory.shutdown() calls self.queue_pool.shutdown() and sets self.queue_pool = None. However, the SimpleQueueProcessingStrategy instances created by create_with_partitions each run a daemon commit thread (started in __init__) that is only stopped via strategy.close()/terminate(). The factory's shutdown does not have a reference to those strategy instances, so their commit threads keep running (they loop on shutdown_event which is never set) and will continue calling commit_function \u2014 the arroyo Commit \u2014 after the factory/pool is shut down. queue_pool.shutdown() stops workers, but the commit thread holds a reference to the (now shut down) pool and keeps calling get_committable_offsets and commit_function every second indefinitely. This leaks threads and can commit offsets after the consumer has been told to shut down. The factory should track created strategies and close them, or the strategy should register itself for cleanup.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 136,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Transaction name hardcodes 'monitors.' prefix for a generic remote_subscriptions component\",\n      \"body\": \"OrderedQueueWorker.run creates a sentry_sdk transaction named f\\\"monitors.{self.identifier}.worker_{self.worker_id}\\\". The identifier for the uptime consumer is 'uptime' (per tests asserting call('uptime', result)), so transactions will be named 'monitors.uptime.worker_N', and the module lives under sentry.remote_subscriptions.consumers, not monitors. The 'monitors.' prefix is a copy-paste from the monitors consumer and produces misleading transaction names/metrics in Sentry. The prefix should be removed or derived from the identifier/module (e.g. f\\\"remote_subscriptions.{self.identifier}.worker_{self.worker_id}\\\" or just f\\\"{self.identifier}.queue_worker.{self.worker_id}\\\").\"\n    },\n    {\n      \"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\",\n      \"line\": 98,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"test_different_groups_distributed asserts all 3 queues are used by 20 groups, but Python's randomized hash makes this test flaky across processes\",\n      \"body\": \"test_different_groups_distributed submits 20 group keys ('group0'..'group19') and asserts `len(queue_indices) == 3`, i.e. that all 3 queues receive at least one group. Because get_queue_for_group uses Python's salted hash(), the distribution of 20 specific keys across 3 buckets is random per process (PYTHONHASHSEED). With 20 keys and 3 buckets, the probability that all buckets are hit is high but not 1 (the probability of missing at least one bucket is 3*(2/3)^20 \u2248 0.0009, small but nonzero), and more importantly the test is validating a property (uniform distribution) that the implementation does not guarantee and that is irrelevant to correctness \u2014 what matters is consistency, which test_consistent_group_assignment already covers. This test can fail intermittently in CI, and it also bakes in the broken hash()-based assignment (see the separate finding). It should either use a fixed set of keys verified to distribute, mock the hash, or simply assert that the number of distinct queues is between 1 and num_queues.\"\n    },\n    {\n      \"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\",\n      \"line\": 1689,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"test_thread_queue_parallel busy-waits up to 5 seconds with no failure message and can pass vacuously if the loop never breaks\",\n      \"body\": \"The thread-queue-parallel tests (test_thread_queue_parallel, test_thread_queue_parallel_preserves_order, test_thread_queue_parallel_concurrent_subscriptions) use a polling loop `for _ in range(max_wait): ... if stats['total_items'] == 0 and mock_processor_call.call_count == 2: break; time.sleep(0.1)` followed by `assert mock_processor_call.call_count == 2`. If processing is slow or broken, the loop exhausts max_wait iterations (50 * 0.1s = 5s) and falls through to the assert, which will then fail \u2014 so it does not pass vacuously. However, there is no diagnostic on timeout (the assert message is bare), and the pattern relies on wall-clock timing (0.1s sleeps, 5s budget) which is flaky under CI load: a heavily loaded CI runner can easily exceed 5s for two messages, causing intermittent failures. The tests should use an Event set by the mocked processor (as the queue_consumer unit tests correctly do with process_complete_event.wait(timeout=5.0)) instead of polling call_count, which is both deterministic and gives a clear failure. The same polling pattern is repeated in test_thread_queue_parallel_offset_commit, test_thread_queue_parallel_error_handling, and test_thread_queue_parallel_offset_gaps.\"\n    },\n    {\n      \"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\",\n      \"line\": 1810,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"test_thread_queue_parallel_error_handling asserts offsets are NOT committed after a processing exception, but the implementation completes offsets in a finally block, so the test contradicts the code\",\n      \"body\": \"The test sets mock_processor_call.side_effect = [Exception('Processing failed'), None], submits two messages, waits, then asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`. However, OrderedQueueWorker.run wraps result_processor in try/except/finally, and the finally block unconditionally calls `self.offset_tracker.complete_offset(...)`. So even when processing raises, the offset is marked complete, and the commit thread will commit it. The test's assertion is therefore wrong relative to the implementation: after both messages are processed (one raising, one succeeding), offsets 100 and 101 are both completed, and the commit thread will commit offset 102 (101+1). The assertion `test_partition not in committed_offsets` will fail once the commit loop runs (within ~1s). Either the test is wrong (it should expect the offset to be committed, matching the at-least-once semantics where a failed message is skipped and its offset committed), or the implementation is wrong (failed messages should not have their offsets committed, requiring DLQ/retry semantics). Given the ResultProcessor.__call__ already swallows exceptions internally (logs and returns normally), the worker-level exception path is mostly unreachable in production, but the test as written will fail against the actual code. This needs to be reconciled: the test should assert the actual intended behavior.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 222,\n      \"severity\": \"low\",\n      \"category\": \"perf\",\n      \"title\": \"wait_until_empty polls qsize() every 10ms; qsize() is O(1) but the polling loop is only used in tests and is a busy-wait\",\n      \"body\": \"FixedQueuePool.wait_until_empty busy-polls get_stats() (which calls qsize() on every queue and sums) every 10ms until timeout. queue.Queue.qsize() is documented as approximate and, more importantly, checking qsize()==0 does not mean all items have been processed \u2014 a worker can have taken an item off the queue (qsize drops to 0) and still be processing it. So wait_until_empty can return True while work is still in flight, giving a false sense of completion. It is only used in tests, but if used in production shutdown paths it would be incorrect. It should instead join on unfinished_tasks (queue.task_done / queue.join) or check the OffsetTracker's outstanding set, and the method should be documented as only checking queue depth, not in-flight work.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 202,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Python's built-in hash() is randomized per process, breaking consistent group-to-queue assignment across restarts and workers",
+   "body": "FixedQueuePool.get_queue_for_group uses `hash(group_key) % self.num_queues`. In Python 3, `hash()` of strings is salted per process (PYTHONHASHSEED randomization), so the same subscription/group key maps to a different queue index in every process and after every restart. The class docstring claims 'Each group is consistently assigned to the same queue', but this is only true within a single process lifetime. Consequences: (1) ordering guarantees for a group are silently violated across consumer restarts or when multiple consumer processes run, because messages for the same subscription can land in different queues processed by different threads concurrently; (2) if num_queues differs between deployments, all groups reshuffle. Use a stable hash (e.g. `int(hashlib.md5(group_key.encode()).hexdigest(), 16)` or `zlib.crc32`) so assignment is deterministic across processes and restarts."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 89,
+   "severity": "high",
+   "category": "data",
+   "title": "OffsetTracker.get_committable_offsets is O(max_offset - min_offset) per partition and can scan millions of offsets, stalling the commit thread",
+   "body": "get_committable_offsets iterates `for offset in range(start, max_offset + 1)` and checks set membership for every integer in the range. Kafka offsets are monotonically increasing and long-lived (often in the millions or billions on a busy topic). If a partition has tracked offsets 1,000,000 and 5,000,000 with a gap (or after mark_committed pruning leaves a sparse set), each call to get_committable_offsets \u2014 which runs every second from the commit thread \u2014 will iterate up to 4,000,000 times doing set lookups while holding the per-partition lock. This blocks add_offset/complete_offset calls from worker threads (they contend on the same lock), stalls offset completion, and burns CPU on the commit thread. The algorithm should instead sort the completed offsets (or maintain a sorted structure / min-heap of outstanding offsets) and find the highest contiguous completed offset without scanning the full integer range. As written this is a performance and lock-contention bug that will get worse as topic offsets grow."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 105,
+   "severity": "medium",
+   "category": "data",
+   "title": "mark_committed prunes all_offsets but leaves outstanding entries, causing unbounded memory growth and incorrect committable computation",
+   "body": "mark_committed removes offsets <= the committed offset from `all_offsets` but does not remove them from `outstanding`. Since complete_offset only does `outstanding.discard(offset)`, entries for already-committed offsets that were never completed (e.g. a worker crashed, or the offset was added via the exception path in SimpleQueueProcessingStrategy.submit and completed before commit) remain in `outstanding` forever. get_committable_offsets then checks `offset not in outstanding` for offsets in all_offsets \u2014 but because all_offsets was pruned, those stale outstanding entries are mostly harmless for the range scan; however `outstanding` itself grows without bound for any offset that is added but never completed (worker thread death, exceptions before the finally block, or double-add paths), leaking memory for the lifetime of the consumer. Additionally, because `outstanding` is never pruned on commit, the set grows monotonically with every processed message that had a transient add without a matching complete, which is a slow memory leak in a long-running consumer."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 47,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "OffsetTracker.partition_locks dict is read and written from multiple threads without synchronization, causing a race on lock creation",
+   "body": "_get_partition_lock does `self.partition_locks.get(partition)` then `self.partition_locks.setdefault(partition, threading.Lock())` without holding any lock. Two threads (e.g. two workers completing offsets for a newly-seen partition, or the commit thread calling get_committable_offsets while a worker calls add_offset) can race: both see no lock, both create a Lock, and setdefault keeps one while the other thread uses a different Lock instance. The two threads then operate on the shared all_offsets/outstanding sets under different locks, allowing concurrent mutation of the sets (a data race on CPython dict/set internals). This can corrupt the offset tracking state or cause lost updates, leading to incorrect commit decisions (committing offsets whose messages were not actually processed, or never committing). The partition_locks dict needs its own guard lock, or locks should be pre-created for all assigned partitions before workers start."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 211,
+   "severity": "high",
+   "category": "data",
+   "title": "Offset is registered as outstanding before the item is enqueued; a put() failure or shutdown between add_offset and put permanently blocks commits for that partition",
+   "body": "FixedQueuePool.submit calls `self.offset_tracker.add_offset(...)` and then `work_queue.put(work_item)`. If put() raises (e.g. queue.ShutDown during shutdown, or any exception), the offset remains in `outstanding` forever because nothing ever calls complete_offset for it. Since get_committable_offsets only advances past contiguous completed offsets, one permanently-outstanding offset at position N blocks committing any offset > N on that partition for the rest of the process lifetime \u2014 Kafka offsets stop advancing and the consumer falls further and further behind (and on restart reprocesses everything after N). The same window exists in SimpleQueueProcessingStrategy.submit's exception handler ordering and in the result-is-None path (which is fine because it completes immediately), but the submit path has no rollback. add_offset should happen only after the item is successfully enqueued, or the exception path must call complete_offset."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 129,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Worker checks self.shutdown without synchronization and blocks indefinitely on queue.get() during shutdown, so shutdown() can hang and items can be dropped",
+   "body": "OrderedQueueWorker.run loops on `while not self.shutdown` and then blocks on `self.work_queue.get()` with no timeout. `self.shutdown` is a plain bool written by another thread (FixedQueuePool.shutdown sets `worker.shutdown = True`) with no lock or Event, so the worker may never observe the update promptly (no memory barrier guarantee in Python, though GIL makes it eventually visible \u2014 the real issue is the blocking get). The shutdown sequence sets shutdown=True then calls q.shutdown(immediate=False). Python's queue.Queue.shutdown(immediate=False) causes blocked getters to receive remaining items then ShutDown, but items already in the queue are still delivered; however the worker loop condition `while not self.shutdown` is checked before get(), and after shutdown is set the worker will exit after finishing the current item, potentially leaving queued items unprocessed \u2014 but their offsets were already added to the tracker and will never be completed, which (per the OffsetTracker design) blocks future commits for those offsets. More importantly, if q.shutdown() raises or the worker is mid-processing, join(timeout=5.0) may time out and shutdown returns with threads still alive and offsets permanently outstanding. The worker should use a sentinel/timeout-based get and the shutdown flag should be a threading.Event; also, on shutdown, remaining items' offsets should be completed (or never added) so commits are not blocked."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 297,
+   "severity": "medium",
+   "category": "bug",
+   "title": "SimpleQueueProcessingStrategy.submit asserts message.value is BrokerValue, but FilteredPayload messages crash the assert and take the exception path",
+   "body": "submit() does `assert isinstance(message.value, BrokerValue)` unconditionally. When arroyo filters a message (e.g. via a preceding FilterStep), message.value is a FilteredPayload and the assert raises AssertionError. The except handler then checks `isinstance(message.value, BrokerValue)` which is False, so it just logs and returns \u2014 meaning the offset is never added to the tracker and never completed. This is actually safe for commits (the offset is simply not tracked, so it won't block), but it means filtered messages are silently dropped without being counted, and more importantly the assert-based control flow is fragile: running Python with -O strips asserts, after which `message.value.partition` on a FilteredPayload raises AttributeError inside the try, again hitting the except path. The code should explicitly check isinstance(message.value, BrokerValue) and handle FilteredPayload as a skip (complete the offset immediately, like the result-is-None path) rather than relying on assert."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "close() joins the commit thread before shutting down workers, so in-flight items can complete after the final commit and their offsets are never committed",
+   "body": "SimpleQueueProcessingStrategy.close() sets shutdown_event, joins commit_thread (timeout 5s), then calls queue_pool.shutdown(). The commit thread stops as soon as shutdown_event is set \u2014 it does not do a final commit pass. Meanwhile workers may still be processing items (queue_pool.shutdown is only called after the commit thread join). Any item that completes after the commit thread's last iteration will have complete_offset called, but no further get_committable_offsets/commit_function run will ever happen, so those offsets are never committed to Kafka. On restart, those messages are reprocessed. The correct order is: stop accepting new work, drain/finish workers (queue_pool.shutdown), then do a final commit of all committable offsets, then stop the commit thread. As written, close() systematically loses the last batch of commits."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 133,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "FixedQueuePool is created once per factory but create_with_partitions can be called multiple times, creating multiple SimpleQueueProcessingStrategy instances (and commit threads) sharing one pool",
+   "body": "ResultsStrategyFactory.__init__ creates a single FixedQueuePool when mode == 'thread-queue-parallel'. create_with_partitions then calls create_thread_queue_parallel_worker, which constructs a new SimpleQueueProcessingStrategy (with its own commit thread) each time it is invoked. In arroyo, create_with_partitions is called on partition assignment changes (rebalances): a consumer that loses and regains partitions, or is assigned multiple partition sets over its lifetime, will call this repeatedly. Each call spawns a new commit thread that calls commit_function (the arroyo Commit) \u2014 but the Commit object passed in is only valid for the partition assignment of that specific strategy instance. After a rebalance, the old strategy's commit thread is never stopped (close/terminate is only called on the old strategy by arroyo, but the factory-level queue_pool is shared and never shut down between rebalances), so multiple commit threads will concurrently call stale Commit objects and race on the shared OffsetTracker. This can commit offsets for partitions the consumer no longer owns, or double-commit. The strategy lifecycle needs to ensure only one active SimpleQueueProcessingStrategy exists per factory, or the pool should be created per create_with_partitions call and properly torn down."
+  },
+  {
+   "index": 9,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 180,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "shutdown() shuts down the queue pool but never joins the SimpleQueueProcessingStrategy commit thread or waits for in-flight work",
+   "body": "ResultsStrategyFactory.shutdown() calls self.queue_pool.shutdown() and sets self.queue_pool = None. However, the SimpleQueueProcessingStrategy instances created by create_with_partitions each run a daemon commit thread (started in __init__) that is only stopped via strategy.close()/terminate(). The factory's shutdown does not have a reference to those strategy instances, so their commit threads keep running (they loop on shutdown_event which is never set) and will continue calling commit_function \u2014 the arroyo Commit \u2014 after the factory/pool is shut down. queue_pool.shutdown() stops workers, but the commit thread holds a reference to the (now shut down) pool and keeps calling get_committable_offsets and commit_function every second indefinitely. This leaks threads and can commit offsets after the consumer has been told to shut down. The factory should track created strategies and close them, or the strategy should register itself for cleanup."
+  },
+  {
+   "index": 10,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 136,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Transaction name hardcodes 'monitors.' prefix for a generic remote_subscriptions component",
+   "body": "OrderedQueueWorker.run creates a sentry_sdk transaction named f\"monitors.{self.identifier}.worker_{self.worker_id}\". The identifier for the uptime consumer is 'uptime' (per tests asserting call('uptime', result)), so transactions will be named 'monitors.uptime.worker_N', and the module lives under sentry.remote_subscriptions.consumers, not monitors. The 'monitors.' prefix is a copy-paste from the monitors consumer and produces misleading transaction names/metrics in Sentry. The prefix should be removed or derived from the identifier/module (e.g. f\"remote_subscriptions.{self.identifier}.worker_{self.worker_id}\" or just f\"{self.identifier}.queue_worker.{self.worker_id}\")."
+  },
+  {
+   "index": 11,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 98,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_different_groups_distributed asserts all 3 queues are used by 20 groups, but Python's randomized hash makes this test flaky across processes",
+   "body": "test_different_groups_distributed submits 20 group keys ('group0'..'group19') and asserts `len(queue_indices) == 3`, i.e. that all 3 queues receive at least one group. Because get_queue_for_group uses Python's salted hash(), the distribution of 20 specific keys across 3 buckets is random per process (PYTHONHASHSEED). With 20 keys and 3 buckets, the probability that all buckets are hit is high but not 1 (the probability of missing at least one bucket is 3*(2/3)^20 \u2248 0.0009, small but nonzero), and more importantly the test is validating a property (uniform distribution) that the implementation does not guarantee and that is irrelevant to correctness \u2014 what matters is consistency, which test_consistent_group_assignment already covers. This test can fail intermittently in CI, and it also bakes in the broken hash()-based assignment (see the separate finding). It should either use a fixed set of keys verified to distribute, mock the hash, or simply assert that the number of distinct queues is between 1 and num_queues."
+  },
+  {
+   "index": 12,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1689,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel busy-waits up to 5 seconds with no failure message and can pass vacuously if the loop never breaks",
+   "body": "The thread-queue-parallel tests (test_thread_queue_parallel, test_thread_queue_parallel_preserves_order, test_thread_queue_parallel_concurrent_subscriptions) use a polling loop `for _ in range(max_wait): ... if stats['total_items'] == 0 and mock_processor_call.call_count == 2: break; time.sleep(0.1)` followed by `assert mock_processor_call.call_count == 2`. If processing is slow or broken, the loop exhausts max_wait iterations (50 * 0.1s = 5s) and falls through to the assert, which will then fail \u2014 so it does not pass vacuously. However, there is no diagnostic on timeout (the assert message is bare), and the pattern relies on wall-clock timing (0.1s sleeps, 5s budget) which is flaky under CI load: a heavily loaded CI runner can easily exceed 5s for two messages, causing intermittent failures. The tests should use an Event set by the mocked processor (as the queue_consumer unit tests correctly do with process_complete_event.wait(timeout=5.0)) instead of polling call_count, which is both deterministic and gives a clear failure. The same polling pattern is repeated in test_thread_queue_parallel_offset_commit, test_thread_queue_parallel_error_handling, and test_thread_queue_parallel_offset_gaps."
+  },
+  {
+   "index": 13,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1810,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts offsets are NOT committed after a processing exception, but the implementation completes offsets in a finally block, so the test contradicts the code",
+   "body": "The test sets mock_processor_call.side_effect = [Exception('Processing failed'), None], submits two messages, waits, then asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`. However, OrderedQueueWorker.run wraps result_processor in try/except/finally, and the finally block unconditionally calls `self.offset_tracker.complete_offset(...)`. So even when processing raises, the offset is marked complete, and the commit thread will commit it. The test's assertion is therefore wrong relative to the implementation: after both messages are processed (one raising, one succeeding), offsets 100 and 101 are both completed, and the commit thread will commit offset 102 (101+1). The assertion `test_partition not in committed_offsets` will fail once the commit loop runs (within ~1s). Either the test is wrong (it should expect the offset to be committed, matching the at-least-once semantics where a failed message is skipped and its offset committed), or the implementation is wrong (failed messages should not have their offsets committed, requiring DLQ/retry semantics). Given the ResultProcessor.__call__ already swallows exceptions internally (logs and returns normally), the worker-level exception path is mostly unreachable in production, but the test as written will fail against the actual code. This needs to be reconciled: the test should assert the actual intended behavior."
+  },
+  {
+   "index": 14,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 222,
+   "severity": "low",
+   "category": "perf",
+   "title": "wait_until_empty polls qsize() every 10ms; qsize() is O(1) but the polling loop is only used in tests and is a busy-wait",
+   "body": "FixedQueuePool.wait_until_empty busy-polls get_stats() (which calls qsize() on every queue and sums) every 10ms until timeout. queue.Queue.qsize() is documented as approximate and, more importantly, checking qsize()==0 does not mean all items have been processed \u2014 a worker can have taken an item off the queue (qsize drops to 0) and still be processing it. So wait_until_empty can return True while work is still in flight, giving a false sense of completion. It is only used in tests, but if used in production shutdown paths it would be incorrect. It should instead join on unfinished_tasks (queue.task_done / queue.join) or check the OffsetTracker's outstanding set, and the method should be documented as only checking queue depth, not in-flight work."
+  }
+ ],
+ "finding_count": 15
+}

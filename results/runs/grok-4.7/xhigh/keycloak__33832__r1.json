@@ -1,0 +1,142 @@
+{
+ "run_id": "grok-4.7__xhigh__keycloak__33832__r1",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak__33832",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/33832",
+ "repeat": 1,
+ "started_at": "2026-10-17T16:17:45Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 121966,
+  "sha": "fe0af9abf817d847",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 31640,
+    "output": 49907,
+    "reasoning": 48474,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.363298,
+   "latency_ms": 600899,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 6389,
+   "raw_usage": {
+    "completion_tokens": 49907,
+    "prompt_tokens": 32792,
+    "total_tokens": 82699,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 48474,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.363298,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.363298,
+     "upstream_inference_prompt_cost": 0.063856,
+     "upstream_inference_completions_cost": 0.299442
+    }
+   },
+   "started_at": "2026-10-17T16:17:45Z",
+   "first_chunk_ms": 2680,
+   "first_text_ms": 592838,
+   "response_id": "gen-1792253865-BagUvQiRedZAfF9gEcJB",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 31640,
+  "output": 49907,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 48474
+ },
+ "cost_reported": 0.363298,
+ "latency_ms": 600899,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"common/src/main/java/org/keycloak/common/crypto/CryptoIntegration.java\", \"line\": 71, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Tied crypto providers are chosen silently instead of failing startup\", \"body\": \"detectProvider used to throw IllegalStateException when more than one CryptoProvider was on the classpath, which stopped the server from running with an ambiguous crypto stack. It now sorts by CryptoProvider.order() descending and always returns the first entry, logging the rest only at debug. DefaultCryptoProvider, WildFlyElytronProvider, and FIPS1402Provider all return 200, so they tie. Stream.sorted is stable, so the winner is whichever jar ServiceLoader encounters first (classpath or module order), not an explicit preference. A deployment that accidentally contains both the default BouncyCastle provider and the FIPS provider \u2014 previously a startup error \u2014 will now boot and can run non-FIPS crypto, or drop Elytron in favor of BC, with no error and no info-level log. ServiceLoader also instantiates every provider before the sort, so the losing provider's constructor still registers JCA providers and mutates security properties, and the process continues in that mixed state. AuthzClientCryptoProvider at order 100 is correctly deprioritized, but that does not require ignoring a tie at the winning order. If several providers share the maximum order, startup should still fail and list them. Nothing in this change tests that selection.\"}, {\"file\": \"common/src/main/java/org/keycloak/common/crypto/CryptoProvider.java\", \"line\": 44, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"order() is abstract, so existing CryptoProvider implementations crash\", \"body\": \"CryptoProvider is a public SPI implemented outside this interface (the default, Elytron, and FIPS artifacts, plus downstream crypto providers). order() was added as an abstract method with no default. An implementation compiled against the previous interface throws AbstractMethodError when ServiceLoader instantiates it and detectProvider sorts with CryptoProvider::order. That error aborts provider detection entirely, so Keycloak will not start even if a newer provider on the classpath would have been selected. A default method returning a low value (below AuthzClientCryptoProvider's 100 and the in-tree providers' 200) would keep existing implementations loadable and still prefer the updated providers.\"}, {\"file\": \"authz/client/src/main/java/org/keycloak/authorization/client/AuthzClient.java\", \"line\": 95, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"AuthzClient.create permanently pins CryptoIntegration to its classloader\", \"body\": \"CryptoIntegration.init is process-global and returns immediately once a provider is set, so the first caller permanently chooses it. AuthzClient.create now calls CryptoIntegration.init(AuthzClient.class.getClassLoader()) as a side effect of constructing a client. ServiceLoader therefore runs only against that classloader, not the thread context classloader and not the classloader a later server or application init would pass. If this runs first in a JVM where AuthzClient's classloader can see AuthzClientCryptoProvider (order 100) but not DefaultCryptoProvider, FIPS1402Provider, or WildFlyElytronProvider \u2014 for example keycloak-common in a parent classloader and the real crypto module only in a child \u2014 the stub provider is installed and every later CryptoIntegration.init is a no-op. PEM, signature, certificate, AES, and truststore calls then throw UnsupportedOperationException, and the server no longer uses BouncyCastle or FIPS. Before this change, creating an AuthzClient did not initialize crypto, so the server's own init still selected the intended provider. A library constructor should not freeze detection, or a later init that finds a higher-order provider must be allowed to replace the stub.\"}, {\"file\": \"authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java\", \"line\": 63, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"getBouncyCastleProvider returns the JDK keystore provider\", \"body\": \"CryptoProvider.getBouncyCastleProvider is specified to return the BouncyCastle or BCFIPS Provider. AuthzClientCryptoProvider instead returns KeyStore.getInstance(KeyStore.getDefaultType()).getProvider(), which is whichever JDK provider implements the default keystore type (typically SUN, or SunJSSE when the default type is PKCS12) and follows the keystore.type security property. Callers that pass this Provider into Signature.getInstance, Cipher.getInstance, or CertificateFactory.getInstance do not get BouncyCastle algorithms. PKCS7 padding, BCFKS, and other BC-only operations fail, or they silently run on a non-FIPS JDK provider. WildFlyElytronProvider returns null for this method and callers already null-check and fall back; a non-null SUN provider skips that fallback. This should return null or throw UnsupportedOperationException like the other unimplemented methods, not an unrelated JCA provider.\"}, {\"file\": \"authz/client/src/test/java/org/keycloak/authorization/client/test/ECDSAAlgorithmTest.java\", \"line\": 56, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"ECDSA test never checks JCA DER or the real curve sizes\", \"body\": \"ECDSAAlgorithmTest builds one KeyPair with KeyPairGenerator.getInstance(\\\"EC\\\").genKeyPair() and no ECGenParameterSpec, so the key is the JVM default curve (P-256 on SunEC). It then runs ES256, ES384, and ES512 against that same key and only asserts that asn1derToConcatenatedRS(concatenatedRSToASN1DER(rs)) equals rs. It never checks that the DER matches the original Signature.sign() bytes, and it never calls Signature.verify on the converted DER. A codec that is self-inverse but not valid DER still passes, and integerToBytes silently pads or truncates to algorithm.getSignatureLength(), so a P-256 signature padded out to the ES512 length of 132 also round-trips. Because R and S stay about 32 bytes, sequence and integer lengths stay under 128, so the long-form length paths in ASN1Encoder.writeLength and ASN1Decoder.readLength \u2014 required for real P-521 signatures \u2014 are never executed. Provider ordering is also untested. The test should initialize secp256r1, secp384r1, and secp521r1 explicitly, assert the DER equals the JCA signature or verifies, and cover ServiceLoader selection.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "common/src/main/java/org/keycloak/common/crypto/CryptoIntegration.java",
+   "line": 71,
+   "severity": "high",
+   "category": "security",
+   "title": "Tied crypto providers are chosen silently instead of failing startup",
+   "body": "detectProvider used to throw IllegalStateException when more than one CryptoProvider was on the classpath, which stopped the server from running with an ambiguous crypto stack. It now sorts by CryptoProvider.order() descending and always returns the first entry, logging the rest only at debug. DefaultCryptoProvider, WildFlyElytronProvider, and FIPS1402Provider all return 200, so they tie. Stream.sorted is stable, so the winner is whichever jar ServiceLoader encounters first (classpath or module order), not an explicit preference. A deployment that accidentally contains both the default BouncyCastle provider and the FIPS provider \u2014 previously a startup error \u2014 will now boot and can run non-FIPS crypto, or drop Elytron in favor of BC, with no error and no info-level log. ServiceLoader also instantiates every provider before the sort, so the losing provider's constructor still registers JCA providers and mutates security properties, and the process continues in that mixed state. AuthzClientCryptoProvider at order 100 is correctly deprioritized, but that does not require ignoring a tie at the winning order. If several providers share the maximum order, startup should still fail and list them. Nothing in this change tests that selection."
+  },
+  {
+   "index": 1,
+   "file": "common/src/main/java/org/keycloak/common/crypto/CryptoProvider.java",
+   "line": 44,
+   "severity": "medium",
+   "category": "api",
+   "title": "order() is abstract, so existing CryptoProvider implementations crash",
+   "body": "CryptoProvider is a public SPI implemented outside this interface (the default, Elytron, and FIPS artifacts, plus downstream crypto providers). order() was added as an abstract method with no default. An implementation compiled against the previous interface throws AbstractMethodError when ServiceLoader instantiates it and detectProvider sorts with CryptoProvider::order. That error aborts provider detection entirely, so Keycloak will not start even if a newer provider on the classpath would have been selected. A default method returning a low value (below AuthzClientCryptoProvider's 100 and the in-tree providers' 200) would keep existing implementations loadable and still prefer the updated providers."
+  },
+  {
+   "index": 2,
+   "file": "authz/client/src/main/java/org/keycloak/authorization/client/AuthzClient.java",
+   "line": 95,
+   "severity": "medium",
+   "category": "bug",
+   "title": "AuthzClient.create permanently pins CryptoIntegration to its classloader",
+   "body": "CryptoIntegration.init is process-global and returns immediately once a provider is set, so the first caller permanently chooses it. AuthzClient.create now calls CryptoIntegration.init(AuthzClient.class.getClassLoader()) as a side effect of constructing a client. ServiceLoader therefore runs only against that classloader, not the thread context classloader and not the classloader a later server or application init would pass. If this runs first in a JVM where AuthzClient's classloader can see AuthzClientCryptoProvider (order 100) but not DefaultCryptoProvider, FIPS1402Provider, or WildFlyElytronProvider \u2014 for example keycloak-common in a parent classloader and the real crypto module only in a child \u2014 the stub provider is installed and every later CryptoIntegration.init is a no-op. PEM, signature, certificate, AES, and truststore calls then throw UnsupportedOperationException, and the server no longer uses BouncyCastle or FIPS. Before this change, creating an AuthzClient did not initialize crypto, so the server's own init still selected the intended provider. A library constructor should not freeze detection, or a later init that finds a higher-order provider must be allowed to replace the stub."
+  },
+  {
+   "index": 3,
+   "file": "authz/client/src/main/java/org/keycloak/authorization/client/util/crypto/AuthzClientCryptoProvider.java",
+   "line": 63,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getBouncyCastleProvider returns the JDK keystore provider",
+   "body": "CryptoProvider.getBouncyCastleProvider is specified to return the BouncyCastle or BCFIPS Provider. AuthzClientCryptoProvider instead returns KeyStore.getInstance(KeyStore.getDefaultType()).getProvider(), which is whichever JDK provider implements the default keystore type (typically SUN, or SunJSSE when the default type is PKCS12) and follows the keystore.type security property. Callers that pass this Provider into Signature.getInstance, Cipher.getInstance, or CertificateFactory.getInstance do not get BouncyCastle algorithms. PKCS7 padding, BCFKS, and other BC-only operations fail, or they silently run on a non-FIPS JDK provider. WildFlyElytronProvider returns null for this method and callers already null-check and fall back; a non-null SUN provider skips that fallback. This should return null or throw UnsupportedOperationException like the other unimplemented methods, not an unrelated JCA provider."
+  },
+  {
+   "index": 4,
+   "file": "authz/client/src/test/java/org/keycloak/authorization/client/test/ECDSAAlgorithmTest.java",
+   "line": 56,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "ECDSA test never checks JCA DER or the real curve sizes",
+   "body": "ECDSAAlgorithmTest builds one KeyPair with KeyPairGenerator.getInstance(\"EC\").genKeyPair() and no ECGenParameterSpec, so the key is the JVM default curve (P-256 on SunEC). It then runs ES256, ES384, and ES512 against that same key and only asserts that asn1derToConcatenatedRS(concatenatedRSToASN1DER(rs)) equals rs. It never checks that the DER matches the original Signature.sign() bytes, and it never calls Signature.verify on the converted DER. A codec that is self-inverse but not valid DER still passes, and integerToBytes silently pads or truncates to algorithm.getSignatureLength(), so a P-256 signature padded out to the ES512 length of 132 also round-trips. Because R and S stay about 32 bytes, sequence and integer lengths stay under 128, so the long-form length paths in ASN1Encoder.writeLength and ASN1Decoder.readLength \u2014 required for real P-521 signatures \u2014 are never executed. Provider ordering is also untested. The test should initialize secp256r1, secp384r1, and secp521r1 explicitly, assert the DER equals the JCA signature or verifies, and cover ServiceLoader selection."
+  }
+ ],
+ "finding_count": 5
+}

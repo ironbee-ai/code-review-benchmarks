@@ -1,0 +1,149 @@
+{
+ "run_id": "claude-opus-5__xhigh__discourse-graphite__9__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__9",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/9",
+ "repeat": 3,
+ "started_at": "2026-10-18T22:00:16Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 34317,
+  "sha": "d4321d5a1d23a40d",
+  "patch_only": [
+   "config/initializers/pluralization.rb"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 14503,
+    "output": 14545,
+    "reasoning": 12063,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 180761,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6725,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 14503,
+    "output_tokens": 14545,
+    "output_tokens_details": {
+     "thinking_tokens": 12063
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:00:16Z",
+   "first_chunk_ms": 1529,
+   "first_text_ms": 146247,
+   "response_id": "msg_bdrk_4bkewp5fuyexoh4gpywq6gypqu4ax6gclgyxl3sqpebt7tanqxga",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 14503,
+  "output": 14545,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 12063
+ },
+ "cost_reported": null,
+ "latency_ms": 180761,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"lib/freedom_patches/translate_accelerator.rb\", \"line\": 68, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"translate() only lazy-loads the current locale, not the new fallback locales\", \"body\": \"Translations are loaded lazily per locale (`load_locale`). `translate` still only guarantees `config.locale` is loaded. Now that `I18n::Backend::Fallbacks` is enabled and `FallbackLocaleList#[]` returns `[locale, SiteSetting.default_locale, :en]`, a lookup that misses in the current locale will consult locales whose YAML may never have been loaded, so the fallback silently fails and `I18n.t` returns \\\"translation missing\\\". The only place that pre-loads the fallback chain is `ApplicationController#set_locale`, so every non-request code path is broken: Sidekiq jobs, mailers/notification emails rendered with the recipient's locale, rake tasks, the console, and any `I18n.with_locale` block. Worse, because `translate` memoizes no-arg lookups in the process-wide LRU cache, the bogus \\\"translation missing\\\" value is cached under that key and keeps being returned even after the fallback locale is eventually loaded. `translate` should ensure the whole `I18n.fallbacks[config.locale]` chain is loaded (or `ensure_loaded!` should be called from a lower-level hook than the controller filter).\"}, {\"file\": \"lib/freedom_patches/translate_accelerator.rb\", \"line\": 72, \"severity\": \"high\", \"category\": \"data\", \"title\": \"LRU translation cache key does not include the fallback chain / SiteSetting.default_locale\", \"body\": \"The cache key is `\\\"#{key}#{config.locale}#{config.backend.object_id}\\\"`, but with the new fallbacks the resolved value for a given (key, locale) pair now also depends on `SiteSetting.default_locale`, which is per-site and mutable. `@cache` is an ivar on the `I18n` module singleton, i.e. shared by every site served by the process. In a multisite install, site A (default_locale `fr`) looking up a key that is missing in `de` will cache the French string under `key+de`, and site B (default_locale `en`) will then serve that French string to its German users \u2014 cross-tenant content leakage. Even single-site, changing the `default_locale` setting does not invalidate these entries, so stale fallback translations persist until the process is restarted. The key must incorporate the fallback chain (or the cache must be reset when `default_locale` changes / be per-site).\"}, {\"file\": \"config/initializers/i18n.rb\", \"line\": 17, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Fallback lookup hits SiteSetting and allocates on every translation\", \"body\": \"`I18n::Backend::Fallbacks#translate` calls `I18n.fallbacks[locale]` on every single translation. The stock `I18n::Locale::Fallbacks` memoizes the computed chain in the Hash; this override replaces `Hash#[]` and never stores anything, so each call performs a `SiteSetting.default_locale` read plus `to_sym`, `uniq`, `compact` and a fresh Array allocation. Every interpolated/pluralized lookup (`args.length > 0` bypasses the LRU cache in translate_accelerator) therefore pays this cost, which defeats part of the purpose of the translation accelerator. Memoize per locale and invalidate when `default_locale` changes.\"}, {\"file\": \"app/controllers/application_controller.rb\", \"line\": 159, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Every request depends on a method that only exists on the custom fallbacks object\", \"body\": \"`I18n.fallbacks.ensure_loaded!` is only defined on `FallbackLocaleList`, the object assigned in `config/initializers/i18n.rb`. Rails' `I18n::Railtie.initialize_i18n` runs in `after_initialize` (i.e. after config/initializers) and, if `config.i18n.fallbacks` is truthy anywhere, executes `I18n.fallbacks = I18n::Locale::Fallbacks.new(...)`, silently replacing the custom object. Any plugin, environment file, or someone re-adding the line this PR just deleted from production.rb/profile.rb would then make this `before_filter` raise `NoMethodError` on every request \u2014 a full site outage, and only in that environment. Either define `ensure_loaded!` on `I18n` itself (next to `I18n.ensure_loaded!`) or guard with `respond_to?`.\"}, {\"file\": \"config/initializers/i18n.rb\", \"line\": 12, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"New fallback behaviour has no tests and silently enables fallbacks in dev/test\", \"body\": \"Fallbacks were previously enabled only in production/profile/cloud66 via `config.i18n.fallbacks = true`; moving the setup into `config/initializers/i18n.rb` enables them in development and test too. That changes existing behaviour: specs (and developers) that previously saw \\\"translation missing\\\" for keys absent from a non-English locale will now silently get English text, so missing-translation regressions stop being detectable. No spec is added for the new `FallbackLocaleList` ordering (user locale \u2192 site default \u2192 :en), for `ensure_loaded!`, or for the lazy-loading interaction with fallbacks, which is where the real risk is (see the unloaded-fallback-locale problem in translate_accelerator).\"}, {\"file\": \"lib/freedom_patches/translate_accelerator.rb\", \"line\": 63, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"@loaded_locales initialized outside LOAD_MUTEX in ensure_loaded!\", \"body\": \"`ensure_loaded!` does `@loaded_locales ||= []` outside `LOAD_MUTEX`, while `load_locale` mutates and reads the same array inside the mutex and `translate` reads it without the mutex. Two threads entering `ensure_loaded!` concurrently when the ivar is nil can each assign a different array, so one thread's `@loaded_locales << locale` is lost; the subsequent `@loaded_locales.empty?` check in `load_locale` can then re-load all `.rb` locale files and re-load an already loaded locale. Initialize the array inside the mutex (or at boot) to keep the bookkeeping consistent.\"}, {\"file\": \"config/initializers/i18n.rb\", \"line\": 17, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`uniq.compact` cannot protect against a nil default_locale, and the chain depends on the DB\", \"body\": \"`[locale, SiteSetting.default_locale.to_sym, :en].uniq.compact` calls `to_sym` on the setting before `compact` can run, so if `SiteSetting.default_locale` ever returns nil this raises `NoMethodError` from inside an `I18n.t` call rather than falling back \u2014 the `compact` is dead code for that case. More generally, every translation now requires a readable `site_settings` state; in contexts where the DB/SiteSetting is unavailable (asset precompile without a DB, very early boot, error pages rendered while the DB is down) an `I18n.t` call will now blow up instead of returning a translation. Guard the setting read (`SiteSetting.default_locale.presence&.to_sym` plus a rescue).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "lib/freedom_patches/translate_accelerator.rb",
+   "line": 68,
+   "severity": "high",
+   "category": "bug",
+   "title": "translate() only lazy-loads the current locale, not the new fallback locales",
+   "body": "Translations are loaded lazily per locale (`load_locale`). `translate` still only guarantees `config.locale` is loaded. Now that `I18n::Backend::Fallbacks` is enabled and `FallbackLocaleList#[]` returns `[locale, SiteSetting.default_locale, :en]`, a lookup that misses in the current locale will consult locales whose YAML may never have been loaded, so the fallback silently fails and `I18n.t` returns \"translation missing\". The only place that pre-loads the fallback chain is `ApplicationController#set_locale`, so every non-request code path is broken: Sidekiq jobs, mailers/notification emails rendered with the recipient's locale, rake tasks, the console, and any `I18n.with_locale` block. Worse, because `translate` memoizes no-arg lookups in the process-wide LRU cache, the bogus \"translation missing\" value is cached under that key and keeps being returned even after the fallback locale is eventually loaded. `translate` should ensure the whole `I18n.fallbacks[config.locale]` chain is loaded (or `ensure_loaded!` should be called from a lower-level hook than the controller filter)."
+  },
+  {
+   "index": 1,
+   "file": "lib/freedom_patches/translate_accelerator.rb",
+   "line": 72,
+   "severity": "high",
+   "category": "data",
+   "title": "LRU translation cache key does not include the fallback chain / SiteSetting.default_locale",
+   "body": "The cache key is `\"#{key}#{config.locale}#{config.backend.object_id}\"`, but with the new fallbacks the resolved value for a given (key, locale) pair now also depends on `SiteSetting.default_locale`, which is per-site and mutable. `@cache` is an ivar on the `I18n` module singleton, i.e. shared by every site served by the process. In a multisite install, site A (default_locale `fr`) looking up a key that is missing in `de` will cache the French string under `key+de`, and site B (default_locale `en`) will then serve that French string to its German users \u2014 cross-tenant content leakage. Even single-site, changing the `default_locale` setting does not invalidate these entries, so stale fallback translations persist until the process is restarted. The key must incorporate the fallback chain (or the cache must be reset when `default_locale` changes / be per-site)."
+  },
+  {
+   "index": 2,
+   "file": "config/initializers/i18n.rb",
+   "line": 17,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Fallback lookup hits SiteSetting and allocates on every translation",
+   "body": "`I18n::Backend::Fallbacks#translate` calls `I18n.fallbacks[locale]` on every single translation. The stock `I18n::Locale::Fallbacks` memoizes the computed chain in the Hash; this override replaces `Hash#[]` and never stores anything, so each call performs a `SiteSetting.default_locale` read plus `to_sym`, `uniq`, `compact` and a fresh Array allocation. Every interpolated/pluralized lookup (`args.length > 0` bypasses the LRU cache in translate_accelerator) therefore pays this cost, which defeats part of the purpose of the translation accelerator. Memoize per locale and invalidate when `default_locale` changes."
+  },
+  {
+   "index": 3,
+   "file": "app/controllers/application_controller.rb",
+   "line": 159,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Every request depends on a method that only exists on the custom fallbacks object",
+   "body": "`I18n.fallbacks.ensure_loaded!` is only defined on `FallbackLocaleList`, the object assigned in `config/initializers/i18n.rb`. Rails' `I18n::Railtie.initialize_i18n` runs in `after_initialize` (i.e. after config/initializers) and, if `config.i18n.fallbacks` is truthy anywhere, executes `I18n.fallbacks = I18n::Locale::Fallbacks.new(...)`, silently replacing the custom object. Any plugin, environment file, or someone re-adding the line this PR just deleted from production.rb/profile.rb would then make this `before_filter` raise `NoMethodError` on every request \u2014 a full site outage, and only in that environment. Either define `ensure_loaded!` on `I18n` itself (next to `I18n.ensure_loaded!`) or guard with `respond_to?`."
+  },
+  {
+   "index": 4,
+   "file": "config/initializers/i18n.rb",
+   "line": 12,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "New fallback behaviour has no tests and silently enables fallbacks in dev/test",
+   "body": "Fallbacks were previously enabled only in production/profile/cloud66 via `config.i18n.fallbacks = true`; moving the setup into `config/initializers/i18n.rb` enables them in development and test too. That changes existing behaviour: specs (and developers) that previously saw \"translation missing\" for keys absent from a non-English locale will now silently get English text, so missing-translation regressions stop being detectable. No spec is added for the new `FallbackLocaleList` ordering (user locale \u2192 site default \u2192 :en), for `ensure_loaded!`, or for the lazy-loading interaction with fallbacks, which is where the real risk is (see the unloaded-fallback-locale problem in translate_accelerator)."
+  },
+  {
+   "index": 5,
+   "file": "lib/freedom_patches/translate_accelerator.rb",
+   "line": 63,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "@loaded_locales initialized outside LOAD_MUTEX in ensure_loaded!",
+   "body": "`ensure_loaded!` does `@loaded_locales ||= []` outside `LOAD_MUTEX`, while `load_locale` mutates and reads the same array inside the mutex and `translate` reads it without the mutex. Two threads entering `ensure_loaded!` concurrently when the ivar is nil can each assign a different array, so one thread's `@loaded_locales << locale` is lost; the subsequent `@loaded_locales.empty?` check in `load_locale` can then re-load all `.rb` locale files and re-load an already loaded locale. Initialize the array inside the mutex (or at boot) to keep the bookkeeping consistent."
+  },
+  {
+   "index": 6,
+   "file": "config/initializers/i18n.rb",
+   "line": 17,
+   "severity": "low",
+   "category": "bug",
+   "title": "`uniq.compact` cannot protect against a nil default_locale, and the chain depends on the DB",
+   "body": "`[locale, SiteSetting.default_locale.to_sym, :en].uniq.compact` calls `to_sym` on the setting before `compact` can run, so if `SiteSetting.default_locale` ever returns nil this raises `NoMethodError` from inside an `I18n.t` call rather than falling back \u2014 the `compact` is dead code for that case. More generally, every translation now requires a readable `site_settings` state; in contexts where the DB/SiteSetting is unavailable (asset precompile without a DB, very early boot, error pages rendered while the DB is down) an `I18n.t` call will now blow up instead of returning a translation. Guard the setting read (`SiteSetting.default_locale.presence&.to_sym` plus a rescue)."
+  }
+ ],
+ "finding_count": 7
+}

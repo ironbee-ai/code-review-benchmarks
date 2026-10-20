@@ -1,0 +1,136 @@
+{
+ "run_id": "claude-opus-5__default__sentry__67876__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__67876",
+ "golden_url": "https://github.com/getsentry/sentry/pull/67876",
+ "repeat": 1,
+ "started_at": "2026-10-18T21:22:54Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 100237,
+  "sha": "7c38d228f2867683",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 37811,
+    "output": 13936,
+    "reasoning": 11751,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 171212,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6277,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 37811,
+    "output_tokens": 13936,
+    "output_tokens_details": {
+     "thinking_tokens": 11751
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:22:54Z",
+   "first_chunk_ms": 2487,
+   "first_text_ms": 146236,
+   "response_id": "msg_bdrk_yrmlxeq6inkgfooajkdakwelsiryyxajvvrhubtaodzgtgdzadzq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 37811,
+  "output": 13936,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 11751
+ },
+ "cost_reported": null,
+ "latency_ms": 171212,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 503, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Unguarded `metadata[\\\"sender\\\"][\\\"login\\\"]` access raises KeyError/TypeError\", \"body\": \"`GitHubInstallation.dispatch` compares the pipeline state against `integration.metadata[\\\"sender\\\"][\\\"login\\\"]` with direct subscript access. `sender` is only present in an Integration's metadata when the row was written by the `installation` webhook handler; `GitHubIntegrationProvider.build_integration` only adds it when `state.get(\\\"sender\\\")` is set (it never is in this pipeline), and the pipeline's `update_or_create` overwrites the metadata on every successful install (see `test_basic_flow`, where the stored metadata has no `sender` key). So any Integration that was last written by the pipeline, and reaches this branch (Integration row exists and is ACTIVE but has no OrganizationIntegration rows, e.g. after the org integration was removed), will raise an unhandled `KeyError` here and return a 500 instead of the intended error page. Use `integration.metadata.get(\\\"sender\\\", {}).get(\\\"login\\\")` and decide explicitly whether a missing sender should fail closed.\"}, {\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 402, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"OAuth `state` is a constant pipeline signature, not a per-request nonce\", \"body\": \"The OAuth2 authorize request is sent with `state = pipeline.signature`, and the callback validates `request.GET.get(\\\"state\\\") != pipeline.signature`. `Pipeline.signature` is a deterministic hash of the pipeline's view classes: it is identical for every user, every org and every installation attempt (the tests hard-code `9cae5e88803f35ed7970fc131e6e65d3` and reuse it across different users/orgs), and it is exposed in plaintext in every authorize redirect URL. A constant, publicly known value provides no CSRF/code-injection protection, contrary to the PR description's claim that a `state` mismatch is a security check: an attacker can craft `/extensions/github/setup/?code=<attacker code>&state=9cae...` and have the victim's pipeline exchange the attacker's code and bind the attacker's GitHub login into `github_authenticated_user`. Follow the pattern in `OAuth2LoginView`/`OAuth2CallbackView`: generate a random nonce (`secrets.token_hex()`), `pipeline.bind_state(\\\"state\\\", nonce)`, and compare the callback value against the stored nonce.\"}, {\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 482, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"GitHub user validation is skipped entirely when no Integration row exists yet\", \"body\": \"In `GitHubInstallation.dispatch`, when `Integration.objects.get(external_id=installation_id)` raises `DoesNotExist` the view immediately calls `pipeline.next_step()`, so the new `github_authenticated_user` vs. installation-sender check is never performed and `build_integration` will happily claim the installation. This is the common case for any installation whose `installation` webhook has not been processed yet (the browser redirect and the webhook race each other on every fresh install) and for installations that still exist on GitHub after the Sentry-side Integration row was deleted. Since GitHub installation ids are small sequential integers, an attacker can supply someone else's `installation_id` and, if no Integration row is present, bind that installation (and its repository access) to their own Sentry org \u2014 exactly the attack this PR aims to prevent. The sender/owner should be verified against data fetched from GitHub (e.g. the installation's account/owner via `get_installation_info`) rather than only against a pre-existing local row.\"}, {\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 434, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`get_user_info` failures propagate as a 500 instead of the installation-failed page\", \"body\": \"`get_user_info(payload[\\\"access_token\\\"])` is called without a try/except. It performs an HTTP request to `/user` and raises `ApiError` on non-2xx responses (revoked token, GitHub 5xx, rate limiting), and may also return a non-dict payload, which would make the following `\\\"login\\\" not in authenticated_user_info` check raise `TypeError`. Any of these cases yields an unhandled exception and a generic 500 in the middle of the install pipeline rather than the `error(...)` page the rest of this view uses. Wrap the call and fall back to `error(request, self.active_organization)`.\"}, {\"file\": \"tests/sentry/integrations/github/test_integration.py\", \"line\": 396, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_installation_not_found no longer exercises the installation-not-found path\", \"body\": \"The test still stubs `/app/installations/{id}` as 404, but the request it now makes supplies `state=\\\"ddd023d87a913d5226e2a882c4c4cc05\\\"`, which does not match the pipeline signature used everywhere else in this file (`9cae5e88803f35ed7970fc131e6e65d3`). The request therefore short-circuits in `OAuthLoginView`'s state check and the assertion only verifies the generic \\\"Invalid installation request.\\\" page. The previously covered behaviour \u2014 `build_integration` raising `IntegrationError(\\\"The GitHub installation could not be found.\\\")` on a 404 from GitHub \u2014 is now untested, and the test name/intent is misleading. Use the correct state so the pipeline reaches `build_integration`, and assert the installation-not-found message (or add a separate test for the state-mismatch case).\"}, {\"file\": \"tests/sentry/integrations/github/test_integration.py\", \"line\": 399, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No coverage for the matching-sender branch or for metadata without a sender\", \"body\": \"`test_github_user_mismatch` only covers the negative branch (authenticated login != `metadata[\\\"sender\\\"][\\\"login\\\"]`). There is no test where an Integration row exists with a `sender` whose login matches the authenticated user (the branch that must let the install continue), and none where the existing Integration's metadata has no `sender` key \u2014 the latter currently crashes with a `KeyError` in `GitHubInstallation.dispatch`. Both branches are reachable in production and should be asserted.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 503,
+   "severity": "high",
+   "category": "bug",
+   "title": "Unguarded `metadata[\"sender\"][\"login\"]` access raises KeyError/TypeError",
+   "body": "`GitHubInstallation.dispatch` compares the pipeline state against `integration.metadata[\"sender\"][\"login\"]` with direct subscript access. `sender` is only present in an Integration's metadata when the row was written by the `installation` webhook handler; `GitHubIntegrationProvider.build_integration` only adds it when `state.get(\"sender\")` is set (it never is in this pipeline), and the pipeline's `update_or_create` overwrites the metadata on every successful install (see `test_basic_flow`, where the stored metadata has no `sender` key). So any Integration that was last written by the pipeline, and reaches this branch (Integration row exists and is ACTIVE but has no OrganizationIntegration rows, e.g. after the org integration was removed), will raise an unhandled `KeyError` here and return a 500 instead of the intended error page. Use `integration.metadata.get(\"sender\", {}).get(\"login\")` and decide explicitly whether a missing sender should fail closed."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 402,
+   "severity": "medium",
+   "category": "security",
+   "title": "OAuth `state` is a constant pipeline signature, not a per-request nonce",
+   "body": "The OAuth2 authorize request is sent with `state = pipeline.signature`, and the callback validates `request.GET.get(\"state\") != pipeline.signature`. `Pipeline.signature` is a deterministic hash of the pipeline's view classes: it is identical for every user, every org and every installation attempt (the tests hard-code `9cae5e88803f35ed7970fc131e6e65d3` and reuse it across different users/orgs), and it is exposed in plaintext in every authorize redirect URL. A constant, publicly known value provides no CSRF/code-injection protection, contrary to the PR description's claim that a `state` mismatch is a security check: an attacker can craft `/extensions/github/setup/?code=<attacker code>&state=9cae...` and have the victim's pipeline exchange the attacker's code and bind the attacker's GitHub login into `github_authenticated_user`. Follow the pattern in `OAuth2LoginView`/`OAuth2CallbackView`: generate a random nonce (`secrets.token_hex()`), `pipeline.bind_state(\"state\", nonce)`, and compare the callback value against the stored nonce."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 482,
+   "severity": "medium",
+   "category": "security",
+   "title": "GitHub user validation is skipped entirely when no Integration row exists yet",
+   "body": "In `GitHubInstallation.dispatch`, when `Integration.objects.get(external_id=installation_id)` raises `DoesNotExist` the view immediately calls `pipeline.next_step()`, so the new `github_authenticated_user` vs. installation-sender check is never performed and `build_integration` will happily claim the installation. This is the common case for any installation whose `installation` webhook has not been processed yet (the browser redirect and the webhook race each other on every fresh install) and for installations that still exist on GitHub after the Sentry-side Integration row was deleted. Since GitHub installation ids are small sequential integers, an attacker can supply someone else's `installation_id` and, if no Integration row is present, bind that installation (and its repository access) to their own Sentry org \u2014 exactly the attack this PR aims to prevent. The sender/owner should be verified against data fetched from GitHub (e.g. the installation's account/owner via `get_installation_info`) rather than only against a pre-existing local row."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 434,
+   "severity": "low",
+   "category": "bug",
+   "title": "`get_user_info` failures propagate as a 500 instead of the installation-failed page",
+   "body": "`get_user_info(payload[\"access_token\"])` is called without a try/except. It performs an HTTP request to `/user` and raises `ApiError` on non-2xx responses (revoked token, GitHub 5xx, rate limiting), and may also return a non-dict payload, which would make the following `\"login\" not in authenticated_user_info` check raise `TypeError`. Any of these cases yields an unhandled exception and a generic 500 in the middle of the install pipeline rather than the `error(...)` page the rest of this view uses. Wrap the call and fall back to `error(request, self.active_organization)`."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 396,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_installation_not_found no longer exercises the installation-not-found path",
+   "body": "The test still stubs `/app/installations/{id}` as 404, but the request it now makes supplies `state=\"ddd023d87a913d5226e2a882c4c4cc05\"`, which does not match the pipeline signature used everywhere else in this file (`9cae5e88803f35ed7970fc131e6e65d3`). The request therefore short-circuits in `OAuthLoginView`'s state check and the assertion only verifies the generic \"Invalid installation request.\" page. The previously covered behaviour \u2014 `build_integration` raising `IntegrationError(\"The GitHub installation could not be found.\")` on a 404 from GitHub \u2014 is now untested, and the test name/intent is misleading. Use the correct state so the pipeline reaches `build_integration`, and assert the installation-not-found message (or add a separate test for the state-mismatch case)."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 399,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No coverage for the matching-sender branch or for metadata without a sender",
+   "body": "`test_github_user_mismatch` only covers the negative branch (authenticated login != `metadata[\"sender\"][\"login\"]`). There is no test where an Integration row exists with a `sender` whose login matches the authenticated user (the branch that must let the install continue), and none where the existing Integration's metadata has no `sender` key \u2014 the latter currently crashes with a `KeyError` in `GitHubInstallation.dispatch`. Both branches are reachable in production and should be asserted."
+  }
+ ],
+ "finding_count": 6
+}

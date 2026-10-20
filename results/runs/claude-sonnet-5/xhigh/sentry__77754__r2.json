@@ -1,0 +1,129 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__sentry__77754__r2",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 2,
+ "started_at": "2026-10-18T23:05:58Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29951,
+    "output": 28868,
+    "reasoning": 27157,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 292050,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4913,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 29951,
+    "output_tokens": 28868,
+    "output_tokens_details": {
+     "thinking_tokens": 27157
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T23:05:58Z",
+   "first_chunk_ms": 2239,
+   "first_text_ms": 277637,
+   "response_id": "msg_bdrk_lcclescm3krb37jd3hw24k6hf6lccsbi6hpz2gn4ztnvtfc7pprq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29951,
+  "output": 28868,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 27157
+ },
+ "cost_reported": null,
+ "latency_ms": 292050,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 18, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Dataclass default for `queued` is evaluated once at import time, not per-instance\", \"body\": \"`queued: datetime = timezone.now()` is a plain default expression, which in Python is evaluated exactly once when the class is defined (i.e., at module import time), not each time an `AssignmentSource` is constructed. Every `AssignmentSource` created via the default (e.g. `AssignmentSource.from_integration(...)` or direct construction without passing `queued`) will share the same stale timestamp - the process start time - rather than the actual time the assignment source was created. This silently defeats the purpose of the field (tracking when the source was 'queued') and will mislead any future logic or monitoring/debugging that relies on it to detect staleness or measure timing between inbound/outbound sync events. The fix is to use `field(default_factory=timezone.now)` instead of a bare default value.\"}, {\"file\": \"src/sentry/integrations/utils/sync.py\", \"line\": 141, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`AssignmentSource.queued` (a `datetime`) is embedded in task kwargs and will not round-trip correctly\", \"body\": \"`assignment_source.to_dict()` is placed directly into the `kwargs` of `sync_assignee_outbound.apply_async(...)`, including the raw `datetime` value of `queued`. When this crosses the task broker's serialization boundary (Celery/kombu JSON serializer), the `datetime` gets converted to an ISO string on encode but is not restored to a `datetime` on decode. `AssignmentSource.from_dict()` (sync_assignee_outbound.py) then constructs the dataclass with `queued` as a plain string even though the field is typed `datetime`, silently violating the declared type. Nothing in this PR crashes because of it today, but any future code that calls datetime methods or performs datetime comparisons on `queued` after a task round-trip will raise `AttributeError`/`TypeError`. This should either drop `queued` from the serialized payload, or explicitly serialize/deserialize it (e.g. via `isoformat()`/`datetime.fromisoformat()`).\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 416, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`assignment_source` parameter added to `sync_status_outbound` abstract method is never populated by any caller\", \"body\": \"The abstract method `sync_status_outbound` was changed to accept a new `assignment_source: AssignmentSource | None = None` parameter, but no caller in this PR (or shown in the diff) actually passes a non-default value for it - unlike `sync_assignee_outbound`, which is wired through `sync_group_assignee_outbound`/`sync_assignee_outbound` task with a real `assignment_source`. This makes the parameter effectively dead code that implies status-sync loop prevention exists when it does not, which can mislead future maintainers who assume the anti-loop protection already covers status sync as well as assignee sync.\"}, {\"file\": \"tests/sentry/models/test_groupassignee.py\", \"line\": 180, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test verifies outbound sync still proceeds when the assignment source is a *different* integration\", \"body\": \"The new test `test_assignee_sync_outbound_assign_with_matching_source_integration` only asserts that sync is blocked when `assignment_source` matches the target integration. The code comment in `IssueSyncIntegration.should_sync` explicitly states the intent is to 'still allow other integrations to propagate changes outward', but there is no test exercising that path (i.e., `assignment_source` referencing a *different* integration than the target `ExternalIssue`'s integration, confirming `sync_assignee_outbound` is still called). Without this test, a regression that accidentally blocks all outbound sync whenever any `assignment_source` is present would not be caught.\"}, {\"file\": \"src/sentry/integrations/tasks/sync_assignee_outbound.py\", \"line\": 34, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"New task kwarg has no forward/backward compatibility guard for rolling deploys\", \"body\": \"`sync_assignee_outbound` gained a new keyword parameter `assignment_source_dict` with no corresponding `**kwargs` catch-all. During a rolling deploy, producers running the new code (e.g. `sync_group_assignee_outbound` in `src/sentry/integrations/utils/sync.py`) will enqueue tasks with this extra kwarg while older worker processes still running the previous task signature will reject the call with `TypeError: sync_assignee_outbound() got an unexpected keyword argument 'assignment_source_dict'`, causing outbound assignee sync to fail (and retry/exhaust retries) until all workers are upgraded. Consider adding a `**kwargs` fallback or deploying the worker-side change ahead of enabling the new kwarg producer-side.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Dataclass default for `queued` is evaluated once at import time, not per-instance",
+   "body": "`queued: datetime = timezone.now()` is a plain default expression, which in Python is evaluated exactly once when the class is defined (i.e., at module import time), not each time an `AssignmentSource` is constructed. Every `AssignmentSource` created via the default (e.g. `AssignmentSource.from_integration(...)` or direct construction without passing `queued`) will share the same stale timestamp - the process start time - rather than the actual time the assignment source was created. This silently defeats the purpose of the field (tracking when the source was 'queued') and will mislead any future logic or monitoring/debugging that relies on it to detect staleness or measure timing between inbound/outbound sync events. The fix is to use `field(default_factory=timezone.now)` instead of a bare default value."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/utils/sync.py",
+   "line": 141,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`AssignmentSource.queued` (a `datetime`) is embedded in task kwargs and will not round-trip correctly",
+   "body": "`assignment_source.to_dict()` is placed directly into the `kwargs` of `sync_assignee_outbound.apply_async(...)`, including the raw `datetime` value of `queued`. When this crosses the task broker's serialization boundary (Celery/kombu JSON serializer), the `datetime` gets converted to an ISO string on encode but is not restored to a `datetime` on decode. `AssignmentSource.from_dict()` (sync_assignee_outbound.py) then constructs the dataclass with `queued` as a plain string even though the field is typed `datetime`, silently violating the declared type. Nothing in this PR crashes because of it today, but any future code that calls datetime methods or performs datetime comparisons on `queued` after a task round-trip will raise `AttributeError`/`TypeError`. This should either drop `queued` from the serialized payload, or explicitly serialize/deserialize it (e.g. via `isoformat()`/`datetime.fromisoformat()`)."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 416,
+   "severity": "low",
+   "category": "bug",
+   "title": "`assignment_source` parameter added to `sync_status_outbound` abstract method is never populated by any caller",
+   "body": "The abstract method `sync_status_outbound` was changed to accept a new `assignment_source: AssignmentSource | None = None` parameter, but no caller in this PR (or shown in the diff) actually passes a non-default value for it - unlike `sync_assignee_outbound`, which is wired through `sync_group_assignee_outbound`/`sync_assignee_outbound` task with a real `assignment_source`. This makes the parameter effectively dead code that implies status-sync loop prevention exists when it does not, which can mislead future maintainers who assume the anti-loop protection already covers status sync as well as assignee sync."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/models/test_groupassignee.py",
+   "line": 180,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test verifies outbound sync still proceeds when the assignment source is a *different* integration",
+   "body": "The new test `test_assignee_sync_outbound_assign_with_matching_source_integration` only asserts that sync is blocked when `assignment_source` matches the target integration. The code comment in `IssueSyncIntegration.should_sync` explicitly states the intent is to 'still allow other integrations to propagate changes outward', but there is no test exercising that path (i.e., `assignment_source` referencing a *different* integration than the target `ExternalIssue`'s integration, confirming `sync_assignee_outbound` is still called). Without this test, a regression that accidentally blocks all outbound sync whenever any `assignment_source` is present would not be caught."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+   "line": 34,
+   "severity": "medium",
+   "category": "api",
+   "title": "New task kwarg has no forward/backward compatibility guard for rolling deploys",
+   "body": "`sync_assignee_outbound` gained a new keyword parameter `assignment_source_dict` with no corresponding `**kwargs` catch-all. During a rolling deploy, producers running the new code (e.g. `sync_group_assignee_outbound` in `src/sentry/integrations/utils/sync.py`) will enqueue tasks with this extra kwarg while older worker processes still running the previous task signature will reject the call with `TypeError: sync_assignee_outbound() got an unexpected keyword argument 'assignment_source_dict'`, causing outbound assignee sync to fail (and retry/exhaust retries) until all workers are upgraded. Consider adding a `**kwargs` fallback or deploying the worker-side change ahead of enabling the new kwarg producer-side."
+  }
+ ],
+ "finding_count": 5
+}

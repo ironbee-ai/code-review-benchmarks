@@ -1,0 +1,111 @@
+{
+ "run_id": "claude-opus-5__xhigh__keycloak__32918__r2",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "keycloak__32918",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/32918",
+ "repeat": 2,
+ "started_at": "2026-10-18T22:15:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103546,
+  "sha": "a57687892c97cff0",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 41354,
+    "output": 25863,
+    "reasoning": 23937,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 315846,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5092,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 41354,
+    "output_tokens": 25863,
+    "output_tokens_details": {
+     "thinking_tokens": 23937
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:15:04Z",
+   "first_chunk_ms": 2030,
+   "first_text_ms": 292598,
+   "response_id": "msg_bdrk_tmvc3m6h3mc42cf5qgnjxcd3t6mffofsnzrmzugbiqfohgyw6hua",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 41354,
+  "output": 25863,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 23937
+ },
+ "cost_reported": null,
+ "latency_ms": 315846,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 93, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Login-cache invalidation decision uses the organization-aware wrapper, so updates can be silently skipped\", \"body\": \"`update()` obtains `original` from `getById(model.getInternalId())`, which (when the ORGANIZATION feature is on) returns the anonymous wrapper created by `createOrganizationAwareIdentityProviderModel`. That wrapper's `isEnabled()` returns `false` whenever the linked organization (or the realm's organization support) is disabled, while `updated` is the raw model. `registerIDPLoginInvalidationOnUpdate` therefore compares a model whose enabled state depends on *external* org state against a raw model, and bails out of invalidating when both sides fail the login predicate.\\n\\nConcrete failure: organization X is disabled; IDP `idp1` is linked to X with `BROKER_PUBLIC=true`, raw `enabled=true`, `hideOnLogin=false`. The login caches were populated from the JPA query (which filters on the raw DB columns), so `idp1`'s id is in the `ORG_ONLY`/`ALL` entries. An admin now sets `hideOnLogin=true`: `test(original)` is false (org disabled \u21d2 wrapper reports disabled) and `test(updated)` is false (hidden), so the first early-return triggers and no login cache is invalidated. When organization X is re-enabled, `getForLogin` keeps returning `idp1`'s id and `getById` returns a non-null model, so the IDP that is explicitly hidden on login is rendered on the login page (the bean only re-checks `isEnabled()`, not `hideOnLogin`/`linkOnly`).\\n\\nUse the unwrapped model (e.g. `idpDelegate.getById(...)`) or compare the raw fields (`enabled`, `linkOnly`, `hideOnLogin`, `organizationId`, `BROKER_PUBLIC`) when deciding whether to invalidate. Note `remove()` correctly uses the raw delegate model, so the two paths are inconsistent today. There is also no test covering a disabled organization combined with a cached login list.\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 236, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Single per-realm login cache entry keyed by organizationId is rebuilt/invalidated for every unseen organization\", \"body\": \"`getForLogin` uses one cache key per realm+FetchMode (`cacheKeyForLogin`) and stores the per-organization result sets inside a single `IdentityProviderListQuery` under `searchKey = organizationId`. When a request arrives with an organizationId that is not yet present in that entry, the code calls `cache.invalidateObject(cacheKey)` (bumping the revision) and re-adds a merged query containing all previously cached search keys plus the new one.\\n\\nOn the login hot path this means: (a) the first login for each of N organizations in a realm invalidates and rebuilds the shared entry, so the realm's login IDP lookup is re-queried and the entry re-serialized O(N) times, and concurrent first-logins for different orgs will repeatedly drop each other's entry and re-hit the DB; (b) the entry grows monotonically with the number of organizations, so a realm with thousands of orgs ends up with one very large cache object that the realm cache's eviction policy treats as a single element. For `FetchMode.REALM_ONLY` the problem is gratuitous: `organizationId` is ignored by the query, yet it is still used as `searchKey`, so each distinct org id creates another identical result set (and another invalidate/rebuild cycle). Consider putting the organization id in the Infinispan key itself, or at least using a constant search key for `REALM_ONLY`.\"}, {\"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java\", \"line\": 381, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Cleanup registers the literal alias \\\"alias\\\", so the 21 IDPs created by the new test are never removed\", \"body\": \"`getCleanup().addCleanup(testRealm().identityProviders().get(\\\"alias\\\")::remove)` (lines 381 and 425) references a hard-coded alias `\\\"alias\\\"` instead of the alias that was just created (`idp-alias-<i>` / `idp-alias-20`). At cleanup time the admin client targets a non-existent provider, so either the cleanup throws `NotFoundException` or it silently does nothing; in both cases none of the 21 identity providers created by `testCacheIDPForLogin` are deleted, and `idp-alias-20` stays linked to organization `orga`.\\n\\nBecause the test realm is imported once per class, this leaks state into the other methods of this class: `testCacheIDPByOrg` asserts exact counts (`assertEquals(6, ...)`, `assertEquals(2/4, ...)`) for the IDPs of orga/orgb, and `testCacheIDPForLogin` itself asserts exact counts (5/5/10, 6/5/11, 5/6/11) that are only valid in a clean realm. Depending on JUnit's method order, one of the two tests will fail or produce misleading results. (The same mistake exists in the pre-existing line 303 and should be fixed there too.)\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 93,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Login-cache invalidation decision uses the organization-aware wrapper, so updates can be silently skipped",
+   "body": "`update()` obtains `original` from `getById(model.getInternalId())`, which (when the ORGANIZATION feature is on) returns the anonymous wrapper created by `createOrganizationAwareIdentityProviderModel`. That wrapper's `isEnabled()` returns `false` whenever the linked organization (or the realm's organization support) is disabled, while `updated` is the raw model. `registerIDPLoginInvalidationOnUpdate` therefore compares a model whose enabled state depends on *external* org state against a raw model, and bails out of invalidating when both sides fail the login predicate.\n\nConcrete failure: organization X is disabled; IDP `idp1` is linked to X with `BROKER_PUBLIC=true`, raw `enabled=true`, `hideOnLogin=false`. The login caches were populated from the JPA query (which filters on the raw DB columns), so `idp1`'s id is in the `ORG_ONLY`/`ALL` entries. An admin now sets `hideOnLogin=true`: `test(original)` is false (org disabled \u21d2 wrapper reports disabled) and `test(updated)` is false (hidden), so the first early-return triggers and no login cache is invalidated. When organization X is re-enabled, `getForLogin` keeps returning `idp1`'s id and `getById` returns a non-null model, so the IDP that is explicitly hidden on login is rendered on the login page (the bean only re-checks `isEnabled()`, not `hideOnLogin`/`linkOnly`).\n\nUse the unwrapped model (e.g. `idpDelegate.getById(...)`) or compare the raw fields (`enabled`, `linkOnly`, `hideOnLogin`, `organizationId`, `BROKER_PUBLIC`) when deciding whether to invalidate. Note `remove()` correctly uses the raw delegate model, so the two paths are inconsistent today. There is also no test covering a disabled organization combined with a cached login list."
+  },
+  {
+   "index": 1,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 236,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Single per-realm login cache entry keyed by organizationId is rebuilt/invalidated for every unseen organization",
+   "body": "`getForLogin` uses one cache key per realm+FetchMode (`cacheKeyForLogin`) and stores the per-organization result sets inside a single `IdentityProviderListQuery` under `searchKey = organizationId`. When a request arrives with an organizationId that is not yet present in that entry, the code calls `cache.invalidateObject(cacheKey)` (bumping the revision) and re-adds a merged query containing all previously cached search keys plus the new one.\n\nOn the login hot path this means: (a) the first login for each of N organizations in a realm invalidates and rebuilds the shared entry, so the realm's login IDP lookup is re-queried and the entry re-serialized O(N) times, and concurrent first-logins for different orgs will repeatedly drop each other's entry and re-hit the DB; (b) the entry grows monotonically with the number of organizations, so a realm with thousands of orgs ends up with one very large cache object that the realm cache's eviction policy treats as a single element. For `FetchMode.REALM_ONLY` the problem is gratuitous: `organizationId` is ignored by the query, yet it is still used as `searchKey`, so each distinct org id creates another identical result set (and another invalidate/rebuild cycle). Consider putting the organization id in the Infinispan key itself, or at least using a constant search key for `REALM_ONLY`."
+  },
+  {
+   "index": 2,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java",
+   "line": 381,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Cleanup registers the literal alias \"alias\", so the 21 IDPs created by the new test are never removed",
+   "body": "`getCleanup().addCleanup(testRealm().identityProviders().get(\"alias\")::remove)` (lines 381 and 425) references a hard-coded alias `\"alias\"` instead of the alias that was just created (`idp-alias-<i>` / `idp-alias-20`). At cleanup time the admin client targets a non-existent provider, so either the cleanup throws `NotFoundException` or it silently does nothing; in both cases none of the 21 identity providers created by `testCacheIDPForLogin` are deleted, and `idp-alias-20` stays linked to organization `orga`.\n\nBecause the test realm is imported once per class, this leaks state into the other methods of this class: `testCacheIDPByOrg` asserts exact counts (`assertEquals(6, ...)`, `assertEquals(2/4, ...)`) for the IDPs of orga/orgb, and `testCacheIDPForLogin` itself asserts exact counts (5/5/10, 6/5/11, 5/6/11) that are only valid in a clean realm. Depending on JUnit's method order, one of the two tests will fail or produce misleading results. (The same mistake exists in the pre-existing line 303 and should be fixed there too.)"
+  }
+ ],
+ "finding_count": 3
+}

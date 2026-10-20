@@ -1,0 +1,151 @@
+{
+ "run_id": "glm-5.3__default__grafana__97529__r3",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:03:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 35027,
+    "output": 10415,
+    "reasoning": 9232,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0948638,
+   "latency_ms": 134121,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5316,
+   "raw_usage": {
+    "completion_tokens": 10415,
+    "prompt_tokens": 35027,
+    "total_tokens": 45442,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 9232,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0948638,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0948638,
+     "upstream_inference_prompt_cost": 0.0490378,
+     "upstream_inference_completions_cost": 0.045826
+    }
+   },
+   "started_at": "2026-10-18T12:03:04Z",
+   "first_chunk_ms": 2424,
+   "first_text_ms": 122979,
+   "response_id": "gen-1792324984-XHwIYJhZ9Ymu4dOfSzEW",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 35027,
+  "output": 10415,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9232
+ },
+ "cost_reported": 0.0948638,
+ "latency_ms": 134121,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing the coarse BuildIndex lock allows concurrent duplicate builds of the same index key\", \"body\": \"BuildIndex previously held b.cacheMu for the whole function, which (accidentally) serialized builds. Now the lock only guards the final `b.cache[key] = idx` write, but the caller-side check in searchSupport.getOrCreateIndex (pkg/storage/unified/resource/search.go, which its own TODO admits has no per-key dedup) is a check-then-act: two concurrent callers (e.g. a gRPC Search request and the watch-event goroutine in handleEvent, or two simultaneous Search requests for a cold namespace) both get nil from GetIndex and both run a full build. The last writer wins in the cache, so the losing bleveIndex becomes orphaned while the watch goroutine may still be writing documents into it - searches then run against a different index instance and silently miss those updates. It also double-counts IndexMetrics.IndexedKinds, and for disk-backed indexes (size > FileThreshold) two concurrent bleve.New calls on the same directory will make one fail with 'path already exists'. A per-key singleflight or keyed mutex is needed to preserve the old serialization semantics for the same key while allowing different keys to build in parallel.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on shared err and totalBatchesIndexed across init errgroup workers\", \"body\": \"In searchSupport.init, each group.Go closure assigns to the function-scoped `err` variable (`_, _, err = s.build(...)`) and increments `totalBatchesIndexed` from multiple worker goroutines with no synchronization. With WorkerThreads > 1 this is a data race (caught by -race) and makes both the error value observed by `return err` and the `namespaced_indexed` span attribute unreliable. Each goroutine should use its own local error variable and the counter should be atomic (or aggregated from group results). This function is the direct target of this PR's concurrency changes, so the race is worth fixing alongside them.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 209, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Search event goroutine panics when the storage watch channel is closed\", \"body\": \"The goroutine started in init does `v := <-events; s.handleEvent(watchctx, v)` with no ok-check. The SQL backend's poller closes the stream channel when the backend is stopped (backend.Stop -> b.cancel() -> poller returns -> close(stream)), e.g. during server shutdown. After close, the receive returns nil immediately in a hot loop, and handleEvent dereferences evt.Type on the nil event, panicking and crashing the process. It should be `v, ok := <-events; if !ok { return }` (and ideally also honor a cancellable context). Since this PR makes init run unconditionally at construction, every server with search configured now runs this goroutine and will hit the panic on shutdown.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 88, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Trace propagation fix was missed in bleve BuildIndex\", \"body\": \"The PR's stated goal is to fix trace propagation by keeping the span context (done in search.go init/build and sql/backend.go GetResourceStats), but bleveBackend.BuildIndex still does `_, span := b.tracer.Start(ctx, ...)`, discarding the child span context. The builder callback and everything it calls (storage.ListIterator, document building) therefore run with the parent context, so their spans are not children of the BuildIndex span and the BuildIndex trace is missing all its nested work. It should be `ctx, span := ...` like the other fixed call sites.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Constructor leaks context and goroutines when Init fails\", \"body\": \"NewResourceServer now calls s.Init(ctx) and returns nil on error, but never calls the cancel() created for the server's internal context. If init fails partway (e.g. search.init succeeded and started its watch goroutine, then initWatcher failed), the cancellable context is leaked and the search watch goroutine - which runs on a detached context.Background() - is never cleaned up. The error path should invoke s.cancel() (and ideally s.Stop) before returning.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 37, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Postgres integration test skipped with an unexplained failure instead of being fixed\", \"body\": \"The PR adds a permanent skip for postgres ('test not working with postgres in Drone. Works locally.') to the only integration test covering the storage-server target. This removes CI coverage for a supported database exactly when the initialization model changes from lazy per-request to blocking at construction - a change that could plausibly behave differently on postgres (e.g. timing/migration ordering during InitTestDB). The root cause should be diagnosed and fixed, or at least an issue linked, rather than silently dropping postgres coverage; otherwise a real postgres regression from this change will go undetected.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing the coarse BuildIndex lock allows concurrent duplicate builds of the same index key",
+   "body": "BuildIndex previously held b.cacheMu for the whole function, which (accidentally) serialized builds. Now the lock only guards the final `b.cache[key] = idx` write, but the caller-side check in searchSupport.getOrCreateIndex (pkg/storage/unified/resource/search.go, which its own TODO admits has no per-key dedup) is a check-then-act: two concurrent callers (e.g. a gRPC Search request and the watch-event goroutine in handleEvent, or two simultaneous Search requests for a cold namespace) both get nil from GetIndex and both run a full build. The last writer wins in the cache, so the losing bleveIndex becomes orphaned while the watch goroutine may still be writing documents into it - searches then run against a different index instance and silently miss those updates. It also double-counts IndexMetrics.IndexedKinds, and for disk-backed indexes (size > FileThreshold) two concurrent bleve.New calls on the same directory will make one fail with 'path already exists'. A per-key singleflight or keyed mutex is needed to preserve the old serialization semantics for the same key while allowing different keys to build in parallel."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on shared err and totalBatchesIndexed across init errgroup workers",
+   "body": "In searchSupport.init, each group.Go closure assigns to the function-scoped `err` variable (`_, _, err = s.build(...)`) and increments `totalBatchesIndexed` from multiple worker goroutines with no synchronization. With WorkerThreads > 1 this is a data race (caught by -race) and makes both the error value observed by `return err` and the `namespaced_indexed` span attribute unreliable. Each goroutine should use its own local error variable and the counter should be atomic (or aggregated from group results). This function is the direct target of this PR's concurrency changes, so the race is worth fixing alongside them."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 209,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Search event goroutine panics when the storage watch channel is closed",
+   "body": "The goroutine started in init does `v := <-events; s.handleEvent(watchctx, v)` with no ok-check. The SQL backend's poller closes the stream channel when the backend is stopped (backend.Stop -> b.cancel() -> poller returns -> close(stream)), e.g. during server shutdown. After close, the receive returns nil immediately in a hot loop, and handleEvent dereferences evt.Type on the nil event, panicking and crashing the process. It should be `v, ok := <-events; if !ok { return }` (and ideally also honor a cancellable context). Since this PR makes init run unconditionally at construction, every server with search configured now runs this goroutine and will hit the panic on shutdown."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "low",
+   "category": "bug",
+   "title": "Trace propagation fix was missed in bleve BuildIndex",
+   "body": "The PR's stated goal is to fix trace propagation by keeping the span context (done in search.go init/build and sql/backend.go GetResourceStats), but bleveBackend.BuildIndex still does `_, span := b.tracer.Start(ctx, ...)`, discarding the child span context. The builder callback and everything it calls (storage.ListIterator, document building) therefore run with the parent context, so their spans are not children of the BuildIndex span and the BuildIndex trace is missing all its nested work. It should be `ctx, span := ...` like the other fixed call sites."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "low",
+   "category": "bug",
+   "title": "Constructor leaks context and goroutines when Init fails",
+   "body": "NewResourceServer now calls s.Init(ctx) and returns nil on error, but never calls the cancel() created for the server's internal context. If init fails partway (e.g. search.init succeeded and started its watch goroutine, then initWatcher failed), the cancellable context is leaked and the search watch goroutine - which runs on a detached context.Background() - is never cleaned up. The error path should invoke s.cancel() (and ideally s.Stop) before returning."
+  },
+  {
+   "index": 5,
+   "file": "pkg/server/module_server_test.go",
+   "line": 37,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Postgres integration test skipped with an unexplained failure instead of being fixed",
+   "body": "The PR adds a permanent skip for postgres ('test not working with postgres in Drone. Works locally.') to the only integration test covering the storage-server target. This removes CI coverage for a supported database exactly when the initialization model changes from lazy per-request to blocking at construction - a change that could plausibly behave differently on postgres (e.g. timing/migration ordering during InitTestDB). The root cause should be diagnosed and fixed, or at least an issue linked, rather than silently dropping postgres coverage; otherwise a real postgres regression from this change will go undetected."
+  }
+ ],
+ "finding_count": 6
+}

@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-sonnet-5__default__sentry__95633__r2",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-18T21:25:18Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 19106,
+    "reasoning": 16845,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 192492,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5989,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 19106,
+    "output_tokens_details": {
+     "thinking_tokens": 16845
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:25:18Z",
+   "first_chunk_ms": 2292,
+   "first_text_ms": 173448,
+   "response_id": "msg_bdrk_pi74l4n5mts743irw2dc3rwchfpxmcmjdxhabowshf2adypqm7aq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 19106,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 16845
+ },
+ "cost_reported": null,
+ "latency_ms": 192492,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 132, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"Use of queue.Queue.shutdown()/queue.ShutDown requires Python 3.13+\", \"body\": \"OrderedQueueWorker.run() catches `queue.ShutDown` (lines 132, 143) and FixedQueuePool.shutdown() calls `q.shutdown(immediate=False)` (line 238). Both `queue.Queue.shutdown()` and the `queue.ShutDown` exception were only added in Python 3.13. If Sentry's runtime is on an earlier Python version (3.11/3.12, which is common for this codebase), `q.shutdown()` will raise `AttributeError: 'Queue' object has no attribute 'shutdown'`, which is silently swallowed by the broad `except Exception: logger.exception(...)` in `shutdown()`. As a result, worker threads will never receive a shutdown signal and will hang forever blocked on `work_queue.get()`, making graceful shutdown completely non-functional and leaking daemon threads for the life of the process.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Queues are unbounded, contradicting the documented backpressure guarantee\", \"body\": \"`work_queue: queue.Queue[WorkItem[T]] = queue.Queue()` is created without a `maxsize`, and `FixedQueuePool.submit()`/`SimpleQueueProcessingStrategy.submit()` never block on a full queue. The class docstrings claim 'Natural backpressure when queues fill up,' but since the queue is unbounded, a single slow group assigned to a queue will cause that queue (and thus memory usage) to grow without limit while the main consumer thread keeps consuming and submitting new items. This defeats the stated goal of this PR (avoiding unbounded backlog from slow items) and risks unbounded memory growth under sustained slow processing.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 242, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Sequential worker joins on shutdown can take far longer than expected\", \"body\": \"In `FixedQueuePool.shutdown()`, `for worker in self.workers: worker.join(timeout=5.0)` joins each worker thread sequentially with a 5 second timeout. With the default `num_queues=20`, a slow shutdown could take up to 20 * 5 = 100 seconds in the worst case. This can exceed typical process termination grace periods (e.g. Kubernetes `terminationGracePeriodSeconds`), resulting in SIGKILL before threads finish, undermining the goal of a graceful shutdown and risking lost/duplicated in-flight work.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 183, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"queue_pool is permanently nulled on shutdown, breaking subsequent create_with_partitions calls\", \"body\": \"`ResultsStrategyFactory.shutdown()` sets `self.queue_pool = None` after calling `self.queue_pool.shutdown()`, but `self.thread_queue_parallel` stays `True` and the pool is never recreated. If `create_with_partitions()` is invoked again on this factory instance after `shutdown()` is called (e.g. during a partition rebalance or any lifecycle path where the strategy factory outlives individual strategy instances), `create_thread_queue_parallel_worker()` will hit `assert self.queue_pool is not None` and raise an AssertionError, crashing the consumer. The other modes (`parallel`, `batched-parallel`) don't exhibit this exact null-out pattern on their pools/executors.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 273, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Kafka offset commit invoked from a background thread, not the main poll loop\", \"body\": \"`SimpleQueueProcessingStrategy._commit_loop` runs on a dedicated daemon thread (`self.commit_thread`) and periodically calls `self.commit_function(committable)`, which ultimately drives the arroyo `Commit` callback tied to the underlying Kafka consumer. The underlying confluent-kafka-python/librdkafka client is documented as not safe for concurrent calls across threads (e.g. concurrent `poll()` from the main stream processor loop and `commit()`-related calls from this background thread). Introducing a separate thread that periodically triggers commits concurrently with the main consumer loop's polling is a new concurrency risk that did not exist for the other (serial/batched-parallel/parallel) modes, which all perform commits from the strategy pipeline on the main processing thread.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 25, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"WorkItem retains the full Kafka Message object though it is never used\", \"body\": \"`WorkItem` stores the entire `message: Message[KafkaPayload | FilteredPayload]` (set in `SimpleQueueProcessingStrategy.submit()`), but neither `OrderedQueueWorker.run()` nor any other code path reads `work_item.message` \u2014 only `partition`, `offset`, and `result` are used. Keeping a reference to the full raw Kafka message for every queued item unnecessarily increases memory retained by backlogged queues, especially since the queues are unbounded (see related finding), compounding potential memory pressure under backlog.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1799, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"New thread-queue-parallel tests are tightly coupled to the 1-second commit loop timing\", \"body\": \"Tests such as `test_thread_queue_parallel_offset_commit` and `test_thread_queue_parallel_offset_gaps` poll for up to ~2 seconds (20 iterations of `time.sleep(0.1)`) waiting for a commit to appear, while `SimpleQueueProcessingStrategy._commit_loop` only attempts a commit once per second (`self.shutdown_event.wait(1.0)`). This leaves very little margin under CI load or thread scheduling delays, making these tests prone to intermittent flakiness rather than deterministically synchronizing on the commit event.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 132,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Use of queue.Queue.shutdown()/queue.ShutDown requires Python 3.13+",
+   "body": "OrderedQueueWorker.run() catches `queue.ShutDown` (lines 132, 143) and FixedQueuePool.shutdown() calls `q.shutdown(immediate=False)` (line 238). Both `queue.Queue.shutdown()` and the `queue.ShutDown` exception were only added in Python 3.13. If Sentry's runtime is on an earlier Python version (3.11/3.12, which is common for this codebase), `q.shutdown()` will raise `AttributeError: 'Queue' object has no attribute 'shutdown'`, which is silently swallowed by the broad `except Exception: logger.exception(...)` in `shutdown()`. As a result, worker threads will never receive a shutdown signal and will hang forever blocked on `work_queue.get()`, making graceful shutdown completely non-functional and leaking daemon threads for the life of the process."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "bug",
+   "title": "Queues are unbounded, contradicting the documented backpressure guarantee",
+   "body": "`work_queue: queue.Queue[WorkItem[T]] = queue.Queue()` is created without a `maxsize`, and `FixedQueuePool.submit()`/`SimpleQueueProcessingStrategy.submit()` never block on a full queue. The class docstrings claim 'Natural backpressure when queues fill up,' but since the queue is unbounded, a single slow group assigned to a queue will cause that queue (and thus memory usage) to grow without limit while the main consumer thread keeps consuming and submitting new items. This defeats the stated goal of this PR (avoiding unbounded backlog from slow items) and risks unbounded memory growth under sustained slow processing."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 242,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Sequential worker joins on shutdown can take far longer than expected",
+   "body": "In `FixedQueuePool.shutdown()`, `for worker in self.workers: worker.join(timeout=5.0)` joins each worker thread sequentially with a 5 second timeout. With the default `num_queues=20`, a slow shutdown could take up to 20 * 5 = 100 seconds in the worst case. This can exceed typical process termination grace periods (e.g. Kubernetes `terminationGracePeriodSeconds`), resulting in SIGKILL before threads finish, undermining the goal of a graceful shutdown and risking lost/duplicated in-flight work."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 183,
+   "severity": "medium",
+   "category": "bug",
+   "title": "queue_pool is permanently nulled on shutdown, breaking subsequent create_with_partitions calls",
+   "body": "`ResultsStrategyFactory.shutdown()` sets `self.queue_pool = None` after calling `self.queue_pool.shutdown()`, but `self.thread_queue_parallel` stays `True` and the pool is never recreated. If `create_with_partitions()` is invoked again on this factory instance after `shutdown()` is called (e.g. during a partition rebalance or any lifecycle path where the strategy factory outlives individual strategy instances), `create_thread_queue_parallel_worker()` will hit `assert self.queue_pool is not None` and raise an AssertionError, crashing the consumer. The other modes (`parallel`, `batched-parallel`) don't exhibit this exact null-out pattern on their pools/executors."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 273,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Kafka offset commit invoked from a background thread, not the main poll loop",
+   "body": "`SimpleQueueProcessingStrategy._commit_loop` runs on a dedicated daemon thread (`self.commit_thread`) and periodically calls `self.commit_function(committable)`, which ultimately drives the arroyo `Commit` callback tied to the underlying Kafka consumer. The underlying confluent-kafka-python/librdkafka client is documented as not safe for concurrent calls across threads (e.g. concurrent `poll()` from the main stream processor loop and `commit()`-related calls from this background thread). Introducing a separate thread that periodically triggers commits concurrently with the main consumer loop's polling is a new concurrency risk that did not exist for the other (serial/batched-parallel/parallel) modes, which all perform commits from the strategy pipeline on the main processing thread."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 25,
+   "severity": "low",
+   "category": "perf",
+   "title": "WorkItem retains the full Kafka Message object though it is never used",
+   "body": "`WorkItem` stores the entire `message: Message[KafkaPayload | FilteredPayload]` (set in `SimpleQueueProcessingStrategy.submit()`), but neither `OrderedQueueWorker.run()` nor any other code path reads `work_item.message` \u2014 only `partition`, `offset`, and `result` are used. Keeping a reference to the full raw Kafka message for every queued item unnecessarily increases memory retained by backlogged queues, especially since the queues are unbounded (see related finding), compounding potential memory pressure under backlog."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1799,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "New thread-queue-parallel tests are tightly coupled to the 1-second commit loop timing",
+   "body": "Tests such as `test_thread_queue_parallel_offset_commit` and `test_thread_queue_parallel_offset_gaps` poll for up to ~2 seconds (20 iterations of `time.sleep(0.1)`) waiting for a commit to appear, while `SimpleQueueProcessingStrategy._commit_loop` only attempts a commit once per second (`self.shutdown_event.wait(1.0)`). This leaves very little margin under CI load or thread scheduling delays, making these tests prone to intermittent flakiness rather than deterministically synchronizing on the commit event."
+  }
+ ],
+ "finding_count": 7
+}

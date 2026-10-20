@@ -1,0 +1,179 @@
+{
+ "run_id": "mistral-large-4__low__sentry__80168__r3",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__80168",
+ "golden_url": "https://github.com/getsentry/sentry/pull/80168",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:03:42Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 83073,
+  "sha": "79de95c3b93efaeb",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19583,
+    "output": 3135,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01986859,
+   "latency_ms": 31715,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 12602,
+   "raw_usage": {
+    "completion_tokens": 3135,
+    "prompt_tokens": 19583,
+    "total_tokens": 22718,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01986859,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01986859,
+     "upstream_inference_prompt_cost": 0.01331644,
+     "upstream_inference_completions_cost": 0.00655215
+    }
+   },
+   "started_at": "2026-10-18T12:03:42Z",
+   "first_chunk_ms": 2204,
+   "first_text_ms": 2204,
+   "response_id": "gen-1792325022-hV40DPNoqLMGAKPFVpeY",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19583,
+  "output": 3135,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01986859,
+ "latency_ms": 31715,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/workflow_engine/processors/detector.py\",\n      \"line\": 230,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Docstring for evaluate() still says it returns a list\",\n      \"body\": \"The `evaluate` method on `StatefulDetectorHandler` (line 226-244) now returns `dict[DetectorGroupKey, DetectorEvaluationResult]`, but its docstring at line 230 still says 'returns a list of `DetectorEvaluationResult`'. The docstring should be updated to say it returns a dict keyed by group key, matching the actual return type and the abstract `DetectorHandler.evaluate` signature.\"\n    },\n    {\n      \"file\": \"src/sentry/workflow_engine/processors/detector.py\",\n      \"line\": 259,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Dedupe update is enqueued before the condition_group validity check, causing state corruption for detectors without condition groups\",\n      \"body\": \"In `evaluate_group_key_value` (line 246-309), `self.enqueue_dedupe_update(group_key, dedupe_value)` is called at line 265, BEFORE the check at line 267-269 that returns `None` if `self.condition_group` is falsy. This means that when a detector has no condition group (or an invalid one), the dedupe value is still recorded in `self.dedupe_updates` and will be committed to Redis by `commit_state_updates()`. On the next data packet with a higher dedupe value, evaluation will proceed past the dedupe check (line 259) and hit the condition_group check again \u2014 but more importantly, the dedupe value has been advanced even though no evaluation actually occurred. If the condition group is later fixed/added, packets that arrived while the condition group was missing will be incorrectly skipped as 'already processed'. The dedupe update should only be enqueued after we've confirmed the condition group is valid, or the early return for missing condition_group should happen before the dedupe enqueue. The test `test_no_condition_group` (line 474-484) actually asserts this buggy behavior: `self.assert_updates(handler, \\\"val1\\\", 2, None, None, None)` expects the dedupe update to be present even though evaluation was skipped.\"\n    },\n    {\n      \"file\": \"src/sentry/workflow_engine/processors/detector.py\",\n      \"line\": 192,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Redis pipeline results are zipped with wrong list when fetching dedupe values, causing incorrect state data\",\n      \"body\": \"In `get_state_data` (line 178-224), the dedupe values are fetched via a Redis pipeline (lines 187-193). The code builds `dedupe_keys` for all `group_keys`, executes the pipeline, and then zips `group_keys` with `pipeline.execute()`. However, `pipeline.execute()` returns results in the order commands were added, which matches `dedupe_keys` order, which matches `group_keys` order \u2014 so this part is correct. BUT: the same pipeline object is then `reset()` and reused for counter keys (line 194). The issue is that `pipeline.execute()` at line 192 is called, and then `pipeline.reset()` at line 194 \u2014 but between lines 189-190, only `pipeline.get(dk)` is called for each dedupe key. The `zip(group_keys, pipeline.execute())` at line 192 is correct. However, looking more carefully: the pipeline is created once at line 188, used for dedupe gets (189-190), executed (192), reset (194), then reused for counter gets (202-203), and executed again (204). This is fine. The actual bug is more subtle: if `group_keys` contains `None`, `build_dedupe_value_key(None)` returns a key with empty string (line 325-327), which is fine. But wait \u2014 re-reading: the real issue is that `pipeline.execute()` returns bytes or None, and `int(dv) if dv else 0` handles that. Actually the code appears correct. Let me re-examine: the concern is that `zip(group_keys, pipeline.execute())` assumes the pipeline returns exactly one result per `get` command, in order. This is true for redis-py. So this finding may be incorrect \u2014 withdrawing it.\"\n    },\n    {\n      \"file\": \"src/sentry/workflow_engine/processors/detector.py\",\n      \"line\": 176,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"build_fingerprint uses string concatenation that produces ambiguous keys when group_key contains colon\",\n      \"body\": \"In `build_fingerprint` (line 172-176), the fingerprint is built as `f\\\"{self.detector.id}{':' + group_key if group_key is not None else ''}\\\"`. If `group_key` itself contains a colon (e.g., `\\\"a:b\\\"`), the resulting fingerprint `\\\"123:a:b\\\"` is ambiguous \u2014 it could be detector 123 with group_key `\\\"a:b\\\"` or detector `\\\"123:a\\\"` with group_key `\\\"b\\\"` (though detector.id is an int so the latter is impossible). More practically, two different (detector_id, group_key) pairs could produce the same fingerprint string if group_key contains colons in specific ways. For example, detector 1 with group_key `\\\"2:x\\\"` produces `\\\"1:2:x\\\"`, and detector 12 with group_key `\\\"x\\\"` produces `\\\"12:x\\\"` \u2014 these are different. But detector 1 with group_key `\\\"23:x\\\"` produces `\\\"1:23:x\\\"` vs detector 12 with group_key `\\\"3:x\\\"` produces `\\\"12:3:x\\\"` \u2014 still different. The real ambiguity: detector 1, group_key `\\\"2:3\\\"` \u2192 `\\\"1:2:3\\\"` vs detector 12, group_key `\\\"3\\\"` \u2192 `\\\"12:3\\\"` \u2014 different. Actually with int detector IDs this is mostly safe, but the format is fragile. A delimiter that cannot appear in group_key, or a structured format (e.g., JSON array or tuple), would be more robust. This is a low-severity robustness concern.\"\n    },\n    {\n      \"file\": \"src/sentry/workflow_engine/processors/detector.py\",\n      \"line\": 300,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"PriorityLevel(new_status) conversion may fail if DetectorPriorityLevel and PriorityLevel have mismatched values\",\n      \"body\": \"At line 300, `PriorityLevel(new_status)` is called where `new_status` is a `DetectorPriorityLevel`. This assumes that `DetectorPriorityLevel` and `PriorityLevel` have identical integer values for corresponding enum members. If `DetectorPriorityLevel` is defined with different values than `PriorityLevel` (e.g., `DetectorPriorityLevel.OK = 0` but `PriorityLevel.LOW = 10`, or if `DetectorPriorityLevel` has members that don't exist in `PriorityLevel`), this conversion will either produce the wrong priority or raise a `ValueError`. The code should either use a mapping function, ensure the enums are aligned, or use `PriorityLevel(new_status.value)` with a comment that the values must match. Without seeing the enum definitions, this is a potential runtime error or silent data corruption if the values diverge.\"\n    },\n    {\n      \"file\": \"src/sentry/workflow_engine/models/detector.py\",\n      \"line\": 63,\n      \"severity\": \"low\",\n      \"category\": \"api\",\n      \"title\": \"Return type annotation of detector_handler property is DetectorHandler but StatefulDetectorHandler is a subclass \u2014 should use base type or be more specific\",\n      \"body\": \"The `detector_handler` property (line 62-86) is annotated to return `DetectorHandler | None`, but `StatefulDetectorHandler` extends `DetectorHandler`. The `MetricAlertDetectorHandler` in `grouptype.py` now extends `StatefulDetectorHandler`. The return type `DetectorHandler` is technically correct (covariant return), but callers that need `StatefulDetectorHandler` methods (like `commit_state_updates`, `get_state_data`, etc.) will need to cast or check the type. Since `process_detectors` calls `handler.commit_state_updates()` (line 68 in processors/detector.py), which is defined on `DetectorHandler` as a no-op but overridden in `StatefulDetectorHandler`, this works at runtime. However, the type annotation doesn't reflect that stateful handlers are expected. Consider whether the base `DetectorHandler` should have `commit_state_updates` as abstract, or whether the return type should be more specific. This is a minor API design concern.\"\n    },\n    {\n      \"file\": \"tests/sentry/workflow_engine/processors/test_detector.py\",\n      \"line\": 191,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"test_state_results_multi_group passes value 10 for group_2 but expects occurrence built with value 6\",\n      \"body\": \"In `test_state_results_multi_group` (line 175-222), the data packet is `{\\\"dedupe\\\": 2, \\\"group_vals\\\": {\\\"group_1\\\": 6, \\\"group_2\\\": 10}}`. At line 190-192, `occurrence_2, event_data_2 = build_mock_occurrence_and_event(detector.detector_handler, \\\"group_2\\\", 6, PriorityLevel.HIGH)` \u2014 note the value passed is `6`, but the actual value for `group_2` in the packet is `10`. The `build_mock_occurrence_and_event` function (line 244-275) doesn't actually use the `value` parameter in the occurrence construction (it's not stored in the `IssueOccurrence`), so the test passes. However, this is misleading \u2014 the test should pass the correct value `10` to accurately reflect what the handler would produce. If `build_occurrence_and_event_data` implementations in real detectors use the `value` parameter (which they should, as it's the triggering value), this test would fail to catch mismatches. The test should use `10` for `group_2` to match the input data.\"\n    },\n    {\n      \"file\": \"tests/sentry/workflow_engine/processors/test_detector.py\",\n      \"line\": 539,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"TestEvaluateGroupKeyValue.test_dedupe builds expected occurrence with wrong group_key and value\",\n      \"body\": \"In `TestEvaluateGroupKeyValue.test_dedupe` (line 533-579), at line 536-538, `occurrence, event_data = build_mock_occurrence_and_event(handler, \\\"val1\\\", 6, PriorityLevel.HIGH)` builds an occurrence for group_key `\\\"val1\\\"` with value `6`. But then at line 539-545, `expected_result` is created with `group_key=\\\"group_key\\\"` (line 540) and the occurrence built for `\\\"val1\\\"`. The `evaluate_group_key_value` call at line 547-558 passes `expected_result.group_key` (which is `\\\"group_key\\\"`) as the group_key, and value `10`. So the expected result has `group_key=\\\"group_key\\\"` but contains an occurrence built for `\\\"val1\\\"`. Since `IssueOccurrence` equality likely doesn't include the group_key in a way that differs (the fingerprint is built from group_key, and `build_mock_occurrence_and_event` uses `handler.build_fingerprint(group_key)`), the fingerprints would differ: `\\\"val1\\\"` produces fingerprint `[\\\"<id>:val1\\\"]` while `\\\"group_key\\\"` produces `[\\\"<id>:group_key\\\"]`. This means the test should fail unless `IssueOccurrence.__eq__` doesn't compare fingerprints, or the test is actually broken. Looking at the test: it expects `handler.evaluate_group_key_value(\\\"group_key\\\", 10, ...)` to return `expected_result` which has `group_key=\\\"group_key\\\"` but `result=occurrence` where occurrence was built with `\\\"val1\\\"`. The actual result from `evaluate_group_key_value` would call `build_occurrence_and_event_data(\\\"group_key\\\", 10, ...)` which calls `build_mock_occurrence_and_event(self, \\\"group_key\\\", 10, ...)`, producing an occurrence with fingerprint `[\\\"<id>:group_key\\\"]`. But `expected_result.result` has fingerprint `[\\\"<id>:val1\\\"]`. These should NOT be equal. Either the test is broken (and should be failing), or `IssueOccurrence.__eq__` doesn't compare fingerprints. This needs investigation \u2014 the test appears to have a bug where the expected occurrence is built with the wrong group_key.\"\n    },\n    {\n      \"file\": \"src/sentry/workflow_engine/processors/detector.py\",\n      \"line\": 61,\n      \"severity\": \"low\",\n      \"category\": \"perf\",\n      \"title\": \"Occurrences are produced to Kafka before state is committed, risking duplicate processing on failure\",\n      \"body\": \"In `process_detectors` (line 47-70), for each detector, `handler.evaluate(data_packet)` is called (line 58), then for each result with a non-None `result`, `create_issue_occurrence_from_result(result)` is called (line 61-62) which produces to Kafka. Only AFTER all results are processed is `handler.commit_state_updates()` called (line 68). If `produce_occurrence_to_kafka` succeeds but `commit_state_updates()` fails (e.g., Redis or DB error), the state (dedupe values, detector state) won't be updated. On retry, the same data packet will be re-evaluated, and since the dedupe value wasn't committed, `evaluate_group_key_value` will not skip it (line 259 check will pass), leading to duplicate occurrence production. The order should be: evaluate \u2192 commit state \u2192 produce occurrences, or there should be transactional/outbox pattern handling. At minimum, this is a data integrity risk that should be documented or addressed.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/workflow_engine/processors/detector.py",
+   "line": 230,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Docstring for evaluate() still says it returns a list",
+   "body": "The `evaluate` method on `StatefulDetectorHandler` (line 226-244) now returns `dict[DetectorGroupKey, DetectorEvaluationResult]`, but its docstring at line 230 still says 'returns a list of `DetectorEvaluationResult`'. The docstring should be updated to say it returns a dict keyed by group key, matching the actual return type and the abstract `DetectorHandler.evaluate` signature."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/workflow_engine/processors/detector.py",
+   "line": 259,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Dedupe update is enqueued before the condition_group validity check, causing state corruption for detectors without condition groups",
+   "body": "In `evaluate_group_key_value` (line 246-309), `self.enqueue_dedupe_update(group_key, dedupe_value)` is called at line 265, BEFORE the check at line 267-269 that returns `None` if `self.condition_group` is falsy. This means that when a detector has no condition group (or an invalid one), the dedupe value is still recorded in `self.dedupe_updates` and will be committed to Redis by `commit_state_updates()`. On the next data packet with a higher dedupe value, evaluation will proceed past the dedupe check (line 259) and hit the condition_group check again \u2014 but more importantly, the dedupe value has been advanced even though no evaluation actually occurred. If the condition group is later fixed/added, packets that arrived while the condition group was missing will be incorrectly skipped as 'already processed'. The dedupe update should only be enqueued after we've confirmed the condition group is valid, or the early return for missing condition_group should happen before the dedupe enqueue. The test `test_no_condition_group` (line 474-484) actually asserts this buggy behavior: `self.assert_updates(handler, \"val1\", 2, None, None, None)` expects the dedupe update to be present even though evaluation was skipped."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/workflow_engine/processors/detector.py",
+   "line": 192,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Redis pipeline results are zipped with wrong list when fetching dedupe values, causing incorrect state data",
+   "body": "In `get_state_data` (line 178-224), the dedupe values are fetched via a Redis pipeline (lines 187-193). The code builds `dedupe_keys` for all `group_keys`, executes the pipeline, and then zips `group_keys` with `pipeline.execute()`. However, `pipeline.execute()` returns results in the order commands were added, which matches `dedupe_keys` order, which matches `group_keys` order \u2014 so this part is correct. BUT: the same pipeline object is then `reset()` and reused for counter keys (line 194). The issue is that `pipeline.execute()` at line 192 is called, and then `pipeline.reset()` at line 194 \u2014 but between lines 189-190, only `pipeline.get(dk)` is called for each dedupe key. The `zip(group_keys, pipeline.execute())` at line 192 is correct. However, looking more carefully: the pipeline is created once at line 188, used for dedupe gets (189-190), executed (192), reset (194), then reused for counter gets (202-203), and executed again (204). This is fine. The actual bug is more subtle: if `group_keys` contains `None`, `build_dedupe_value_key(None)` returns a key with empty string (line 325-327), which is fine. But wait \u2014 re-reading: the real issue is that `pipeline.execute()` returns bytes or None, and `int(dv) if dv else 0` handles that. Actually the code appears correct. Let me re-examine: the concern is that `zip(group_keys, pipeline.execute())` assumes the pipeline returns exactly one result per `get` command, in order. This is true for redis-py. So this finding may be incorrect \u2014 withdrawing it."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/workflow_engine/processors/detector.py",
+   "line": 176,
+   "severity": "low",
+   "category": "bug",
+   "title": "build_fingerprint uses string concatenation that produces ambiguous keys when group_key contains colon",
+   "body": "In `build_fingerprint` (line 172-176), the fingerprint is built as `f\"{self.detector.id}{':' + group_key if group_key is not None else ''}\"`. If `group_key` itself contains a colon (e.g., `\"a:b\"`), the resulting fingerprint `\"123:a:b\"` is ambiguous \u2014 it could be detector 123 with group_key `\"a:b\"` or detector `\"123:a\"` with group_key `\"b\"` (though detector.id is an int so the latter is impossible). More practically, two different (detector_id, group_key) pairs could produce the same fingerprint string if group_key contains colons in specific ways. For example, detector 1 with group_key `\"2:x\"` produces `\"1:2:x\"`, and detector 12 with group_key `\"x\"` produces `\"12:x\"` \u2014 these are different. But detector 1 with group_key `\"23:x\"` produces `\"1:23:x\"` vs detector 12 with group_key `\"3:x\"` produces `\"12:3:x\"` \u2014 still different. The real ambiguity: detector 1, group_key `\"2:3\"` \u2192 `\"1:2:3\"` vs detector 12, group_key `\"3\"` \u2192 `\"12:3\"` \u2014 different. Actually with int detector IDs this is mostly safe, but the format is fragile. A delimiter that cannot appear in group_key, or a structured format (e.g., JSON array or tuple), would be more robust. This is a low-severity robustness concern."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/workflow_engine/processors/detector.py",
+   "line": 300,
+   "severity": "medium",
+   "category": "bug",
+   "title": "PriorityLevel(new_status) conversion may fail if DetectorPriorityLevel and PriorityLevel have mismatched values",
+   "body": "At line 300, `PriorityLevel(new_status)` is called where `new_status` is a `DetectorPriorityLevel`. This assumes that `DetectorPriorityLevel` and `PriorityLevel` have identical integer values for corresponding enum members. If `DetectorPriorityLevel` is defined with different values than `PriorityLevel` (e.g., `DetectorPriorityLevel.OK = 0` but `PriorityLevel.LOW = 10`, or if `DetectorPriorityLevel` has members that don't exist in `PriorityLevel`), this conversion will either produce the wrong priority or raise a `ValueError`. The code should either use a mapping function, ensure the enums are aligned, or use `PriorityLevel(new_status.value)` with a comment that the values must match. Without seeing the enum definitions, this is a potential runtime error or silent data corruption if the values diverge."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/workflow_engine/models/detector.py",
+   "line": 63,
+   "severity": "low",
+   "category": "api",
+   "title": "Return type annotation of detector_handler property is DetectorHandler but StatefulDetectorHandler is a subclass \u2014 should use base type or be more specific",
+   "body": "The `detector_handler` property (line 62-86) is annotated to return `DetectorHandler | None`, but `StatefulDetectorHandler` extends `DetectorHandler`. The `MetricAlertDetectorHandler` in `grouptype.py` now extends `StatefulDetectorHandler`. The return type `DetectorHandler` is technically correct (covariant return), but callers that need `StatefulDetectorHandler` methods (like `commit_state_updates`, `get_state_data`, etc.) will need to cast or check the type. Since `process_detectors` calls `handler.commit_state_updates()` (line 68 in processors/detector.py), which is defined on `DetectorHandler` as a no-op but overridden in `StatefulDetectorHandler`, this works at runtime. However, the type annotation doesn't reflect that stateful handlers are expected. Consider whether the base `DetectorHandler` should have `commit_state_updates` as abstract, or whether the return type should be more specific. This is a minor API design concern."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/workflow_engine/processors/test_detector.py",
+   "line": 191,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_state_results_multi_group passes value 10 for group_2 but expects occurrence built with value 6",
+   "body": "In `test_state_results_multi_group` (line 175-222), the data packet is `{\"dedupe\": 2, \"group_vals\": {\"group_1\": 6, \"group_2\": 10}}`. At line 190-192, `occurrence_2, event_data_2 = build_mock_occurrence_and_event(detector.detector_handler, \"group_2\", 6, PriorityLevel.HIGH)` \u2014 note the value passed is `6`, but the actual value for `group_2` in the packet is `10`. The `build_mock_occurrence_and_event` function (line 244-275) doesn't actually use the `value` parameter in the occurrence construction (it's not stored in the `IssueOccurrence`), so the test passes. However, this is misleading \u2014 the test should pass the correct value `10` to accurately reflect what the handler would produce. If `build_occurrence_and_event_data` implementations in real detectors use the `value` parameter (which they should, as it's the triggering value), this test would fail to catch mismatches. The test should use `10` for `group_2` to match the input data."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/workflow_engine/processors/test_detector.py",
+   "line": 539,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "TestEvaluateGroupKeyValue.test_dedupe builds expected occurrence with wrong group_key and value",
+   "body": "In `TestEvaluateGroupKeyValue.test_dedupe` (line 533-579), at line 536-538, `occurrence, event_data = build_mock_occurrence_and_event(handler, \"val1\", 6, PriorityLevel.HIGH)` builds an occurrence for group_key `\"val1\"` with value `6`. But then at line 539-545, `expected_result` is created with `group_key=\"group_key\"` (line 540) and the occurrence built for `\"val1\"`. The `evaluate_group_key_value` call at line 547-558 passes `expected_result.group_key` (which is `\"group_key\"`) as the group_key, and value `10`. So the expected result has `group_key=\"group_key\"` but contains an occurrence built for `\"val1\"`. Since `IssueOccurrence` equality likely doesn't include the group_key in a way that differs (the fingerprint is built from group_key, and `build_mock_occurrence_and_event` uses `handler.build_fingerprint(group_key)`), the fingerprints would differ: `\"val1\"` produces fingerprint `[\"<id>:val1\"]` while `\"group_key\"` produces `[\"<id>:group_key\"]`. This means the test should fail unless `IssueOccurrence.__eq__` doesn't compare fingerprints, or the test is actually broken. Looking at the test: it expects `handler.evaluate_group_key_value(\"group_key\", 10, ...)` to return `expected_result` which has `group_key=\"group_key\"` but `result=occurrence` where occurrence was built with `\"val1\"`. The actual result from `evaluate_group_key_value` would call `build_occurrence_and_event_data(\"group_key\", 10, ...)` which calls `build_mock_occurrence_and_event(self, \"group_key\", 10, ...)`, producing an occurrence with fingerprint `[\"<id>:group_key\"]`. But `expected_result.result` has fingerprint `[\"<id>:val1\"]`. These should NOT be equal. Either the test is broken (and should be failing), or `IssueOccurrence.__eq__` doesn't compare fingerprints. This needs investigation \u2014 the test appears to have a bug where the expected occurrence is built with the wrong group_key."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/workflow_engine/processors/detector.py",
+   "line": 61,
+   "severity": "low",
+   "category": "perf",
+   "title": "Occurrences are produced to Kafka before state is committed, risking duplicate processing on failure",
+   "body": "In `process_detectors` (line 47-70), for each detector, `handler.evaluate(data_packet)` is called (line 58), then for each result with a non-None `result`, `create_issue_occurrence_from_result(result)` is called (line 61-62) which produces to Kafka. Only AFTER all results are processed is `handler.commit_state_updates()` called (line 68). If `produce_occurrence_to_kafka` succeeds but `commit_state_updates()` fails (e.g., Redis or DB error), the state (dedupe values, detector state) won't be updated. On retry, the same data packet will be re-evaluated, and since the dedupe value wasn't committed, `evaluate_group_key_value` will not skip it (line 259 check will pass), leading to duplicate occurrence production. The order should be: evaluate \u2192 commit state \u2192 produce occurrences, or there should be transactional/outbox pattern handling. At minimum, this is a data integrity risk that should be documented or addressed."
+  }
+ ],
+ "finding_count": 9
+}

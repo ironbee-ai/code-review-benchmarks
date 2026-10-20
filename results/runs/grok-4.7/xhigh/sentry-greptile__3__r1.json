@@ -1,0 +1,192 @@
+{
+ "run_id": "grok-4.7__xhigh__sentry-greptile__3__r1",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-17T16:50:33Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 88660,
+  "sha": "d62ec561fe1b4a7e",
+  "patch_only": [
+   "sentry-repo",
+   "src/sentry/search/events/datasets/discover.py",
+   "src/sentry/testutils/factories.py",
+   "tests/snuba/api/endpoints/test_organization_events_stats.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 23400,
+    "output": 70941,
+    "reasoning": 68162,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.473022,
+   "latency_ms": 994248,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 11237,
+   "raw_usage": {
+    "completion_tokens": 70941,
+    "prompt_tokens": 24552,
+    "total_tokens": 95493,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 68162,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.473022,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.473022,
+     "upstream_inference_prompt_cost": 0.047376,
+     "upstream_inference_completions_cost": 0.425646
+    }
+   },
+   "started_at": "2026-10-17T16:50:33Z",
+   "first_chunk_ms": 1950,
+   "first_text_ms": 967987,
+   "response_id": "gen-1792255833-pvvZLtPNN74mBYCxEkzb",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 23400,
+  "output": 70941,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 68162
+ },
+ "cost_reported": 0.473022,
+ "latency_ms": 994248,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/testutils/factories.py\", \"line\": 355, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Test events store the client sample rate, not an upsample weight\", \"body\": \"`_set_sample_rate_from_error_sampling` runs on every `store_event` and, when `contexts.error_sampling.client_sample_rate` is truthy, overwrites `normalized_data[\\\"sample_rate\\\"]` with that raw rate. It never sets `sample_weight` and never stores `1/client_sample_rate`. The new stats test saves `client_sample_rate: 0.1` and expects `count == 10`, while `upsampled_count` in discover.py aggregates `sum(sample_weight)`. Nothing in this PR connects those: production ingest is unchanged, and this hook does not invert the rate. Unless an out-of-diff pipeline already materializes `sample_weight` as `1/sample_rate` from the event `sample_rate` field, allowlisted `count()` queries error on an unknown column or return a non-upsampled value, and the new snuba test cannot pass. The hook also swallows all exceptions, ignores a falsy rate via `if client_sample_rate`, and can clobber an existing server `sample_rate` on any other test event that includes that context.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1048, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Upsampled count drops events with no weight and truncates\", \"body\": \"`upsampled_count` is `toInt64(sum(sample_weight))`, and the helper comment says null checks are intentionally omitted. ClickHouse `sum` skips NULLs, so any error in an allowlisted project that has no `sample_weight` (historical events, events ingested before the column was filled, or unsampled events that should count as 1) contributes nothing. Enabling the allowlist can therefore make the series smaller than raw `count()`, including showing 0. `toInt64` truncates toward zero, so a fractional weight such as `1/0.3` is biased low on every bucket (one event at 3.333 becomes 3). If `sample_weight` is actually the rate 0.1 rather than the multiplier 10, `toInt64(sum(...))` is 0, not the 10 the new test expects. The aggregate needs a missing-weight default of 1 and rounding (for example `round(sum(ifNull(sample_weight, 1)))`). With that default, mixed queries would not need the all-or-nothing allowlist gate, which today changes a project's displayed count depending on whether every other selected project is allowlisted.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 137, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Error-query check is a substring match and false-positives on negation\", \"body\": \"`_is_error_focused_query` lowercases `request.GET[\\\"query\\\"]` and returns true when the substring `event.type:error` appears anywhere. That is true for `!event.type:error`, for `event.type:error OR event.type:transaction`, and for a quoted value such as `message:\\\"event.type:error\\\"`. On an allowlisted project set those queries rewrite `count()` to `sum(sample_weight)`. Non-error rows do not have a usable weight, so the stats request undercounts (NULLs add nothing) or fails in Snuba. The same check misses the usual discover error filter `!event.type:transaction` and list syntax such as `event.type:[error]`, so those error queries stay at the raw sampled count. The unit tests only cover the exact strings `event.type:error` and `event.type:transaction`, so the negation false positive is untested. Parse the search query and honor negation instead of substring matching.\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 220, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Upsampling uses the outer dataset and request query, not the query executed\", \"body\": \"`_get_event_stats` decides upsampling by calling `is_errors_query_for_error_upsampled_projects` with the closed-over `dataset` and `request`, ignoring the `scoped_dataset` and `query` arguments it actually runs. Dashboard discover-split rewrites those arguments: error probes use discover and `({query}) AND !event.type:transaction`, transaction probes add `event.type:transaction`, and the outer dataset is often metrics-enhanced performance, which `_should_apply_sample_weight_transform` always rejects. The helper only looks at `request.GET[\\\"query\\\"]`, so every probe inherits the original request's decision. A transaction probe whose original query contains `event.type:error` is still rewritten to `sum(sample_weight)` and comes back empty or errors; `check_if_results_have_data` then reports no transactions and `save_split_decision` persists that on `DashboardWidget.discover_widget_split`. Later loads skip the check and keep the wrong split. Error-only split queries whose original request text did not contain `event.type:error` are never upsampled. Pass the executed dataset and query string into the check. The outer `except Exception` retry calls `_get_event_stats` again, so a Snuba failure from the rewrite is not avoided and surfaces as a 500 (the endpoint only catches `ValidationError`).\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 255, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Top-events ranking, equations, and count filters are not upsampled\", \"body\": \"Only the y-axis list is rewritten, and `transform_query_columns_for_error_upsampling` replaces a column only when the entire string is `count()` after strip and lower. `top_events_timeseries` still gets `selected_columns` from `get_field_list`, `equations` from `get_equation_list`, and `orderby` from `get_orderby`, plus the raw `user_query`. Top-N is therefore ranked by sampled `count()` while the series uses `upsampled_count() as count`, so a heavily sampled group can be dropped from the top N, and an orderby that still names `count()` can fail the query because that aggregate was renamed. Aggregate conditions such as `count():>10` in the user query stay raw. Equation y-axes (`equation|count() / count_unique(user)`), `count() as <alias>`, `epm()`, and `eps()` are not rewritten either, so one response can mix upsampled and sampled series. Rewrite every count-based aggregate the query will run, or refuse those shapes while upsampling is on.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 27, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Allowlist cache is slower than options.get and cannot be invalidated\", \"body\": \"Every organization events-stats request now does a default-cache get (Redis in production) under `error_upsampling_eligible:{org}:{hash(sorted(project_ids))}`, and a set on miss, to avoid `options.get(\\\"issues.client_error_sampling.project_allowlist\\\")`. That option read is already process-local memory, so this adds a network round trip and a high-cardinality key (one entry per distinct project-id set) on a hot endpoint. The cached boolean does not include the allowlist version. `invalidate_upsampling_cache` is never called, and it can delete only one project-set key, so an allowlist edit cannot drop the other combinations. For up to 60 seconds after a project is removed, stats keep rewriting `count()` to `sum(sample_weight)` and can 500 or return weighted counts for projects that are no longer eligible; after a project is added, counts stay raw. The note on `_are_all_projects_error_upsampled` says the allowlist is read fresh on every call so config changes apply immediately, which is false once this cache is in front. Read the option directly, or cache it in-process keyed by the allowlist contents and actually invalidate it.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1041, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"upsampled_count is public, so the allowlist does not gate the feature\", \"body\": \"The new `SnQLFunction` is registered without `private=True`, unlike the internal aggregate immediately above it. The allowlist logic only rewrites a y-axis that is exactly `count()`; it does not block callers from requesting the function themselves. Any client can pass `yAxis=upsampled_count()` on discover and bypass the rollout. On datasets or projects where `sample_weight` is absent (transactions, spans, non-allowlisted projects) that same public function turns a user-controlled y-axis into a failed stats query. The aggregate should stay internal to the rewrite path so the allowlist is actually what enables it.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 112, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"errors dataset always rewrites count() but the function is only added on discover\", \"body\": \"`_should_apply_sample_weight_transform` returns true for any `sentry.snuba.errors` query, and the endpoint then sends `upsampled_count()` to that dataset's query builder. The aggregate is only inserted into discover.py's `function_converter`. `sentry.search.events.builder.errors` is not changed, and `OrganizationEventsStatsErrorUpsamplingTest` never passes `dataset=errors` (it uses the default dataset plus `query=event.type:error`). If the errors dataset does not inherit Discover's function map, every allowlisted `dataset=errors` stats request fails with an unknown function as soon as the allowlist is non-empty. The string-level unit test does not run the query builder, so it would not catch that. Register the function on the errors dataset config and add a snuba test that uses `dataset=errors`.\"}, {\"file\": \"tests/snuba/api/endpoints/test_organization_events_stats.py\", \"line\": 3604, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Upsampling stats tests share one cache key and disagree on the allowlist\", \"body\": \"These tests patch `sentry.api.helpers.error_upsampling.options` but not `sentry.utils.cache.cache`. Eligibility is cached for 60 seconds under a key built only from organization id and the project id set. All four tests use the same projects, so they share that key, while stubbing three different allowlists (both ids, one id, and empty) and expecting different counts (10 vs 1). This class's `setUp` never calls `cache.clear()` or deletes that key, and Django's `TestCase` does not clear the cache. If an earlier test cached true, `test_error_upsampling_with_partial_allowlist` and `test_error_upsampling_with_no_allowlisted_projects` still rewrite `count()` and their `count == 1` assertions fail; the reverse order makes the allowlisted test expect 10 and get 1. Mock or clear the cache in `setUp`.\"}, {\"file\": \"tests/snuba/api/endpoints/test_organization_events_stats.py\", \"line\": 3660, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Transaction upsampling test queries before the event is ingested\", \"body\": \"`test_error_upsampling_with_transaction_events` calls `store_event` for a transaction and immediately GETs events-stats. `setUp` has to call `wait_for_event_count` before its queries, so ingestion is asynchronous here. The assertion that the first bucket `count` is 1 races the consumer and flakes at 0. Waiting for `wait_for_event_count(self.project.id, 1)` would also be wrong: `setUp` already stored an error in that project, so a count of 1 is satisfied before the transaction is written. Wait until that transaction is actually queryable (for example project event count 2, or a transaction-specific query) before asserting.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/testutils/factories.py",
+   "line": 355,
+   "severity": "high",
+   "category": "bug",
+   "title": "Test events store the client sample rate, not an upsample weight",
+   "body": "`_set_sample_rate_from_error_sampling` runs on every `store_event` and, when `contexts.error_sampling.client_sample_rate` is truthy, overwrites `normalized_data[\"sample_rate\"]` with that raw rate. It never sets `sample_weight` and never stores `1/client_sample_rate`. The new stats test saves `client_sample_rate: 0.1` and expects `count == 10`, while `upsampled_count` in discover.py aggregates `sum(sample_weight)`. Nothing in this PR connects those: production ingest is unchanged, and this hook does not invert the rate. Unless an out-of-diff pipeline already materializes `sample_weight` as `1/sample_rate` from the event `sample_rate` field, allowlisted `count()` queries error on an unknown column or return a non-upsampled value, and the new snuba test cannot pass. The hook also swallows all exceptions, ignores a falsy rate via `if client_sample_rate`, and can clobber an existing server `sample_rate` on any other test event that includes that context."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1048,
+   "severity": "high",
+   "category": "data",
+   "title": "Upsampled count drops events with no weight and truncates",
+   "body": "`upsampled_count` is `toInt64(sum(sample_weight))`, and the helper comment says null checks are intentionally omitted. ClickHouse `sum` skips NULLs, so any error in an allowlisted project that has no `sample_weight` (historical events, events ingested before the column was filled, or unsampled events that should count as 1) contributes nothing. Enabling the allowlist can therefore make the series smaller than raw `count()`, including showing 0. `toInt64` truncates toward zero, so a fractional weight such as `1/0.3` is biased low on every bucket (one event at 3.333 becomes 3). If `sample_weight` is actually the rate 0.1 rather than the multiplier 10, `toInt64(sum(...))` is 0, not the 10 the new test expects. The aggregate needs a missing-weight default of 1 and rounding (for example `round(sum(ifNull(sample_weight, 1)))`). With that default, mixed queries would not need the all-or-nothing allowlist gate, which today changes a project's displayed count depending on whether every other selected project is allowlisted."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 137,
+   "severity": "high",
+   "category": "bug",
+   "title": "Error-query check is a substring match and false-positives on negation",
+   "body": "`_is_error_focused_query` lowercases `request.GET[\"query\"]` and returns true when the substring `event.type:error` appears anywhere. That is true for `!event.type:error`, for `event.type:error OR event.type:transaction`, and for a quoted value such as `message:\"event.type:error\"`. On an allowlisted project set those queries rewrite `count()` to `sum(sample_weight)`. Non-error rows do not have a usable weight, so the stats request undercounts (NULLs add nothing) or fails in Snuba. The same check misses the usual discover error filter `!event.type:transaction` and list syntax such as `event.type:[error]`, so those error queries stay at the raw sampled count. The unit tests only cover the exact strings `event.type:error` and `event.type:transaction`, so the negation false positive is untested. Parse the search query and honor negation instead of substring matching."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 220,
+   "severity": "high",
+   "category": "bug",
+   "title": "Upsampling uses the outer dataset and request query, not the query executed",
+   "body": "`_get_event_stats` decides upsampling by calling `is_errors_query_for_error_upsampled_projects` with the closed-over `dataset` and `request`, ignoring the `scoped_dataset` and `query` arguments it actually runs. Dashboard discover-split rewrites those arguments: error probes use discover and `({query}) AND !event.type:transaction`, transaction probes add `event.type:transaction`, and the outer dataset is often metrics-enhanced performance, which `_should_apply_sample_weight_transform` always rejects. The helper only looks at `request.GET[\"query\"]`, so every probe inherits the original request's decision. A transaction probe whose original query contains `event.type:error` is still rewritten to `sum(sample_weight)` and comes back empty or errors; `check_if_results_have_data` then reports no transactions and `save_split_decision` persists that on `DashboardWidget.discover_widget_split`. Later loads skip the check and keep the wrong split. Error-only split queries whose original request text did not contain `event.type:error` are never upsampled. Pass the executed dataset and query string into the check. The outer `except Exception` retry calls `_get_event_stats` again, so a Snuba failure from the rewrite is not avoided and surfaces as a 500 (the endpoint only catches `ValidationError`)."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 255,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Top-events ranking, equations, and count filters are not upsampled",
+   "body": "Only the y-axis list is rewritten, and `transform_query_columns_for_error_upsampling` replaces a column only when the entire string is `count()` after strip and lower. `top_events_timeseries` still gets `selected_columns` from `get_field_list`, `equations` from `get_equation_list`, and `orderby` from `get_orderby`, plus the raw `user_query`. Top-N is therefore ranked by sampled `count()` while the series uses `upsampled_count() as count`, so a heavily sampled group can be dropped from the top N, and an orderby that still names `count()` can fail the query because that aggregate was renamed. Aggregate conditions such as `count():>10` in the user query stay raw. Equation y-axes (`equation|count() / count_unique(user)`), `count() as <alias>`, `epm()`, and `eps()` are not rewritten either, so one response can mix upsampled and sampled series. Rewrite every count-based aggregate the query will run, or refuse those shapes while upsampling is on."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 27,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Allowlist cache is slower than options.get and cannot be invalidated",
+   "body": "Every organization events-stats request now does a default-cache get (Redis in production) under `error_upsampling_eligible:{org}:{hash(sorted(project_ids))}`, and a set on miss, to avoid `options.get(\"issues.client_error_sampling.project_allowlist\")`. That option read is already process-local memory, so this adds a network round trip and a high-cardinality key (one entry per distinct project-id set) on a hot endpoint. The cached boolean does not include the allowlist version. `invalidate_upsampling_cache` is never called, and it can delete only one project-set key, so an allowlist edit cannot drop the other combinations. For up to 60 seconds after a project is removed, stats keep rewriting `count()` to `sum(sample_weight)` and can 500 or return weighted counts for projects that are no longer eligible; after a project is added, counts stay raw. The note on `_are_all_projects_error_upsampled` says the allowlist is read fresh on every call so config changes apply immediately, which is false once this cache is in front. Read the option directly, or cache it in-process keyed by the allowlist contents and actually invalidate it."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1041,
+   "severity": "medium",
+   "category": "api",
+   "title": "upsampled_count is public, so the allowlist does not gate the feature",
+   "body": "The new `SnQLFunction` is registered without `private=True`, unlike the internal aggregate immediately above it. The allowlist logic only rewrites a y-axis that is exactly `count()`; it does not block callers from requesting the function themselves. Any client can pass `yAxis=upsampled_count()` on discover and bypass the rollout. On datasets or projects where `sample_weight` is absent (transactions, spans, non-allowlisted projects) that same public function turns a user-controlled y-axis into a failed stats query. The aggregate should stay internal to the rewrite path so the allowlist is actually what enables it."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 112,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "errors dataset always rewrites count() but the function is only added on discover",
+   "body": "`_should_apply_sample_weight_transform` returns true for any `sentry.snuba.errors` query, and the endpoint then sends `upsampled_count()` to that dataset's query builder. The aggregate is only inserted into discover.py's `function_converter`. `sentry.search.events.builder.errors` is not changed, and `OrganizationEventsStatsErrorUpsamplingTest` never passes `dataset=errors` (it uses the default dataset plus `query=event.type:error`). If the errors dataset does not inherit Discover's function map, every allowlisted `dataset=errors` stats request fails with an unknown function as soon as the allowlist is non-empty. The string-level unit test does not run the query builder, so it would not catch that. Register the function on the errors dataset config and add a snuba test that uses `dataset=errors`."
+  },
+  {
+   "index": 8,
+   "file": "tests/snuba/api/endpoints/test_organization_events_stats.py",
+   "line": 3604,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Upsampling stats tests share one cache key and disagree on the allowlist",
+   "body": "These tests patch `sentry.api.helpers.error_upsampling.options` but not `sentry.utils.cache.cache`. Eligibility is cached for 60 seconds under a key built only from organization id and the project id set. All four tests use the same projects, so they share that key, while stubbing three different allowlists (both ids, one id, and empty) and expecting different counts (10 vs 1). This class's `setUp` never calls `cache.clear()` or deletes that key, and Django's `TestCase` does not clear the cache. If an earlier test cached true, `test_error_upsampling_with_partial_allowlist` and `test_error_upsampling_with_no_allowlisted_projects` still rewrite `count()` and their `count == 1` assertions fail; the reverse order makes the allowlisted test expect 10 and get 1. Mock or clear the cache in `setUp`."
+  },
+  {
+   "index": 9,
+   "file": "tests/snuba/api/endpoints/test_organization_events_stats.py",
+   "line": 3660,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Transaction upsampling test queries before the event is ingested",
+   "body": "`test_error_upsampling_with_transaction_events` calls `store_event` for a transaction and immediately GETs events-stats. `setUp` has to call `wait_for_event_count` before its queries, so ingestion is asynchronous here. The assertion that the first bucket `count` is 1 races the consumer and flakes at 0. Waiting for `wait_for_event_count(self.project.id, 1)` would also be wrong: `setUp` already stored an error in that project, so a count of 1 is satisfied before the transaction is written. Wait until that transaction is actually queryable (for example project event count 2, or a transaction-specific query) before asserting."
+  }
+ ],
+ "finding_count": 10
+}

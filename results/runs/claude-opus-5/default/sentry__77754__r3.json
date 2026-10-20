@@ -1,0 +1,136 @@
+{
+ "run_id": "claude-opus-5__default__sentry__77754__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:25:17Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29951,
+    "output": 5975,
+    "reasoning": 4256,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 75686,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4927,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 29951,
+    "output_tokens": 5975,
+    "output_tokens_details": {
+     "thinking_tokens": 4256
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:25:17Z",
+   "first_chunk_ms": 2478,
+   "first_text_ms": 56915,
+   "response_id": "msg_bdrk_nsxadrgvnnjeyfykfdmmiaoycktbati4vexwktduyrvdozsdnpna",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29951,
+  "output": 5975,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4256
+ },
+ "cost_reported": null,
+ "latency_ms": 75686,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 18, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`queued` default is evaluated once at import time\", \"body\": \"`queued: datetime = timezone.now()` is a dataclass field default, so `timezone.now()` is called exactly once when the module is imported. Every `AssignmentSource` created without an explicit `queued` value therefore carries the process/module import timestamp, not the time the assignment was actually queued. This makes the field useless (and actively misleading) for debugging or any future staleness/TTL logic built on it. Use `field(default_factory=timezone.now)` instead.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 27, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Datetime in to_dict() is passed as Celery task kwargs and is not round-tripped by from_dict()\", \"body\": \"`to_dict()` returns `asdict(self)`, which keeps `queued` as a `datetime`. That dict is handed to `sync_assignee_outbound.apply_async(kwargs={... 'assignment_source_dict': ...})` (src/sentry/integrations/utils/sync.py:141), so a raw `datetime` ends up in the broker payload. Depending on the configured serializer this either fails to encode (the task is never enqueued and assignee sync silently stops) or arrives as an ISO string, in which case `from_dict` happily constructs an `AssignmentSource` whose `queued` attribute is a `str` despite the declared `datetime` type. Serialize/deserialize the timestamp explicitly (e.g., `isoformat()` / `fromisoformat()`) so the dataclass invariants hold across the task boundary.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 31, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"from_dict silently swallows malformed payloads, disabling cycle protection without any signal\", \"body\": \"`from_dict` returns `None` for any payload that doesn't exactly match the constructor (missing key, extra key, renamed field) and performs no type validation on `integration_id`. Because `sync_assignee_outbound` treats `None` as \\\"no source\\\", a malformed/renamed payload means the loop-prevention check in `should_sync` is skipped and the sync cycle this PR is meant to fix silently returns, with nothing logged or metered to indicate it happened. Add a log/metric on the failure path (and validate `integration_id` is an int) so this failure mode is observable.\"}, {\"file\": \"src/sentry/integrations/tasks/sync_assignee_outbound.py\", \"line\": 59, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"New `assignment_source` kwarg passed to sync_assignee_outbound without updating the abstract signature\", \"body\": \"The task now calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)`, but the abstract declaration in `IssueSyncIntegration.sync_assignee_outbound` (src/sentry/integrations/mixins/issues.py:397) was not updated to accept `assignment_source`; it only tolerates it via `**kwargs`. Any current or future implementation (including third-party/provider installations) that defines `sync_assignee_outbound(self, external_issue, user, assign=True)` without `**kwargs` will raise `TypeError` at runtime, and the retry decorator will retry it 5 times before failing. Declare `assignment_source: AssignmentSource | None = None` on the abstract method so the contract is explicit.\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 416, \"severity\": \"low\", \"category\": \"api\", \"title\": \"`assignment_source` added to abstract sync_status_outbound but never passed or used\", \"body\": \"The abstract `sync_status_outbound` signature gains an `assignment_source: AssignmentSource | None = None` parameter, but no caller in this PR passes it and no concrete implementation consumes it. The signature now advertises cycle protection for status sync that does not exist; worse, subclasses still declare `(self, external_issue, is_resolved, project_id, **kwargs)`, so a caller following the abstract contract and passing the source positionally would bind it to an unrelated kwarg position. Either wire the parameter through the status-sync path or drop it from the abstract signature.\"}, {\"file\": \"tests/sentry/models/test_groupassignee.py\", \"line\": 180, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test that a non-matching assignment source still propagates outbound\", \"body\": \"The new test only covers the case where the assignment source integration matches the target integration (sync suppressed). There is no test asserting the complementary behaviour that this PR explicitly promises: when the `AssignmentSource` comes from a *different* integration, the outbound sync must still fire. Without it, a regression that over-suppresses sync (e.g., comparing the wrong id field in `should_sync`) would go undetected and silently break cross-integration issue sync.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`queued` default is evaluated once at import time",
+   "body": "`queued: datetime = timezone.now()` is a dataclass field default, so `timezone.now()` is called exactly once when the module is imported. Every `AssignmentSource` created without an explicit `queued` value therefore carries the process/module import timestamp, not the time the assignment was actually queued. This makes the field useless (and actively misleading) for debugging or any future staleness/TTL logic built on it. Use `field(default_factory=timezone.now)` instead."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 27,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Datetime in to_dict() is passed as Celery task kwargs and is not round-tripped by from_dict()",
+   "body": "`to_dict()` returns `asdict(self)`, which keeps `queued` as a `datetime`. That dict is handed to `sync_assignee_outbound.apply_async(kwargs={... 'assignment_source_dict': ...})` (src/sentry/integrations/utils/sync.py:141), so a raw `datetime` ends up in the broker payload. Depending on the configured serializer this either fails to encode (the task is never enqueued and assignee sync silently stops) or arrives as an ISO string, in which case `from_dict` happily constructs an `AssignmentSource` whose `queued` attribute is a `str` despite the declared `datetime` type. Serialize/deserialize the timestamp explicitly (e.g., `isoformat()` / `fromisoformat()`) so the dataclass invariants hold across the task boundary."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 31,
+   "severity": "low",
+   "category": "bug",
+   "title": "from_dict silently swallows malformed payloads, disabling cycle protection without any signal",
+   "body": "`from_dict` returns `None` for any payload that doesn't exactly match the constructor (missing key, extra key, renamed field) and performs no type validation on `integration_id`. Because `sync_assignee_outbound` treats `None` as \"no source\", a malformed/renamed payload means the loop-prevention check in `should_sync` is skipped and the sync cycle this PR is meant to fix silently returns, with nothing logged or metered to indicate it happened. Add a log/metric on the failure path (and validate `integration_id` is an int) so this failure mode is observable."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+   "line": 59,
+   "severity": "medium",
+   "category": "api",
+   "title": "New `assignment_source` kwarg passed to sync_assignee_outbound without updating the abstract signature",
+   "body": "The task now calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)`, but the abstract declaration in `IssueSyncIntegration.sync_assignee_outbound` (src/sentry/integrations/mixins/issues.py:397) was not updated to accept `assignment_source`; it only tolerates it via `**kwargs`. Any current or future implementation (including third-party/provider installations) that defines `sync_assignee_outbound(self, external_issue, user, assign=True)` without `**kwargs` will raise `TypeError` at runtime, and the retry decorator will retry it 5 times before failing. Declare `assignment_source: AssignmentSource | None = None` on the abstract method so the contract is explicit."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 416,
+   "severity": "low",
+   "category": "api",
+   "title": "`assignment_source` added to abstract sync_status_outbound but never passed or used",
+   "body": "The abstract `sync_status_outbound` signature gains an `assignment_source: AssignmentSource | None = None` parameter, but no caller in this PR passes it and no concrete implementation consumes it. The signature now advertises cycle protection for status sync that does not exist; worse, subclasses still declare `(self, external_issue, is_resolved, project_id, **kwargs)`, so a caller following the abstract contract and passing the source positionally would bind it to an unrelated kwarg position. Either wire the parameter through the status-sync path or drop it from the abstract signature."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/models/test_groupassignee.py",
+   "line": 180,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test that a non-matching assignment source still propagates outbound",
+   "body": "The new test only covers the case where the assignment source integration matches the target integration (sync suppressed). There is no test asserting the complementary behaviour that this PR explicitly promises: when the `AssignmentSource` comes from a *different* integration, the outbound sync must still fire. Without it, a regression that over-suppresses sync (e.g., comparing the wrong id field in `should_sync`) would go undetected and silently break cross-integration issue sync."
+  }
+ ],
+ "finding_count": 6
+}

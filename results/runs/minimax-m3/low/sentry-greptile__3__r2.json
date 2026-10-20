@@ -1,0 +1,165 @@
+{
+ "run_id": "minimax-m3__low__sentry-greptile__3__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:49:06Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 88660,
+  "sha": "d62ec561fe1b4a7e",
+  "patch_only": [
+   "sentry-repo",
+   "src/sentry/search/events/datasets/discover.py",
+   "src/sentry/testutils/factories.py",
+   "tests/snuba/api/endpoints/test_organization_events_stats.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 20858,
+    "output": 15182,
+    "reasoning": 13542,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02448348,
+   "latency_ms": 56560,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 7071,
+   "raw_usage": {
+    "completion_tokens": 15182,
+    "prompt_tokens": 20986,
+    "total_tokens": 36168,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 13542,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.02448348,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02448348,
+     "upstream_inference_prompt_cost": 0.00626508,
+     "upstream_inference_completions_cost": 0.0182184
+    }
+   },
+   "started_at": "2026-10-17T20:49:06Z",
+   "first_chunk_ms": 1248,
+   "first_text_ms": 49950,
+   "response_id": "gen-1792270146-twi8AGi5JZXAPB4261KS",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 20858,
+  "output": 15182,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 13542
+ },
+ "cost_reported": 0.02448348,
+ "latency_ms": 56560,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 137, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"_is_error_focused_query uses naive substring matching that yields wrong upsampling decisions\", \"body\": \"The check `\\\"event.type:error\\\" in query` is a raw substring test on the lowercase query string. As a result it returns True (and therefore triggers error upsampling on the discover dataset) in cases where the query is actually not error-focused, e.g.:\\n\\n- Negated clauses: `!event.type:error` still contains the substring `event.type:error`.\\n- Compound queries mixing transactions and errors: `event.type:error OR event.type:transaction`, `event.type:error something else`, etc.\\n- Look-alike values: `event.type:errors`, `event.type:error_handled`, any custom tag named `event.type:error*`.\\n\\nWhen upsampling is applied in any of these cases, `count()` is rewritten to `upsampled_count()` (= `sum(sample_weight)`) but the result set includes rows without `sample_weight` (transactions, non-error events), so the returned counts are mathematically wrong and silently inflated/deflated. The docstring claims this check \\\"errs on the side of caution\\\" \u2014 in reality it is more permissive than just `event.type:error`. The function should parse the query and require an un-negated, standalone `event.type:error` predicate.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 67, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"invalidate_upsampling_cache is defined but never called, so the 60s allowlist cache is ungovernable\", \"body\": \"`invalidate_upsampling_cache` is added with a docstring that explicitly says it \\\"should be called when the allowlist configuration changes to ensure cache consistency across the system\\\", but nothing in the PR (or in any of the modified files) calls it. The 60-second cache in `is_errors_query_for_error_upsampled_projects` therefore becomes stale any time `issues.client_error_sampling.project_allowlist` is updated: projects added to the allowlist will not be upsampled for up to 60s, and projects removed will continue to be upsampled (returning inflated counts) for up to 60s. This is a correctness hazard for an opt-in metric that drives billing/usage reporting numbers. Either wire up the invalidation in the option-change signal handler or drop the cache and accept the option lookup cost.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1041, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"upsampled_count SnQLFunction is only registered on the discover dataset but is also injected into errors-dataset queries\", \"body\": \"`_should_apply_sample_weight_transform` returns True for the `errors` dataset unconditionally, and the endpoint rewrites `count()` to `upsampled_count()` whenever that check passes. The new `upsampled_count` SnQLFunction is, however, only registered on the discover dataset's function map in this PR. So a top-events or non-RPC query routed to the `errors` dataset (which is in the dataset whitelist at lines ~172-188 of `organization_events_stats.py`) will be sent down with a `upsampled_count()` aggregate that the errors dataset's function_converter does not know about, causing a query build/runtime error at request time. If upsampling is meant to work on `errors` as well, register the SnQLFunction on that dataset too; otherwise gate the rewrite so it only applies when the scoped dataset is `discover`.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 92, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"transform_query_columns_for_error_upsampling ignores aliased count()\", \"body\": \"The transformer compares `column_lower == \\\"count()\\\"` exactly, so any column expression that contains `count()` but is not literally that string is left untouched. In practice that includes:\\n\\n- Aliased forms: `count() as my_count`, `count() AS count`.\\n- Annotated forms: `count()` followed by other tokens, e.g. `count(), other_col` (already split into separate items so OK), but also `count(error_count)` if it ever appears bare.\\n- Aggregations wrapped by other functions: `topK(1)(count())`.\\n\\nThe result is that for the same query, some y-axes are upsampled and others are not, mixing weighted and unweighted counts in the same response and producing nonsense totals / charts in the dashboard. The match should be against the leading aggregate token rather than the whole trimmed string.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 58, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"_are_all_projects_error_upsampled does not validate the allowlist option type\", \"body\": \"`options.get(\\\"issues.client_error_sampling.project_allowlist\\\", [])` is used directly with `project_id in allowlist`. If the option is ever misconfigured (set to a string, tuple, generator, etc.), `in` falls back to iteration/substring semantics \u2014 for a string allowlist, `123 in \\\"1234\\\"` returns True and arbitrary project IDs will be considered allowlisted, silently enabling upsampling (and inflated counts) for the wrong tenants. There is no schema/option validator in this PR and no isinstance(list)/set coercion in the consumer. Coerce `allowlist` to a `set` (and assert the type) before the membership check.\"}, {\"file\": \"src/sentry/testutils/factories.py\", \"line\": 348, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"_set_sample_rate_from_error_sampling swallows all exceptions with bare except Exception\", \"body\": \"Both `try: ... except Exception: pass` blocks around the `contexts.error_sampling` lookup and the `float(...)` conversion in `_set_sample_rate_from_error_sampling` silently discard every error. Because this runs on every `store_event` call in tests (and could be wired into production ingestion), any structural change to the event dict (renamed contexts, different nesting, AttributeError on a non-dict `contexts`, etc.) will fail silently and leave `sample_rate` unset with no log/raise. The function should narrow the catch (e.g. `(AttributeError, TypeError, ValueError)`) and at minimum `logger.warning` on unexpected shapes so misconfiguration is debuggable.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 133, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Docstring/comment claims caution while the implementation is permissive\", \"body\": \"The docstring for `_is_error_focused_query` says \\\"Reduced to only check for event.type:error to err on the side of caution\\\", and the surrounding module comment on line 86 likewise claims sample_weight is guaranteed by the schema so no checks are needed. The actual substring check is more permissive than just `event.type:error` (it also matches `!event.type:error`, `event.type:errors`, compound OR queries with transactions), and the sample_weight assumption is not enforced anywhere visible in this PR. These comments will mislead future maintainers into trusting the function's output. Either tighten the implementation to match the comments or update the comments to describe the real behavior.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 137,
+   "severity": "high",
+   "category": "bug",
+   "title": "_is_error_focused_query uses naive substring matching that yields wrong upsampling decisions",
+   "body": "The check `\"event.type:error\" in query` is a raw substring test on the lowercase query string. As a result it returns True (and therefore triggers error upsampling on the discover dataset) in cases where the query is actually not error-focused, e.g.:\n\n- Negated clauses: `!event.type:error` still contains the substring `event.type:error`.\n- Compound queries mixing transactions and errors: `event.type:error OR event.type:transaction`, `event.type:error something else`, etc.\n- Look-alike values: `event.type:errors`, `event.type:error_handled`, any custom tag named `event.type:error*`.\n\nWhen upsampling is applied in any of these cases, `count()` is rewritten to `upsampled_count()` (= `sum(sample_weight)`) but the result set includes rows without `sample_weight` (transactions, non-error events), so the returned counts are mathematically wrong and silently inflated/deflated. The docstring claims this check \"errs on the side of caution\" \u2014 in reality it is more permissive than just `event.type:error`. The function should parse the query and require an un-negated, standalone `event.type:error` predicate."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 67,
+   "severity": "medium",
+   "category": "bug",
+   "title": "invalidate_upsampling_cache is defined but never called, so the 60s allowlist cache is ungovernable",
+   "body": "`invalidate_upsampling_cache` is added with a docstring that explicitly says it \"should be called when the allowlist configuration changes to ensure cache consistency across the system\", but nothing in the PR (or in any of the modified files) calls it. The 60-second cache in `is_errors_query_for_error_upsampled_projects` therefore becomes stale any time `issues.client_error_sampling.project_allowlist` is updated: projects added to the allowlist will not be upsampled for up to 60s, and projects removed will continue to be upsampled (returning inflated counts) for up to 60s. This is a correctness hazard for an opt-in metric that drives billing/usage reporting numbers. Either wire up the invalidation in the option-change signal handler or drop the cache and accept the option lookup cost."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1041,
+   "severity": "high",
+   "category": "bug",
+   "title": "upsampled_count SnQLFunction is only registered on the discover dataset but is also injected into errors-dataset queries",
+   "body": "`_should_apply_sample_weight_transform` returns True for the `errors` dataset unconditionally, and the endpoint rewrites `count()` to `upsampled_count()` whenever that check passes. The new `upsampled_count` SnQLFunction is, however, only registered on the discover dataset's function map in this PR. So a top-events or non-RPC query routed to the `errors` dataset (which is in the dataset whitelist at lines ~172-188 of `organization_events_stats.py`) will be sent down with a `upsampled_count()` aggregate that the errors dataset's function_converter does not know about, causing a query build/runtime error at request time. If upsampling is meant to work on `errors` as well, register the SnQLFunction on that dataset too; otherwise gate the rewrite so it only applies when the scoped dataset is `discover`."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 92,
+   "severity": "medium",
+   "category": "bug",
+   "title": "transform_query_columns_for_error_upsampling ignores aliased count()",
+   "body": "The transformer compares `column_lower == \"count()\"` exactly, so any column expression that contains `count()` but is not literally that string is left untouched. In practice that includes:\n\n- Aliased forms: `count() as my_count`, `count() AS count`.\n- Annotated forms: `count()` followed by other tokens, e.g. `count(), other_col` (already split into separate items so OK), but also `count(error_count)` if it ever appears bare.\n- Aggregations wrapped by other functions: `topK(1)(count())`.\n\nThe result is that for the same query, some y-axes are upsampled and others are not, mixing weighted and unweighted counts in the same response and producing nonsense totals / charts in the dashboard. The match should be against the leading aggregate token rather than the whole trimmed string."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 58,
+   "severity": "medium",
+   "category": "bug",
+   "title": "_are_all_projects_error_upsampled does not validate the allowlist option type",
+   "body": "`options.get(\"issues.client_error_sampling.project_allowlist\", [])` is used directly with `project_id in allowlist`. If the option is ever misconfigured (set to a string, tuple, generator, etc.), `in` falls back to iteration/substring semantics \u2014 for a string allowlist, `123 in \"1234\"` returns True and arbitrary project IDs will be considered allowlisted, silently enabling upsampling (and inflated counts) for the wrong tenants. There is no schema/option validator in this PR and no isinstance(list)/set coercion in the consumer. Coerce `allowlist` to a `set` (and assert the type) before the membership check."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/testutils/factories.py",
+   "line": 348,
+   "severity": "medium",
+   "category": "bug",
+   "title": "_set_sample_rate_from_error_sampling swallows all exceptions with bare except Exception",
+   "body": "Both `try: ... except Exception: pass` blocks around the `contexts.error_sampling` lookup and the `float(...)` conversion in `_set_sample_rate_from_error_sampling` silently discard every error. Because this runs on every `store_event` call in tests (and could be wired into production ingestion), any structural change to the event dict (renamed contexts, different nesting, AttributeError on a non-dict `contexts`, etc.) will fail silently and leave `sample_rate` unset with no log/raise. The function should narrow the catch (e.g. `(AttributeError, TypeError, ValueError)`) and at minimum `logger.warning` on unexpected shapes so misconfiguration is debuggable."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 133,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Docstring/comment claims caution while the implementation is permissive",
+   "body": "The docstring for `_is_error_focused_query` says \"Reduced to only check for event.type:error to err on the side of caution\", and the surrounding module comment on line 86 likewise claims sample_weight is guaranteed by the schema so no checks are needed. The actual substring check is more permissive than just `event.type:error` (it also matches `!event.type:error`, `event.type:errors`, compound OR queries with transactions), and the sample_weight assumption is not enforced anywhere visible in this PR. These comments will mislead future maintainers into trusting the function's output. Either tighten the implementation to match the comments or update the comments to describe the real behavior."
+  }
+ ],
+ "finding_count": 7
+}

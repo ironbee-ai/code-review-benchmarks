@@ -1,0 +1,151 @@
+{
+ "run_id": "deepseek-v4.1-flash__default__cal.com__7232__r2",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 2,
+ "started_at": "2026-10-18T18:28:05Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 254,
+    "output": 20064,
+    "reasoning": 18690,
+    "cache_read": 72448,
+    "cache_write": 0
+   },
+   "cost_reported": 0.012293844,
+   "latency_ms": 92685,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 5726,
+   "raw_usage": {
+    "completion_tokens": 20064,
+    "prompt_tokens": 72702,
+    "total_tokens": 92766,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 18690,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 72448,
+     "video_tokens": 0
+    },
+    "cost": 0.012293844,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.012293844,
+     "upstream_inference_prompt_cost": 0.000255444,
+     "upstream_inference_completions_cost": 0.0120384
+    }
+   },
+   "started_at": "2026-10-18T18:28:05Z",
+   "first_chunk_ms": 1727,
+   "first_text_ms": 86846,
+   "response_id": "gen-1792348086-WH3znnAw64JfspwiGWEm",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 254,
+  "output": 20064,
+  "cache_read": 72448,
+  "cache_write": 0,
+  "reasoning": 18690
+ },
+ "cost_reported": 0.012293844,
+ "latency_ms": 92685,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 34, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Cancellations made shortly before a reminder's send time still deliver the email\", \"body\": \"Cancellation is now deferred to this cron, which cancels only reminders that are still in the future when it runs (and it runs every 15 minutes). A reminder marked `cancelled: true` whose `scheduledDate` falls between the cancellation and the next cron run is never cancelled at SendGrid, so the email is still delivered. Worse, the `deleteMany` at the top of the handler (lines 34-41) runs before the cancellation step and silently removes exactly those past-due rows, so the reminder disappears from the DB without ever having been cancelled and there is no trace left to retry. Since the whole point of the PR is that cancelled bookings must not receive reminders, the last ~15 minutes before a reminder fires are a hole that needs closing (e.g. cancel synchronously when the reminder is imminent, or run the canceller more frequently than the minimum remaining lead time).\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 488, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"The DB write that records the cancellation is fire-and-forget\", \"body\": \"`deleteScheduledEmailReminder` now performs its side effect (either deleting the row or setting `cancelled: true`) internally, but here it is invoked inside an un-awaited `forEach`, so the handler can return before the Prisma update/delete is committed. Previously this block collected the `workflowReminder.deleteMany` promises and awaited them via `Promise.all`, so the DB state was guaranteed on return. On serverless (Vercel) the runtime may freeze/terminate right after the response, leaving the reminder un-cancelled - which means the workflow email is still sent for the cancelled booking, the exact bug this PR fixes. The same pattern appears in `packages/features/bookings/lib/handleNewBooking.ts:966` and in `packages/trpc/server/routers/viewer/workflows.tsx:378/521/576`; in `handleNewBooking` the surrounding `try/catch` is also dead code because the helper swallows its own errors. Collect and `await` these calls.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 53, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"One SendGrid failure aborts cancellation for every other reminder and skips the deletes\", \"body\": \"The whole `for` loop is wrapped in a single `try/catch`. If `client.request` throws for any one reminder (SendGrid error, network hiccup, or the 100-pending-cancellations limit described in the PR description - which is still reachable under load, and is also hit by the synchronous `immediateDelete` path used by reschedule/workflow deletion), the loop is abandoned: all remaining reminders in that run stay scheduled, and `await Promise.all(workflowRemindersToDelete)` is never reached, so the rows already POSTed are not deleted either. The error is only `console.log`ged, so nobody is alerted. Each reminder should be wrapped individually (and the delete awaited per item / the failures counted and reported) so one bad batch cannot silently let a whole hour's worth of cancelled reminders go out.\"}, {\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 213, \"severity\": \"low\", \"category\": \"data\", \"title\": \"immediateDelete path leaves the workflowReminder row behind\", \"body\": \"When `immediateDelete` is true the function cancels the SendGrid batch and returns without deleting or marking the row. That is fine for the workflow/step deletion callers (the row is removed by cascade), but `handleNewBooking` uses `immediateDelete: true` for rescheduled bookings, so the old booking's `WorkflowReminder` rows survive with `scheduled: true` and a `referenceId` pointing at a cancelled batch. They are only cleaned up later by the cron's blanket `deleteMany`. Any future code that inspects `workflowReminders` (or retries cancellation over them) will treat those as live reminders. Either delete the row in the immediate path or document why it must be left to the caller.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 43, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test coverage for the new cancellation flow\", \"body\": \"The PR changes the contract of `deleteScheduledEmailReminder`/`deleteScheduledSMSReminder` and introduces a new deferred-cancellation lifecycle (`cancelled` flag -> cron -> SendGrid cancel -> row delete), but no tests are added. Nothing verifies the ordering problem with the past-due `deleteMany`, the behaviour for reminders without a `referenceId`, the retry/error behaviour of the cancel loop, or that a reschedule actually cancels the previous booking's reminders. A regression test around `scheduleEmailReminders` with a mocked SendGrid client would catch both the ordering hole and the loop-abort behaviour.\"}, {\"file\": \"packages/prisma/schema.prisma\", \"line\": 644, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"New cron query has no supporting index\", \"body\": \"The migration adds `cancelled` with no index, yet the every-15-minutes cron now runs `findMany({ where: { cancelled: true, scheduledDate: { lte: ... } } })` over the whole `WorkflowReminder` table (which grows with every booking \u00d7 workflow step). Without a composite index on `(cancelled, scheduledDate)` (or at least `scheduledDate`) this is a full table scan on every run, and `cancelled` is also a nullable column with no default, so the index should be added together with `@default(false)` to keep the flag non-null for existing and future rows.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 34,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Cancellations made shortly before a reminder's send time still deliver the email",
+   "body": "Cancellation is now deferred to this cron, which cancels only reminders that are still in the future when it runs (and it runs every 15 minutes). A reminder marked `cancelled: true` whose `scheduledDate` falls between the cancellation and the next cron run is never cancelled at SendGrid, so the email is still delivered. Worse, the `deleteMany` at the top of the handler (lines 34-41) runs before the cancellation step and silently removes exactly those past-due rows, so the reminder disappears from the DB without ever having been cancelled and there is no trace left to retry. Since the whole point of the PR is that cancelled bookings must not receive reminders, the last ~15 minutes before a reminder fires are a hole that needs closing (e.g. cancel synchronously when the reminder is imminent, or run the canceller more frequently than the minimum remaining lead time)."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 488,
+   "severity": "medium",
+   "category": "data",
+   "title": "The DB write that records the cancellation is fire-and-forget",
+   "body": "`deleteScheduledEmailReminder` now performs its side effect (either deleting the row or setting `cancelled: true`) internally, but here it is invoked inside an un-awaited `forEach`, so the handler can return before the Prisma update/delete is committed. Previously this block collected the `workflowReminder.deleteMany` promises and awaited them via `Promise.all`, so the DB state was guaranteed on return. On serverless (Vercel) the runtime may freeze/terminate right after the response, leaving the reminder un-cancelled - which means the workflow email is still sent for the cancelled booking, the exact bug this PR fixes. The same pattern appears in `packages/features/bookings/lib/handleNewBooking.ts:966` and in `packages/trpc/server/routers/viewer/workflows.tsx:378/521/576`; in `handleNewBooking` the surrounding `try/catch` is also dead code because the helper swallows its own errors. Collect and `await` these calls."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 53,
+   "severity": "medium",
+   "category": "bug",
+   "title": "One SendGrid failure aborts cancellation for every other reminder and skips the deletes",
+   "body": "The whole `for` loop is wrapped in a single `try/catch`. If `client.request` throws for any one reminder (SendGrid error, network hiccup, or the 100-pending-cancellations limit described in the PR description - which is still reachable under load, and is also hit by the synchronous `immediateDelete` path used by reschedule/workflow deletion), the loop is abandoned: all remaining reminders in that run stay scheduled, and `await Promise.all(workflowRemindersToDelete)` is never reached, so the rows already POSTed are not deleted either. The error is only `console.log`ged, so nobody is alerted. Each reminder should be wrapped individually (and the delete awaited per item / the failures counted and reported) so one bad batch cannot silently let a whole hour's worth of cancelled reminders go out."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "low",
+   "category": "data",
+   "title": "immediateDelete path leaves the workflowReminder row behind",
+   "body": "When `immediateDelete` is true the function cancels the SendGrid batch and returns without deleting or marking the row. That is fine for the workflow/step deletion callers (the row is removed by cascade), but `handleNewBooking` uses `immediateDelete: true` for rescheduled bookings, so the old booking's `WorkflowReminder` rows survive with `scheduled: true` and a `referenceId` pointing at a cancelled batch. They are only cleaned up later by the cron's blanket `deleteMany`. Any future code that inspects `workflowReminders` (or retries cancellation over them) will treat those as live reminders. Either delete the row in the immediate path or document why it must be left to the caller."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 43,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test coverage for the new cancellation flow",
+   "body": "The PR changes the contract of `deleteScheduledEmailReminder`/`deleteScheduledSMSReminder` and introduces a new deferred-cancellation lifecycle (`cancelled` flag -> cron -> SendGrid cancel -> row delete), but no tests are added. Nothing verifies the ordering problem with the past-due `deleteMany`, the behaviour for reminders without a `referenceId`, the retry/error behaviour of the cancel loop, or that a reschedule actually cancels the previous booking's reminders. A regression test around `scheduleEmailReminders` with a mocked SendGrid client would catch both the ordering hole and the loop-abort behaviour."
+  },
+  {
+   "index": 5,
+   "file": "packages/prisma/schema.prisma",
+   "line": 644,
+   "severity": "low",
+   "category": "perf",
+   "title": "New cron query has no supporting index",
+   "body": "The migration adds `cancelled` with no index, yet the every-15-minutes cron now runs `findMany({ where: { cancelled: true, scheduledDate: { lte: ... } } })` over the whole `WorkflowReminder` table (which grows with every booking \u00d7 workflow step). Without a composite index on `(cancelled, scheduledDate)` (or at least `scheduledDate`) this is a full table scan on every run, and `cancelled` is also a nullable column with no default, so the index should be added together with `@default(false)` to keep the flag non-null for existing and future rows."
+  }
+ ],
+ "finding_count": 6
+}

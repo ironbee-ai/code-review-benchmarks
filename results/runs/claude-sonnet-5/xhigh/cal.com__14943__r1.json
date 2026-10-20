@@ -1,0 +1,129 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__cal.com__14943__r1",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 1,
+ "started_at": "2026-10-18T23:22:48Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 28652,
+    "output": 8477,
+    "reasoning": 6862,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 92573,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4612,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 28652,
+    "output_tokens": 8477,
+    "output_tokens_details": {
+     "thinking_tokens": 6862
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T23:22:48Z",
+   "first_chunk_ms": 2864,
+   "first_text_ms": 78784,
+   "response_id": "msg_bdrk_ykpo7ryihdsn4kafbdqxcusiap5qbb3f4dnmo2qxukqlspthcqaa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 28652,
+  "output": 8477,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 6862
+ },
+ "cost_reported": null,
+ "latency_ms": 92573,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 38, \"severity\": \"medium\", \"title\": \"deleteMany retryCount branch is not scoped to method: SMS\", \"body\": \"In the deleteMany() call (lines 29-45), the OR clause's second condition `{ retryCount: { gt: 1 } }` has no `method: WorkflowMethods.SMS` constraint, unlike the first condition which explicitly filters `method: SMS`. Since `retryCount` was added as a shared column on the `WorkflowReminder` model (used by all methods: EMAIL, SMS, WHATSAPP), this query will delete ANY workflow reminder (regardless of method) whose retryCount happens to exceed 1, not just SMS reminders. Today only this file increments retryCount so it only affects SMS reminders in practice, but the query itself is inconsistent with the stated purpose (cleaning up SMS reminders) and is a latent bug waiting to silently delete Email/WhatsApp reminders if retryCount is ever incremented elsewhere.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"high\", \"title\": \"New retryCount update inside catch block can throw and abort processing of remaining reminders\", \"body\": \"The catch block (lines 189-199) now performs an additional `await prisma.workflowReminder.update(...)` with no surrounding try/catch. If this update itself fails (e.g., the record was concurrently deleted by the deleteMany cleanup on a parallel/overlapping cron invocation, a transient DB error, etc.), the exception propagates out of the `for` loop entirely since nothing catches it there. This means a single failure updating one reminder's retryCount aborts processing of all subsequent reminders in the batch for that cron invocation, and likely results in an unhandled promise rejection / 500 response instead of the previous behavior where errors were only logged and the loop continued. This is a regression in robustness for a cron job meant to process many independent reminders.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"low\", \"title\": \"retryCount increment is not atomic, risking lost updates under overlapping cron runs\", \"body\": \"Both the failure branch (lines 178-187) and the catch block (lines 190-197) compute the new retryCount as `reminder.retryCount + 1` using the value fetched once at the start of the request, then write it back. If the cron endpoint is invoked again before the previous invocation finishes (e.g., due to a slow run or concurrent triggers), two overlapping runs could both read the same stale retryCount and write the same incremented value, effectively losing an increment. Using Prisma's atomic `{ retryCount: { increment: 1 } }` would avoid this race and guarantee failures are counted correctly regardless of overlap.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"medium\", \"title\": \"Reminders with no sendTo/message never get retryCount incremented, leaving them stuck indefinitely\", \"body\": \"The retryCount increment logic only runs inside the `if (message?.length && message?.length > 0 && sendTo)` block (success/failure) or inside the catch block. If `sendTo` is empty/undefined or `message` resolves to an empty string (e.g., attendee has no SMS number, or reminderBody/template produced no text), this whole block is skipped silently \u2014 no error is thrown, no retryCount increment happens. Such reminders will remain `scheduled: false` and keep getting re-selected and reprocessed by every cron run until their `scheduledDate` passes, without ever reaching the retryCount threshold that this PR introduces to stop infinite retries. This defeats the stated goal of the PR for one of the most common real failure causes (missing/invalid phone number resulting in an empty sendTo rather than a thrown error).\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 1, \"severity\": \"low\", \"title\": \"No test coverage added for new retryCount/deletion behavior\", \"body\": \"This PR introduces non-trivial new logic (incrementing retryCount on failure, and deleting reminders after retryCount exceeds the threshold) but adds no unit or integration tests to verify: (1) retryCount is incremented correctly on twilio.scheduleSMS failure and on thrown errors, (2) reminders are deleted once retryCount surpasses the threshold, and (3) the deleteMany query only targets the intended records. Given the subtlety of the query logic (see the unscoped retryCount deletion condition), tests would have caught at least one of the issues introduced here.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 38,
+   "severity": "medium",
+   "category": null,
+   "title": "deleteMany retryCount branch is not scoped to method: SMS",
+   "body": "In the deleteMany() call (lines 29-45), the OR clause's second condition `{ retryCount: { gt: 1 } }` has no `method: WorkflowMethods.SMS` constraint, unlike the first condition which explicitly filters `method: SMS`. Since `retryCount` was added as a shared column on the `WorkflowReminder` model (used by all methods: EMAIL, SMS, WHATSAPP), this query will delete ANY workflow reminder (regardless of method) whose retryCount happens to exceed 1, not just SMS reminders. Today only this file increments retryCount so it only affects SMS reminders in practice, but the query itself is inconsistent with the stated purpose (cleaning up SMS reminders) and is a latent bug waiting to silently delete Email/WhatsApp reminders if retryCount is ever incremented elsewhere."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "high",
+   "category": null,
+   "title": "New retryCount update inside catch block can throw and abort processing of remaining reminders",
+   "body": "The catch block (lines 189-199) now performs an additional `await prisma.workflowReminder.update(...)` with no surrounding try/catch. If this update itself fails (e.g., the record was concurrently deleted by the deleteMany cleanup on a parallel/overlapping cron invocation, a transient DB error, etc.), the exception propagates out of the `for` loop entirely since nothing catches it there. This means a single failure updating one reminder's retryCount aborts processing of all subsequent reminders in the batch for that cron invocation, and likely results in an unhandled promise rejection / 500 response instead of the previous behavior where errors were only logged and the loop continued. This is a regression in robustness for a cron job meant to process many independent reminders."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "low",
+   "category": null,
+   "title": "retryCount increment is not atomic, risking lost updates under overlapping cron runs",
+   "body": "Both the failure branch (lines 178-187) and the catch block (lines 190-197) compute the new retryCount as `reminder.retryCount + 1` using the value fetched once at the start of the request, then write it back. If the cron endpoint is invoked again before the previous invocation finishes (e.g., due to a slow run or concurrent triggers), two overlapping runs could both read the same stale retryCount and write the same incremented value, effectively losing an increment. Using Prisma's atomic `{ retryCount: { increment: 1 } }` would avoid this race and guarantee failures are counted correctly regardless of overlap."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "medium",
+   "category": null,
+   "title": "Reminders with no sendTo/message never get retryCount incremented, leaving them stuck indefinitely",
+   "body": "The retryCount increment logic only runs inside the `if (message?.length && message?.length > 0 && sendTo)` block (success/failure) or inside the catch block. If `sendTo` is empty/undefined or `message` resolves to an empty string (e.g., attendee has no SMS number, or reminderBody/template produced no text), this whole block is skipped silently \u2014 no error is thrown, no retryCount increment happens. Such reminders will remain `scheduled: false` and keep getting re-selected and reprocessed by every cron run until their `scheduledDate` passes, without ever reaching the retryCount threshold that this PR introduces to stop infinite retries. This defeats the stated goal of the PR for one of the most common real failure causes (missing/invalid phone number resulting in an empty sendTo rather than a thrown error)."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 1,
+   "severity": "low",
+   "category": null,
+   "title": "No test coverage added for new retryCount/deletion behavior",
+   "body": "This PR introduces non-trivial new logic (incrementing retryCount on failure, and deleting reminders after retryCount exceeds the threshold) but adds no unit or integration tests to verify: (1) retryCount is incremented correctly on twilio.scheduleSMS failure and on thrown errors, (2) reminders are deleted once retryCount surpasses the threshold, and (3) the deleteMany query only targets the intended records. Given the subtlety of the query logic (see the unscoped retryCount deletion condition), tests would have caught at least one of the issues introduced here."
+  }
+ ],
+ "finding_count": 5
+}

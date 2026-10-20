@@ -1,0 +1,128 @@
+{
+ "run_id": "kimi-k3__xhigh__cal.com__14943__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 2,
+ "started_at": "2026-10-17T22:54:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18366,
+    "output": 3209,
+    "reasoning": 2247,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 131816,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4206,
+   "raw_usage": {
+    "completion_tokens": 3209,
+    "prompt_tokens": 18366,
+    "total_tokens": 21575,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2247,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T22:54:57Z",
+   "first_chunk_ms": 7579,
+   "first_text_ms": 107099,
+   "response_id": "chatcmpl-gfh5fzrevzenwzo2zblebw44cjsvnwnb6f5to27wz7nqt4mzwn7a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18366,
+  "output": 3209,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2247
+ },
+ "cost_reported": null,
+ "latency_ms": 131816,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Retry-based deletion is not scoped to SMS reminders\", \"body\": \"The new second branch of the deleteMany OR ({ retryCount: { gt: 1 } }) has no `method: WorkflowMethods.SMS` filter, unlike the first branch which is explicitly SMS-scoped. This cron endpoint is SMS-only (the file header says so and the fetch below only selects SMS reminders), but the delete will now remove ANY WorkflowReminder row with retryCount > 1, including EMAIL or WHATSAPP reminders. It also ignores the `scheduled` flag, so even an already-scheduled reminder with retryCount > 1 would be deleted. Today only this file increments retryCount (and only for SMS rows), so the impact is latent, but the moment any other scheduler (e.g., the email reminder cron) starts using retryCount, this job will silently delete those reminders. The retryCount condition should be ANDed with `method: WorkflowMethods.SMS` (and probably `scheduled: false`).\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unprotected prisma.update inside catch can abort the whole run\", \"body\": \"The catch block now performs `await prisma.workflowReminder.update({ where: { id: reminder.id }, ... })` without its own error handling. If that update itself throws \u2014 for example because the reminder row was deleted between the findMany and this update (the deleteMany at the top of a concurrent cron run can remove it), or because of a transient DB error \u2014 the exception escapes the catch, breaks out of the `for` loop entirely, and all remaining unscheduled reminders in the batch are skipped while the endpoint returns a 500. Previously the catch only logged, so one failing reminder never affected the rest of the batch. The increment in the catch should be wrapped in its own try/catch (or use updateMany which won't throw on a missing row).\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Read-modify-write retryCount instead of atomic increment\", \"body\": \"Both retry updates use `retryCount: reminder.retryCount + 1`, computed from the value read at the start of the run. If two cron executions overlap (this endpoint is triggered by an external cron and has no locking), both can read retryCount = 0 and both write 1, losing an increment and extending the retry loop beyond the intended two attempts. Prisma supports an atomic `retryCount: { increment: 1 }` which avoids the stale-read problem entirely. Same issue at line 195 in the catch block.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 189, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Any transient error counts toward permanent deletion after only two attempts\", \"body\": \"The catch block wraps the entire per-reminder body, so retryCount is incremented for any failure \u2014 not just SMS scheduling failures. For example, a transient database hiccup in `prisma.profile.findFirst` (line 111) or `getBookerBaseUrl` (line 119) increments retryCount just the same as an invalid phone number. Combined with the hard deletion at retryCount > 1, two consecutive transient failures (e.g., a brief Twilio or DB outage spanning two cron runs) permanently delete reminders whose scheduledDate may still be days away and which would have succeeded on a later run. Consider only counting actual send failures, or using a higher threshold / not deleting reminders whose scheduledDate is still in the future.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 28, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Comment above deleteMany no longer matches the query\", \"body\": \"The comment still reads 'delete all scheduled sms reminders where scheduled date is past current date', but the query now also deletes unscheduled reminders (of any method) whose retryCount exceeds 1. The stale comment misleads future readers about what this cleanup does; it should be updated to describe both deletion conditions.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "medium",
+   "category": "data",
+   "title": "Retry-based deletion is not scoped to SMS reminders",
+   "body": "The new second branch of the deleteMany OR ({ retryCount: { gt: 1 } }) has no `method: WorkflowMethods.SMS` filter, unlike the first branch which is explicitly SMS-scoped. This cron endpoint is SMS-only (the file header says so and the fetch below only selects SMS reminders), but the delete will now remove ANY WorkflowReminder row with retryCount > 1, including EMAIL or WHATSAPP reminders. It also ignores the `scheduled` flag, so even an already-scheduled reminder with retryCount > 1 would be deleted. Today only this file increments retryCount (and only for SMS rows), so the impact is latent, but the moment any other scheduler (e.g., the email reminder cron) starts using retryCount, this job will silently delete those reminders. The retryCount condition should be ANDed with `method: WorkflowMethods.SMS` (and probably `scheduled: false`)."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unprotected prisma.update inside catch can abort the whole run",
+   "body": "The catch block now performs `await prisma.workflowReminder.update({ where: { id: reminder.id }, ... })` without its own error handling. If that update itself throws \u2014 for example because the reminder row was deleted between the findMany and this update (the deleteMany at the top of a concurrent cron run can remove it), or because of a transient DB error \u2014 the exception escapes the catch, breaks out of the `for` loop entirely, and all remaining unscheduled reminders in the batch are skipped while the endpoint returns a 500. Previously the catch only logged, so one failing reminder never affected the rest of the batch. The increment in the catch should be wrapped in its own try/catch (or use updateMany which won't throw on a missing row)."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Read-modify-write retryCount instead of atomic increment",
+   "body": "Both retry updates use `retryCount: reminder.retryCount + 1`, computed from the value read at the start of the run. If two cron executions overlap (this endpoint is triggered by an external cron and has no locking), both can read retryCount = 0 and both write 1, losing an increment and extending the retry loop beyond the intended two attempts. Prisma supports an atomic `retryCount: { increment: 1 }` which avoids the stale-read problem entirely. Same issue at line 195 in the catch block."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 189,
+   "severity": "low",
+   "category": "bug",
+   "title": "Any transient error counts toward permanent deletion after only two attempts",
+   "body": "The catch block wraps the entire per-reminder body, so retryCount is incremented for any failure \u2014 not just SMS scheduling failures. For example, a transient database hiccup in `prisma.profile.findFirst` (line 111) or `getBookerBaseUrl` (line 119) increments retryCount just the same as an invalid phone number. Combined with the hard deletion at retryCount > 1, two consecutive transient failures (e.g., a brief Twilio or DB outage spanning two cron runs) permanently delete reminders whose scheduledDate may still be days away and which would have succeeded on a later run. Consider only counting actual send failures, or using a higher threshold / not deleting reminders whose scheduledDate is still in the future."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Comment above deleteMany no longer matches the query",
+   "body": "The comment still reads 'delete all scheduled sms reminders where scheduled date is past current date', but the query now also deletes unscheduled reminders (of any method) whose retryCount exceeds 1. The stale comment misleads future readers about what this cleanup does; it should be updated to describe both deletion conditions."
+  }
+ ],
+ "finding_count": 5
+}

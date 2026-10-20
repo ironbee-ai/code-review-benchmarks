@@ -1,0 +1,166 @@
+{
+ "run_id": "kimi-k3__xhigh__grafana__90045__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__90045",
+ "golden_url": "https://github.com/grafana/grafana/pull/90045",
+ "repeat": 1,
+ "started_at": "2026-10-17T14:31:10Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 95721,
+  "sha": "77e3d2aa5b0c8a17",
+  "patch_only": [
+   "go.work.sum"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29303,
+    "output": 5792,
+    "reasoning": 4180,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 186426,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7055,
+   "raw_usage": {
+    "completion_tokens": 5792,
+    "prompt_tokens": 29303,
+    "total_tokens": 35095,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 4180,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T14:31:10Z",
+   "first_chunk_ms": 13465,
+   "first_text_ms": 145296,
+   "response_id": "chatcmpl-fqssbypd4xhmnt3lk6k7qh4wj7idb35fpg2eqj57sauj4yjjyjhq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29303,
+  "output": 5792,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4180
+ },
+ "cost_reported": null,
+ "latency_ms": 186426,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 51, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Async legacy writes derive their context from the request context, so they are canceled when the request completes\", \"body\": \"In Create (and identically in Delete line 110, Update line 135, and DeleteCollection line 163) the background goroutine does `context.WithTimeoutCause(ctx, ...)` where `ctx` is the incoming request context. The request context is canceled as soon as the API handler returns, which happens immediately after the synchronous unified-storage write \u2014 so the child context used for the 'safe measure' legacy write is typically canceled before or during the legacy SQL call. The legacy write will then fail with context canceled, silently diverging legacy and unified storage (only visible as a metric). The goroutine should detach from the request lifecycle first, e.g. `context.WithoutCancel(ctx)`, before applying the 10s timeout.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 139, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Update passes the original objInfo to the legacy store, so UpdatedObject is invoked a second time against a different old object\", \"body\": \"The previous implementation fetched the old object, computed the updated object once, and wrapped it in `updateWrapper` so both stores persisted the same object. The new code passes the raw `objInfo` to both `d.Storage.Update` and, asynchronously, to `d.Legacy.Update`. This means `objInfo.UpdatedObject()` is invoked twice: the second time (in the goroutine) it runs against the old object fetched from legacy storage, which may have a different resourceVersion or may not exist yet (see the create-ordering race). `UpdatedObjectInfo` implementations are not guaranteed to be idempotent or reusable across calls, and the resulting legacy object can diverge from what was written to unified storage. The legacy call should receive a wrapper holding the object already produced by the unified update.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 50, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Async legacy writes are unordered, so create-then-update/delete sequences can diverge legacy storage\", \"body\": \"Each write method spawns an independent goroutine with its own 10s timeout and no serialization. A client that creates an object and immediately updates or deletes it will have the create's legacy write and the update/delete's legacy write racing in separate goroutines: the update can reach legacy before the create has been applied (failing with not-found, since forceAllowCreate is false), or a delete can be applied before the create lands, leaving a stale object in legacy. Because reads in mode 3 come only from unified storage, this divergence is invisible to users and only shows up as error counters. If ordering matters for the 'safe measure' copy, the legacy writes need a queue/serialization per object.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 106, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Delete success metric records the object name as the kind label, causing unbounded Prometheus label cardinality\", \"body\": \"In Delete, the success path calls `d.recordStorageDuration(false, mode3Str, name, method, startStorage)` \u2014 passing the resource `name` where every other call site passes `options.Kind`. This both mislabels the metric (kind label contains object names) and creates a Prometheus series per object name, which is unbounded cardinality that can blow up the metrics store. It should be `options.Kind`.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 45, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Create and Update record a legacy-storage error metric when unified storage fails and legacy is never called\", \"body\": \"In Create (line 45), when `d.Storage.Create` fails, the code calls `d.recordLegacyDuration(true, mode3Str, options.Kind, method, startStorage)` even though the legacy store was never invoked \u2014 this both inflates legacy error counts and loses the unified-storage error metric. The same mistake exists in Update at line 129, which records `recordLegacyDuration` on a `d.Storage.Update` failure. Both should call `recordStorageDuration`, as the error paths in Delete and DeleteCollection correctly do.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 166, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"DeleteCollection records the legacy delete result against the storage metric\", \"body\": \"In the async goroutine of DeleteCollection, the result of `d.Legacy.DeleteCollection` is recorded with `d.recordStorageDuration(err != nil, ...)` instead of `recordLegacyDuration`. Legacy delete-collection latency/errors will be attributed to unified storage, corrupting both metrics (all other methods use `recordLegacyDuration` in this position).\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 97, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Delete installs the base logger into the context instead of the enriched one\", \"body\": \"Delete builds `log := d.Log.WithValues(\\\"name\\\", name, \\\"kind\\\", options.Kind, \\\"method\\\", method)` but then calls `ctx = klog.NewContext(ctx, d.Log)`, dropping the name/kind/method values for anything downstream that logs via `klog.FromContext(ctx)`. It should pass `log`, as the other methods do.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3_test.go\", \"line\": 40, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"TestMode3_Create error case configures the failure on the legacy mock, but mode 3 calls unified storage first\", \"body\": \"The case 'error when creating object in the unified store fails' sets up only `setupLegacyFn` returning an error and provides no `setupStorageFn`. In mode 3, `dw.Create` calls `d.Storage.Create` first; with no expectation registered on the shared mock for that call, testify will panic with an unexpected-call failure rather than exercising the intended error path. The error expectation needs to be on the storage mock (and this worked in mode 1 only because mode 1 calls legacy first).\"}, {\"file\": \"pkg/tests/apis/playlist/playlist_test.go\", \"line\": 132, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"New mode-3 integration subtests read the legacy API immediately after k8s writes, racing the async legacy write\", \"body\": \"The added 'with dual write (file, mode 3)' and 'with dual write (unified storage, mode 3)' subtests reuse `doPlaylistTests`, which asserts legacy `/api/playlists` results immediately after k8s creates/updates/deletes (e.g. comparing `/api/playlists` list right after `client.Resource.Create`). In mode 3 the legacy write happens in a background goroutine with up to a 10s window, so these assertions race the async write and will be flaky; combined with the request-context cancellation bug in dualwriter_mode3.go they may fail consistently. The test needs polling/retry on the legacy side or the async write needs to be made deterministic for tests.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 51,
+   "severity": "high",
+   "category": "bug",
+   "title": "Async legacy writes derive their context from the request context, so they are canceled when the request completes",
+   "body": "In Create (and identically in Delete line 110, Update line 135, and DeleteCollection line 163) the background goroutine does `context.WithTimeoutCause(ctx, ...)` where `ctx` is the incoming request context. The request context is canceled as soon as the API handler returns, which happens immediately after the synchronous unified-storage write \u2014 so the child context used for the 'safe measure' legacy write is typically canceled before or during the legacy SQL call. The legacy write will then fail with context canceled, silently diverging legacy and unified storage (only visible as a metric). The goroutine should detach from the request lifecycle first, e.g. `context.WithoutCancel(ctx)`, before applying the 10s timeout."
+  },
+  {
+   "index": 1,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 139,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Update passes the original objInfo to the legacy store, so UpdatedObject is invoked a second time against a different old object",
+   "body": "The previous implementation fetched the old object, computed the updated object once, and wrapped it in `updateWrapper` so both stores persisted the same object. The new code passes the raw `objInfo` to both `d.Storage.Update` and, asynchronously, to `d.Legacy.Update`. This means `objInfo.UpdatedObject()` is invoked twice: the second time (in the goroutine) it runs against the old object fetched from legacy storage, which may have a different resourceVersion or may not exist yet (see the create-ordering race). `UpdatedObjectInfo` implementations are not guaranteed to be idempotent or reusable across calls, and the resulting legacy object can diverge from what was written to unified storage. The legacy call should receive a wrapper holding the object already produced by the unified update."
+  },
+  {
+   "index": 2,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 50,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Async legacy writes are unordered, so create-then-update/delete sequences can diverge legacy storage",
+   "body": "Each write method spawns an independent goroutine with its own 10s timeout and no serialization. A client that creates an object and immediately updates or deletes it will have the create's legacy write and the update/delete's legacy write racing in separate goroutines: the update can reach legacy before the create has been applied (failing with not-found, since forceAllowCreate is false), or a delete can be applied before the create lands, leaving a stale object in legacy. Because reads in mode 3 come only from unified storage, this divergence is invisible to users and only shows up as error counters. If ordering matters for the 'safe measure' copy, the legacy writes need a queue/serialization per object."
+  },
+  {
+   "index": 3,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 106,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Delete success metric records the object name as the kind label, causing unbounded Prometheus label cardinality",
+   "body": "In Delete, the success path calls `d.recordStorageDuration(false, mode3Str, name, method, startStorage)` \u2014 passing the resource `name` where every other call site passes `options.Kind`. This both mislabels the metric (kind label contains object names) and creates a Prometheus series per object name, which is unbounded cardinality that can blow up the metrics store. It should be `options.Kind`."
+  },
+  {
+   "index": 4,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 45,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Create and Update record a legacy-storage error metric when unified storage fails and legacy is never called",
+   "body": "In Create (line 45), when `d.Storage.Create` fails, the code calls `d.recordLegacyDuration(true, mode3Str, options.Kind, method, startStorage)` even though the legacy store was never invoked \u2014 this both inflates legacy error counts and loses the unified-storage error metric. The same mistake exists in Update at line 129, which records `recordLegacyDuration` on a `d.Storage.Update` failure. Both should call `recordStorageDuration`, as the error paths in Delete and DeleteCollection correctly do."
+  },
+  {
+   "index": 5,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 166,
+   "severity": "medium",
+   "category": "bug",
+   "title": "DeleteCollection records the legacy delete result against the storage metric",
+   "body": "In the async goroutine of DeleteCollection, the result of `d.Legacy.DeleteCollection` is recorded with `d.recordStorageDuration(err != nil, ...)` instead of `recordLegacyDuration`. Legacy delete-collection latency/errors will be attributed to unified storage, corrupting both metrics (all other methods use `recordLegacyDuration` in this position)."
+  },
+  {
+   "index": 6,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 97,
+   "severity": "low",
+   "category": "bug",
+   "title": "Delete installs the base logger into the context instead of the enriched one",
+   "body": "Delete builds `log := d.Log.WithValues(\"name\", name, \"kind\", options.Kind, \"method\", method)` but then calls `ctx = klog.NewContext(ctx, d.Log)`, dropping the name/kind/method values for anything downstream that logs via `klog.FromContext(ctx)`. It should pass `log`, as the other methods do."
+  },
+  {
+   "index": 7,
+   "file": "pkg/apiserver/rest/dualwriter_mode3_test.go",
+   "line": 40,
+   "severity": "medium",
+   "category": "bug",
+   "title": "TestMode3_Create error case configures the failure on the legacy mock, but mode 3 calls unified storage first",
+   "body": "The case 'error when creating object in the unified store fails' sets up only `setupLegacyFn` returning an error and provides no `setupStorageFn`. In mode 3, `dw.Create` calls `d.Storage.Create` first; with no expectation registered on the shared mock for that call, testify will panic with an unexpected-call failure rather than exercising the intended error path. The error expectation needs to be on the storage mock (and this worked in mode 1 only because mode 1 calls legacy first)."
+  },
+  {
+   "index": 8,
+   "file": "pkg/tests/apis/playlist/playlist_test.go",
+   "line": 132,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "New mode-3 integration subtests read the legacy API immediately after k8s writes, racing the async legacy write",
+   "body": "The added 'with dual write (file, mode 3)' and 'with dual write (unified storage, mode 3)' subtests reuse `doPlaylistTests`, which asserts legacy `/api/playlists` results immediately after k8s creates/updates/deletes (e.g. comparing `/api/playlists` list right after `client.Resource.Create`). In mode 3 the legacy write happens in a background goroutine with up to a 10s window, so these assertions race the async write and will be flaky; combined with the request-context cancellation bug in dualwriter_mode3.go they may fail consistently. The test needs polling/retry on the legacy side or the async write needs to be made deterministic for tests."
+  }
+ ],
+ "finding_count": 9
+}

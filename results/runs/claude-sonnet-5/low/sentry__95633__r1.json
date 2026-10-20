@@ -1,0 +1,131 @@
+{
+ "run_id": "claude-sonnet-5__low__sentry__95633__r1",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "effort": "low"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-18T20:31:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 3574,
+    "reasoning": 1951,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 37390,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4460,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 3574,
+    "output_tokens_details": {
+     "thinking_tokens": 1951
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T20:31:04Z",
+   "first_chunk_ms": 3480,
+   "first_text_ms": 22517,
+   "response_id": "msg_bdrk_nc7ab75uqr4vnfqqv5kwtncqhqr2eyn3ewjaghwuhawh64gwkgfa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 3574,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 1951
+ },
+ "cost_reported": null,
+ "latency_ms": 37390,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 132, \"severity\": \"critical\", \"title\": \"Use of queue.ShutDown / Queue.shutdown() requires Python 3.13+\", \"body\": \"The code relies on `queue.ShutDown` (as an exception type) and `queue.Queue.shutdown()` (lines 132, 142, 238), both of which were only added to the stdlib `queue` module in Python 3.13. Sentry currently targets Python 3.11/3.12, so `queue.Queue` instances will not have a `shutdown()` method and `queue.ShutDown` will raise `AttributeError` when referenced. In `FixedQueuePool.shutdown()` (line 238) the `AttributeError` is swallowed by the broad `except Exception` and merely logged, meaning the queue is never actually shut down and the worker threads remain blocked forever on `work_queue.get()` since they have no timeout and no sentinel value to unblock them. This leaves daemon threads running indefinitely (though daemon threads won't block process exit, `join(timeout=5.0)` will always time out and `thread-queue-parallel` mode will never cleanly release workers), and the whole feature is effectively broken/untested on the Python version this repo runs.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 131, \"severity\": \"high\", \"title\": \"Worker threads block forever on queue.get() with no way to interrupt on unsupported Python versions\", \"body\": \"`OrderedQueueWorker.run()` calls `self.work_queue.get()` with no timeout, relying entirely on `queue.ShutDown` being raised by `Queue.shutdown()` to break out of the loop during shutdown. Since this stdlib behavior doesn't exist before Python 3.13 (see above), setting `self.shutdown = True` has no effect on an already-blocked `.get()` call \u2014 the thread will never notice the shutdown flag unless a new item arrives. This means on consumer shutdown, worker threads can hang, and `strategy.close()`/`terminate()` won't actually stop in-flight work promptly, risking data loss or delayed shutdown during deploys.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 74, \"severity\": \"medium\", \"title\": \"OffsetTracker.all_offsets dict grows unbounded for low-traffic partitions\", \"body\": \"`get_committable_offsets()` iterates `self.all_offsets.keys()` but never removes a partition's entry when its offset set becomes empty (it is only pruned in `mark_committed`, which filters by offset value, not deleting the partition key entirely when offsets are completed without any commit happening, e.g. for FilteredPayload offsets added+completed immediately). Over the life of a long-running consumer process this results in slow unbounded growth of `all_offsets`/`outstanding`/`partition_locks` dictionaries, particularly for partitions that get reassigned/rebalanced repeatedly, since partition keys are never fully removed.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 150, \"severity\": \"low\", \"title\": \"Per-message metrics.gauge call on queue depth may add significant overhead\", \"body\": \"`OrderedQueueWorker.run()` emits a `metrics.gauge` call for every processed item (line 150-156), tagged by identifier. For high-throughput queues (e.g. uptime results) this adds a statsd/metrics emission per message per worker, which may become a non-trivial source of overhead/metrics volume at scale, especially compared to the previous batch-based processing which could emit stats per batch rather than per item.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 136, \"severity\": \"medium\", \"title\": \"num_queues defaults to max_workers but worker count semantics changed silently\", \"body\": \"In `thread-queue-parallel` mode, `max_workers` (previously documented as thread pool size for `batched-parallel`) is reused to mean \\\"number of fixed queues\\\" (`num_queues=max_workers or 20`). Each queue spawns exactly one dedicated worker thread for its lifetime (in `FixedQueuePool.__init__`), so unlike `batched-parallel`'s ThreadPoolExecutor (which dynamically allocates threads bounded by max_workers), this always creates `num_queues` persistent threads regardless of actual load. This is a meaningful behavior change for the same CLI option across modes, worth documenting more clearly, especially since the click help text for `--max-workers` was only updated to \\\"maximum amount of parallelism\\\" without noting the always-on persistent threads per queue in this mode.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 132,
+   "severity": "critical",
+   "category": null,
+   "title": "Use of queue.ShutDown / Queue.shutdown() requires Python 3.13+",
+   "body": "The code relies on `queue.ShutDown` (as an exception type) and `queue.Queue.shutdown()` (lines 132, 142, 238), both of which were only added to the stdlib `queue` module in Python 3.13. Sentry currently targets Python 3.11/3.12, so `queue.Queue` instances will not have a `shutdown()` method and `queue.ShutDown` will raise `AttributeError` when referenced. In `FixedQueuePool.shutdown()` (line 238) the `AttributeError` is swallowed by the broad `except Exception` and merely logged, meaning the queue is never actually shut down and the worker threads remain blocked forever on `work_queue.get()` since they have no timeout and no sentinel value to unblock them. This leaves daemon threads running indefinitely (though daemon threads won't block process exit, `join(timeout=5.0)` will always time out and `thread-queue-parallel` mode will never cleanly release workers), and the whole feature is effectively broken/untested on the Python version this repo runs."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 131,
+   "severity": "high",
+   "category": null,
+   "title": "Worker threads block forever on queue.get() with no way to interrupt on unsupported Python versions",
+   "body": "`OrderedQueueWorker.run()` calls `self.work_queue.get()` with no timeout, relying entirely on `queue.ShutDown` being raised by `Queue.shutdown()` to break out of the loop during shutdown. Since this stdlib behavior doesn't exist before Python 3.13 (see above), setting `self.shutdown = True` has no effect on an already-blocked `.get()` call \u2014 the thread will never notice the shutdown flag unless a new item arrives. This means on consumer shutdown, worker threads can hang, and `strategy.close()`/`terminate()` won't actually stop in-flight work promptly, risking data loss or delayed shutdown during deploys."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 74,
+   "severity": "medium",
+   "category": null,
+   "title": "OffsetTracker.all_offsets dict grows unbounded for low-traffic partitions",
+   "body": "`get_committable_offsets()` iterates `self.all_offsets.keys()` but never removes a partition's entry when its offset set becomes empty (it is only pruned in `mark_committed`, which filters by offset value, not deleting the partition key entirely when offsets are completed without any commit happening, e.g. for FilteredPayload offsets added+completed immediately). Over the life of a long-running consumer process this results in slow unbounded growth of `all_offsets`/`outstanding`/`partition_locks` dictionaries, particularly for partitions that get reassigned/rebalanced repeatedly, since partition keys are never fully removed."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 150,
+   "severity": "low",
+   "category": null,
+   "title": "Per-message metrics.gauge call on queue depth may add significant overhead",
+   "body": "`OrderedQueueWorker.run()` emits a `metrics.gauge` call for every processed item (line 150-156), tagged by identifier. For high-throughput queues (e.g. uptime results) this adds a statsd/metrics emission per message per worker, which may become a non-trivial source of overhead/metrics volume at scale, especially compared to the previous batch-based processing which could emit stats per batch rather than per item."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 136,
+   "severity": "medium",
+   "category": null,
+   "title": "num_queues defaults to max_workers but worker count semantics changed silently",
+   "body": "In `thread-queue-parallel` mode, `max_workers` (previously documented as thread pool size for `batched-parallel`) is reused to mean \"number of fixed queues\" (`num_queues=max_workers or 20`). Each queue spawns exactly one dedicated worker thread for its lifetime (in `FixedQueuePool.__init__`), so unlike `batched-parallel`'s ThreadPoolExecutor (which dynamically allocates threads bounded by max_workers), this always creates `num_queues` persistent threads regardless of actual load. This is a meaningful behavior change for the same CLI option across modes, worth documenting more clearly, especially since the click help text for `--max-workers` was only updated to \"maximum amount of parallelism\" without noting the always-on persistent threads per queue in this mode."
+  }
+ ],
+ "finding_count": 5
+}

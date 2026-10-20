@@ -1,0 +1,128 @@
+{
+ "run_id": "kimi-k3__low__cal.com__7232__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning_effort": "low"
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:38:50Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70338,
+    "output": 3336,
+    "reasoning": 2190,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 165585,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5067,
+   "raw_usage": {
+    "completion_tokens": 3336,
+    "prompt_tokens": 70338,
+    "total_tokens": 73674,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2190,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T11:38:50Z",
+   "first_chunk_ms": 38473,
+   "first_text_ms": 128654,
+   "response_id": "chatcmpl-fujm652p2nvcgnyowko5ibva6yaihzc5ncad5vh2gogqtcman33a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70338,
+  "output": 3336,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2190
+ },
+ "cost_reported": null,
+ "latency_ms": 165585,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 485, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Reminder-cancellation DB writes are fire-and-forget and may never persist\", \"body\": \"The new cancellation flow relies entirely on `deleteScheduledEmailReminder` writing `cancelled: true` to the WorkflowReminder row so the cron job can cancel the SendGrid scheduled send later. But the calls are made inside `forEach` without `await` (lines 485-493), so the handler returns (and in a serverless environment the function can be frozen/terminated) before the Prisma update completes. If the `cancelled` flag is never written, the cron job will never cancel the email and the reminder is still sent \u2014 exactly the bug this PR is meant to fix. The same pattern exists in `packages/trpc/server/routers/viewer/bookings.tsx` (requestReschedule, lines 488-494) and in the new reschedule block in `handleNewBooking.ts` (lines 966-972). These should be awaited (e.g. `await Promise.all(...)`).\"}, {\"file\": \"packages/features/bookings/lib/handleNewBooking.ts\", \"line\": 968, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Reschedule cancels SendGrid send immediately but never deletes the WorkflowReminder row\", \"body\": \"On reschedule, `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)` is called with `immediateDelete: true`. In that branch (emailReminderManager.ts lines 213-223) the SendGrid cancellation is POSTed but the WorkflowReminder database row is neither deleted nor marked `cancelled`. The row stays in the DB with `scheduled: true` and `cancelled: null` until the cron's past-date `deleteMany` eventually removes it, and the SendGrid pending cancellation is created immediately even when the reminder's scheduled date is far in the future \u2014 re-introducing the SendGrid 100-pending-cancellations accumulation this PR is trying to avoid (a pending cancellation now sits there until the original send date passes). The row should be deleted after the immediate SendGrid cancel, as `deleteScheduledSMSReminder` does.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 56, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"One failed SendGrid cancel aborts cancellation of all remaining reminders in the batch\", \"body\": \"In the cron's cancellation loop (lines 56-73), each `client.request` is awaited inside the `for` loop and the whole block is wrapped in a single try/catch. If SendGrid returns an error for one reminder (e.g. an unknown/expired batch_id), the exception breaks out of the loop, so every later reminder in `remindersToCancel` is skipped for that run. Because successfully processed reminders are deleted while the failing one is not, a persistently failing reminder at the front of the result set will block cancellation of all other cancelled reminders every run, and those emails will still be sent. Each iteration should catch its own error (or collect promises and use `Promise.allSettled`) so one failure doesn't block the rest.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 34, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Past-due deleteMany runs before the SendGrid cancellation pass, dropping cancelled reminders without cancelling them\", \"body\": \"The handler first deletes all EMAIL reminders with `scheduledDate <= now` (lines 34-41) and only afterwards processes `cancelled: true` reminders due within the next hour. A reminder marked `cancelled` whose scheduledDate has just passed is deleted by the first query without any SendGrid cancellation being issued. SendGrid's `sendAt` delivery is not instantaneous, so there is a window where the DB row is gone but the email has not yet been dispatched \u2014 it will then be sent for a cancelled booking with no way to stop it. The cancellation pass should run before (or be excluded from) the past-date cleanup, e.g. by excluding `cancelled: true` rows from the deleteMany until after they've been cancelled at SendGrid.\"}, {\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 225, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Deferred cancellation only works for reminders due within 1 hour; anything later silently stays scheduled\", \"body\": \"The non-immediate path only sets `cancelled: true` and relies on the cron job, which only picks up cancelled reminders with `scheduledDate <= now + 1 hour`. For any reminder scheduled further out, nothing happens at cancel time and correctness depends entirely on the cron running within the hour before the send time. If the cron endpoint is down, misconfigured, or delayed past that window (it only runs every 15 minutes and any SendGrid error aborts the run), the email is sent for a cancelled booking with no fallback. Additionally there is no alerting when the cron fails (errors are only `console.log`ed), so this failure mode is silent. At minimum the cron window should be larger than the maximum realistic cron downtime, and failures should be surfaced.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "high",
+   "category": "bug",
+   "title": "Reminder-cancellation DB writes are fire-and-forget and may never persist",
+   "body": "The new cancellation flow relies entirely on `deleteScheduledEmailReminder` writing `cancelled: true` to the WorkflowReminder row so the cron job can cancel the SendGrid scheduled send later. But the calls are made inside `forEach` without `await` (lines 485-493), so the handler returns (and in a serverless environment the function can be frozen/terminated) before the Prisma update completes. If the `cancelled` flag is never written, the cron job will never cancel the email and the reminder is still sent \u2014 exactly the bug this PR is meant to fix. The same pattern exists in `packages/trpc/server/routers/viewer/bookings.tsx` (requestReschedule, lines 488-494) and in the new reschedule block in `handleNewBooking.ts` (lines 966-972). These should be awaited (e.g. `await Promise.all(...)`)."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 968,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reschedule cancels SendGrid send immediately but never deletes the WorkflowReminder row",
+   "body": "On reschedule, `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)` is called with `immediateDelete: true`. In that branch (emailReminderManager.ts lines 213-223) the SendGrid cancellation is POSTed but the WorkflowReminder database row is neither deleted nor marked `cancelled`. The row stays in the DB with `scheduled: true` and `cancelled: null` until the cron's past-date `deleteMany` eventually removes it, and the SendGrid pending cancellation is created immediately even when the reminder's scheduled date is far in the future \u2014 re-introducing the SendGrid 100-pending-cancellations accumulation this PR is trying to avoid (a pending cancellation now sits there until the original send date passes). The row should be deleted after the immediate SendGrid cancel, as `deleteScheduledSMSReminder` does."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 56,
+   "severity": "medium",
+   "category": "bug",
+   "title": "One failed SendGrid cancel aborts cancellation of all remaining reminders in the batch",
+   "body": "In the cron's cancellation loop (lines 56-73), each `client.request` is awaited inside the `for` loop and the whole block is wrapped in a single try/catch. If SendGrid returns an error for one reminder (e.g. an unknown/expired batch_id), the exception breaks out of the loop, so every later reminder in `remindersToCancel` is skipped for that run. Because successfully processed reminders are deleted while the failing one is not, a persistently failing reminder at the front of the result set will block cancellation of all other cancelled reminders every run, and those emails will still be sent. Each iteration should catch its own error (or collect promises and use `Promise.allSettled`) so one failure doesn't block the rest."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 34,
+   "severity": "medium",
+   "category": "data",
+   "title": "Past-due deleteMany runs before the SendGrid cancellation pass, dropping cancelled reminders without cancelling them",
+   "body": "The handler first deletes all EMAIL reminders with `scheduledDate <= now` (lines 34-41) and only afterwards processes `cancelled: true` reminders due within the next hour. A reminder marked `cancelled` whose scheduledDate has just passed is deleted by the first query without any SendGrid cancellation being issued. SendGrid's `sendAt` delivery is not instantaneous, so there is a window where the DB row is gone but the email has not yet been dispatched \u2014 it will then be sent for a cancelled booking with no way to stop it. The cancellation pass should run before (or be excluded from) the past-date cleanup, e.g. by excluding `cancelled: true` rows from the deleteMany until after they've been cancelled at SendGrid."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 225,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Deferred cancellation only works for reminders due within 1 hour; anything later silently stays scheduled",
+   "body": "The non-immediate path only sets `cancelled: true` and relies on the cron job, which only picks up cancelled reminders with `scheduledDate <= now + 1 hour`. For any reminder scheduled further out, nothing happens at cancel time and correctness depends entirely on the cron running within the hour before the send time. If the cron endpoint is down, misconfigured, or delayed past that window (it only runs every 15 minutes and any SendGrid error aborts the run), the email is sent for a cancelled booking with no fallback. Additionally there is no alerting when the cron fails (errors are only `console.log`ed), so this failure mode is silent. At minimum the cron window should be larger than the maximum realistic cron downtime, and failures should be surfaced."
+  }
+ ],
+ "finding_count": 5
+}

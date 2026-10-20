@@ -1,0 +1,140 @@
+{
+ "run_id": "minimax-m3__default__cal.com__8087__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:58:29Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 38837,
+    "output": 7170,
+    "reasoning": 5920,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02028276,
+   "latency_ms": 30515,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5630,
+   "raw_usage": {
+    "completion_tokens": 7170,
+    "prompt_tokens": 39298,
+    "total_tokens": 46468,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 5920,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.02028276,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02028276,
+     "upstream_inference_prompt_cost": 0.01167876,
+     "upstream_inference_completions_cost": 0.008604
+    }
+   },
+   "started_at": "2026-10-17T20:58:29Z",
+   "first_chunk_ms": 2018,
+   "first_text_ms": 24735,
+   "response_id": "gen-1792270710-HGbQywvc7XShTBMS38EJ",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 38837,
+  "output": 7170,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 5920
+ },
+ "cost_reported": 0.02028276,
+ "latency_ms": 30515,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/core/CalendarManager.ts\", \"line\": 23, \"severity\": \"high\", \"category\": \"api\", \"title\": \"getCalendarCredentials now returns Promise in the calendar field, breaking its synchronous contract\", \"body\": \"getCalendarCredentials is an exported synchronous function. Before this PR it returned objects whose `calendar` field was a fully constructed Calendar instance. After this PR, the function still declares a synchronous signature but internally calls `getCalendar(credential)` which is now async, so the `calendar` field stored in each returned item is a `Promise<Calendar | null>`. Any external consumer that calls `getCalendarCredentials` and uses `item.calendar` directly (calling methods on it, checking truthiness, etc.) will receive a Promise object and break \u2014 for example `item.calendar.listCalendars()` would return a Promise of a Promise, or the truthiness check would always be true (a Promise is truthy). Only the in-file consumer `getConnectedCalendars` was updated (`const calendar = await item.calendar;`); any other call sites across the codebase are silently broken. Either the function must be made async (with all callers updated) or the calendar construction must happen inside the function before returning.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"forEach(async) pushes to apiDeletes asynchronously, racing with the later Promise.all\", \"body\": \"In the recurring-event cancellation branch, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { ... apiDeletes.push(deletedEvent); })` is used. `Array.prototype.forEach` does not await async callbacks, so the synchronous execution falls through immediately after the loop is set up. The pushes of `deletedEvent` (which itself is the result of `await calendar?.deleteEvent(...)`) into `apiDeletes` happen asynchronously. Later, the code does `await Promise.all(prismaPromises.concat(apiDeletes));` (line 652). Because the forEach is not awaited, some async callbacks may not have pushed their promises yet when `Promise.all` is called, so those calendar events will never be deleted. This was a pre-existing bug in the original sync version (the callback was already async), but the PR makes it strictly worse by inserting an additional `await getCalendar(credential)` before the push, widening the race window. The fix is to replace forEach with `for (const credential of ...)` and await it, matching the pattern used a few lines below at line 480.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 617, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"await apiDeletes is a no-op and paid-booking cancellations return before integrations finish\", \"body\": \"At line 617 in the `if (bookingToDelete && bookingToDelete.paid)` branch, the code does `await apiDeletes;`. `apiDeletes` is an array of Promises, not a Promise itself, so `await` on a non-thenable just resolves to the array value immediately \u2014 this line does not wait for any calendar/video deletion to complete. The function then sets `req.statusCode = 200` and returns `\\\"Booking successfully cancelled.\\\"` without having actually deleted the calendar/video events. The non-paid branch correctly uses `await Promise.all(prismaPromises.concat(apiDeletes));` at line 652. This should be `await Promise.all(apiDeletes);`. This is a pre-existing bug but directly related to the async-flow changes in this PR.\"}, {\"file\": \"packages/core/videoClient.ts\", \"line\": 24, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"getVideoAdapters loads apps sequentially instead of in parallel\", \"body\": \"After this PR, `getVideoAdapters` uses a `for (const cred of withCredentials)` loop that awaits each `appStore[appName]` dynamic import one after another. When called with multiple credentials (e.g. from `getBusyVideoTimes`), the dynamic imports run sequentially rather than concurrently. Since dynamic imports are independent I/O operations (Webpack fetches chunks in parallel), this serializes what could be parallel work. The previous synchronous reduce was effectively zero-cost per iteration, but the new version pays the full latency of each import sequentially. Using `Promise.all(withCredentials.map(...))` would allow the chunks to load concurrently, reducing total latency.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Async forEach swallows errors and leaves deletions fire-and-forget in vital reschedule\", \"body\": \"The code uses `try { bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); await calendar?.deleteEvent(...) ... }); } catch (error) { ... }`. Two problems: (1) `Array.prototype.forEach` does not await async callbacks, so the outer `try/catch` only catches errors thrown synchronously during the forEach setup \u2014 any rejection from the awaited `getCalendar` or `deleteEvent` becomes an unhandled promise rejection. (2) Because the callbacks are not awaited, the `Reschedule` function returns `true` immediately after launching the forEach, so callers cannot rely on calendar/video cleanup having completed. The PR converts `getCalendar` to async, widening the window during which these promises are unresolved. The same pattern exists in `packages/app-store/wipemycalother/lib/reschedule.ts` (line 125) and `packages/trpc/server/routers/viewer/bookings.tsx` (line 553), and the same caveat applies in `packages/features/bookings/lib/handleCancelBooking.ts` (line 460, already noted separately).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 23,
+   "severity": "high",
+   "category": "api",
+   "title": "getCalendarCredentials now returns Promise in the calendar field, breaking its synchronous contract",
+   "body": "getCalendarCredentials is an exported synchronous function. Before this PR it returned objects whose `calendar` field was a fully constructed Calendar instance. After this PR, the function still declares a synchronous signature but internally calls `getCalendar(credential)` which is now async, so the `calendar` field stored in each returned item is a `Promise<Calendar | null>`. Any external consumer that calls `getCalendarCredentials` and uses `item.calendar` directly (calling methods on it, checking truthiness, etc.) will receive a Promise object and break \u2014 for example `item.calendar.listCalendars()` would return a Promise of a Promise, or the truthiness check would always be true (a Promise is truthy). Only the in-file consumer `getConnectedCalendars` was updated (`const calendar = await item.calendar;`); any other call sites across the codebase are silently broken. Either the function must be made async (with all callers updated) or the calendar construction must happen inside the function before returning."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "forEach(async) pushes to apiDeletes asynchronously, racing with the later Promise.all",
+   "body": "In the recurring-event cancellation branch, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { ... apiDeletes.push(deletedEvent); })` is used. `Array.prototype.forEach` does not await async callbacks, so the synchronous execution falls through immediately after the loop is set up. The pushes of `deletedEvent` (which itself is the result of `await calendar?.deleteEvent(...)`) into `apiDeletes` happen asynchronously. Later, the code does `await Promise.all(prismaPromises.concat(apiDeletes));` (line 652). Because the forEach is not awaited, some async callbacks may not have pushed their promises yet when `Promise.all` is called, so those calendar events will never be deleted. This was a pre-existing bug in the original sync version (the callback was already async), but the PR makes it strictly worse by inserting an additional `await getCalendar(credential)` before the push, widening the race window. The fix is to replace forEach with `for (const credential of ...)` and await it, matching the pattern used a few lines below at line 480."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 617,
+   "severity": "medium",
+   "category": "bug",
+   "title": "await apiDeletes is a no-op and paid-booking cancellations return before integrations finish",
+   "body": "At line 617 in the `if (bookingToDelete && bookingToDelete.paid)` branch, the code does `await apiDeletes;`. `apiDeletes` is an array of Promises, not a Promise itself, so `await` on a non-thenable just resolves to the array value immediately \u2014 this line does not wait for any calendar/video deletion to complete. The function then sets `req.statusCode = 200` and returns `\"Booking successfully cancelled.\"` without having actually deleted the calendar/video events. The non-paid branch correctly uses `await Promise.all(prismaPromises.concat(apiDeletes));` at line 652. This should be `await Promise.all(apiDeletes);`. This is a pre-existing bug but directly related to the async-flow changes in this PR."
+  },
+  {
+   "index": 3,
+   "file": "packages/core/videoClient.ts",
+   "line": 24,
+   "severity": "low",
+   "category": "perf",
+   "title": "getVideoAdapters loads apps sequentially instead of in parallel",
+   "body": "After this PR, `getVideoAdapters` uses a `for (const cred of withCredentials)` loop that awaits each `appStore[appName]` dynamic import one after another. When called with multiple credentials (e.g. from `getBusyVideoTimes`), the dynamic imports run sequentially rather than concurrently. Since dynamic imports are independent I/O operations (Webpack fetches chunks in parallel), this serializes what could be parallel work. The previous synchronous reduce was effectively zero-cost per iteration, but the new version pays the full latency of each import sequentially. Using `Promise.all(withCredentials.map(...))` would allow the chunks to load concurrently, reducing total latency."
+  },
+  {
+   "index": 4,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Async forEach swallows errors and leaves deletions fire-and-forget in vital reschedule",
+   "body": "The code uses `try { bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); await calendar?.deleteEvent(...) ... }); } catch (error) { ... }`. Two problems: (1) `Array.prototype.forEach` does not await async callbacks, so the outer `try/catch` only catches errors thrown synchronously during the forEach setup \u2014 any rejection from the awaited `getCalendar` or `deleteEvent` becomes an unhandled promise rejection. (2) Because the callbacks are not awaited, the `Reschedule` function returns `true` immediately after launching the forEach, so callers cannot rely on calendar/video cleanup having completed. The PR converts `getCalendar` to async, widening the window during which these promises are unresolved. The same pattern exists in `packages/app-store/wipemycalother/lib/reschedule.ts` (line 125) and `packages/trpc/server/routers/viewer/bookings.tsx` (line 553), and the same caveat applies in `packages/features/bookings/lib/handleCancelBooking.ts` (line 460, already noted separately)."
+  }
+ ],
+ "finding_count": 5
+}

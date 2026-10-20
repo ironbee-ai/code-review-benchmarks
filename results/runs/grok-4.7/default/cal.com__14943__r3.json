@@ -1,0 +1,138 @@
+{
+ "run_id": "grok-4.7__default__cal.com__14943__r3",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:06:49Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19196,
+    "output": 18498,
+    "reasoning": 17605,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.149956,
+   "latency_ms": 247023,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 3938,
+   "raw_usage": {
+    "completion_tokens": 18498,
+    "prompt_tokens": 20348,
+    "total_tokens": 38846,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 17605,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.149956,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.149956,
+     "upstream_inference_prompt_cost": 0.038968,
+     "upstream_inference_completions_cost": 0.110988
+    }
+   },
+   "started_at": "2026-10-18T12:06:49Z",
+   "first_chunk_ms": 2244,
+   "first_text_ms": 240425,
+   "response_id": "gen-1792325209-6aEaxUPRNCSPDlIMiG5J",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19196,
+  "output": 18498,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 17605
+ },
+ "cost_reported": 0.149956,
+ "latency_ms": 247023,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"high\", \"category\": \"data\", \"title\": \"retryCount cleanup deletes every workflow reminder, not just failed SMS\", \"body\": \"The new deleteMany ORs the existing past-due SMS clause with `{ retryCount: { gt: 1 } }` and that second clause has no method, scheduled, or date filter. WorkflowReminder is shared by EMAIL, SMS, and WHATSAPP. Every cron run therefore permanently deletes any reminder of any method once retryCount is greater than 1, including a row that was already scheduled and still has a provider referenceId. The comment on line 28 still says this only removes past SMS reminders. Scope the predicate to unscheduled SMS (and filter the later findMany the same way); otherwise any non-SMS writer of this new column, or a scheduled SMS row that ever exceeds the cap, loses the reminder.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"A successful Twilio schedule is counted as a failure if saving the SID throws\", \"body\": \"twilio.scheduleSMS runs before the update that sets scheduled and referenceId. If Twilio accepts the message and that update throws, the new catch increments retryCount and leaves scheduled false and referenceId unset. The next cron loads the same reminder again and sends another SMS. After retryCount exceeds 1 the row is deleted, so the already accepted Twilio message can no longer be cancelled from a stored SID. Only a failed scheduleSMS call should advance retryCount; if persistence fails after Twilio accepts the message, cancel that message or retry the write without treating it as a failed send.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Overlapping crons lose retry increments and can double-send\", \"body\": \"Both failure paths write `retryCount: reminder.retryCount + 1` from the value loaded at the start of the loop instead of an atomic increment. Two overlapping runs of this cron can both select the same unscheduled reminder, both call Twilio, and both store the same next count. Recipients get duplicate texts, and because the stored count never moves past that shared value the `retryCount > 1` delete may never fire, so the retry cap does not hold under overlap. Claim the row (conditional update of scheduled, or increment in the database) before calling Twilio.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Missing number or empty body never counts toward the retry cap\", \"body\": \"retryCount is incremented only when Twilio returns a falsy result or throws, and only inside `if (message?.length > 0 && sendTo)`. If the attendee or step has no phone number, or the step has no reminder body and the template is not REMINDER, the loop skips the row and leaves scheduled false and retryCount at 0. That reminder is loaded again on every cron run until scheduledDate is in the past, which is the unbounded reschedule this PR is meant to stop. Treat a missing destination or empty message as a failed attempt, or delete the reminder immediately.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test locks the retry cap or the delete scope\", \"body\": \"The new failure accounting and deleteMany predicate have no tests. A regression should assert that one failed SMS schedule leaves the reminder, that a second failure removes it on the next run, and that email or WhatsApp reminders and already scheduled SMS rows are not deleted by the retryCount clause. Without that, the unscoped OR delete and the off-path skips (no phone number, persistence failure after Twilio accepts) can ship unnoticed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "high",
+   "category": "data",
+   "title": "retryCount cleanup deletes every workflow reminder, not just failed SMS",
+   "body": "The new deleteMany ORs the existing past-due SMS clause with `{ retryCount: { gt: 1 } }` and that second clause has no method, scheduled, or date filter. WorkflowReminder is shared by EMAIL, SMS, and WHATSAPP. Every cron run therefore permanently deletes any reminder of any method once retryCount is greater than 1, including a row that was already scheduled and still has a provider referenceId. The comment on line 28 still says this only removes past SMS reminders. Scope the predicate to unscheduled SMS (and filter the later findMany the same way); otherwise any non-SMS writer of this new column, or a scheduled SMS row that ever exceeds the cap, loses the reminder."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "high",
+   "category": "bug",
+   "title": "A successful Twilio schedule is counted as a failure if saving the SID throws",
+   "body": "twilio.scheduleSMS runs before the update that sets scheduled and referenceId. If Twilio accepts the message and that update throws, the new catch increments retryCount and leaves scheduled false and referenceId unset. The next cron loads the same reminder again and sends another SMS. After retryCount exceeds 1 the row is deleted, so the already accepted Twilio message can no longer be cancelled from a stored SID. Only a failed scheduleSMS call should advance retryCount; if persistence fails after Twilio accepts the message, cancel that message or retry the write without treating it as a failed send."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Overlapping crons lose retry increments and can double-send",
+   "body": "Both failure paths write `retryCount: reminder.retryCount + 1` from the value loaded at the start of the loop instead of an atomic increment. Two overlapping runs of this cron can both select the same unscheduled reminder, both call Twilio, and both store the same next count. Recipients get duplicate texts, and because the stored count never moves past that shared value the `retryCount > 1` delete may never fire, so the retry cap does not hold under overlap. Claim the row (conditional update of scheduled, or increment in the database) before calling Twilio."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Missing number or empty body never counts toward the retry cap",
+   "body": "retryCount is incremented only when Twilio returns a falsy result or throws, and only inside `if (message?.length > 0 && sendTo)`. If the attendee or step has no phone number, or the step has no reminder body and the template is not REMINDER, the loop skips the row and leaves scheduled false and retryCount at 0. That reminder is loaded again on every cron run until scheduledDate is in the past, which is the unbounded reschedule this PR is meant to stop. Treat a missing destination or empty message as a failed attempt, or delete the reminder immediately."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test locks the retry cap or the delete scope",
+   "body": "The new failure accounting and deleteMany predicate have no tests. A regression should assert that one failed SMS schedule leaves the reminder, that a second failure removes it on the next run, and that email or WhatsApp reminders and already scheduled SMS rows are not deleted by the retryCount clause. Without that, the unscoped OR delete and the off-path skips (no phone number, persistence failure after Twilio accepts) can ship unnoticed."
+  }
+ ],
+ "finding_count": 5
+}

@@ -1,0 +1,165 @@
+{
+ "run_id": "claude-opus-5__default__keycloak__37038__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "keycloak__37038",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/37038",
+ "repeat": 1,
+ "started_at": "2026-10-18T21:13:31Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 304183,
+  "sha": "27305572236283fe",
+  "patch_only": [
+   "server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 124034,
+    "output": 13083,
+    "reasoning": 9480,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 159221,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 9844,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 124034,
+    "output_tokens": 13083,
+    "output_tokens_details": {
+     "thinking_tokens": 9480
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:13:31Z",
+   "first_chunk_ms": 7516,
+   "first_text_ms": 120201,
+   "response_id": "msg_bdrk_lfvi5rmdvx6qh67nyolyqbm2a5tk5vvegyczs2t6i2niudseorrq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 124034,
+  "output": 13083,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9480
+ },
+ "cost_reported": null,
+ "latency_ms": 159221,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 123, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"getGroupIdsWithViewPermission returns authz resource IDs, not group IDs\", \"body\": \"In `getGroupIdsWithViewPermission()` the code iterates authz resources of type `Groups` and (a) calls `hasPermission(groupResource.getId(), ...)` and (b) adds `groupResource.getId()` to the returned set. For group resources created by `AdminPermissionsSchema.getOrCreateResource`, the *resource name* is the group ID; the resource ID is an unrelated UUID. Consequently:\\n\\n1. `hasPermission(resource.getId(), ...)` does `resourceStore.findByName(server, <resource UUID>)`, which never matches, so evaluation silently falls back to the \\\"all groups\\\" resource instead of evaluating the individual group.\\n2. The returned set contains resource UUIDs, while the only consumers (`UsersResource.searchForUser`/`getUsersCount` and `BruteForceUsersResource.searchForUser`, which put the set in `session.setAttribute(UserModel.GROUPS, ...)` and pass it to `UserProvider.getUsersCount(realm, ..., groupIds)`) expect group IDs.\\n\\nResult: when an admin's only access to users comes from group `view-members`/`manage-members` permissions, the user search/count is filtered by non-existent group IDs and returns nothing (or, when the set is empty, the DB query is not restricted at all and the admin may see an empty page because filtering happens after pagination). The V1 implementation correctly derived the group ID from the resource name (`resource.getName().substring(RESOURCE_NAME_PREFIX.length())`). The set should contain `groupResource.getName()` and the permission check should be done with the resource name/group ID.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 70, \"severity\": \"high\", \"category\": \"security\", \"title\": \"canManage() grants management rights to admins that only have the view scope\", \"body\": \"`GroupPermissionsV2.canManage()` (the no-argument variant) returns `true` when the caller has either `AdminPermissionsSchema.VIEW` or `AdminPermissionsSchema.MANAGE` on the `Groups` resource type. `canManage()` is used by `GroupsResource.addTopLevelGroup` via `auth.groups().requireManage()`, so an administrator who was only granted the `view` scope on all groups can create top-level groups. This is a privilege escalation: the `view` scope must not satisfy a manage check. Only `MANAGE` should be accepted here (as in `canManage(GroupModel)`). Note that the new test `testViewGroups` only grants `VIEW` and never asserts that write operations stay forbidden, so this escalation is untested.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 144, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"NullPointerException when the \\\"Groups\\\" resource-type resource does not exist\", \"body\": \"In `hasPermission(String groupId, String... scopes)`, when no resource is found for the group the code falls back to `AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, GROUPS_RESOURCE_TYPE)` and then immediately dereferences the result (`policyStore.findByResource(server, resource)` and `resource.getScopes()`), without a null check. `getResourceTypeResource` returns `null` whenever `supportsAuthorizationSchema` is false (e.g. the realm has an admin-permissions client but `adminPermissionsEnabled` is false) or when the resource named `Groups` simply does not exist. The latter is reachable in practice: `AdminPermissionsSchema.init()` returns early if the admin permissions client already exists, so realms that enabled FGAP v2 before the `Groups` resource type was added never get the `Groups` resource or the new `manage-membership`/`manage-members`/`view-members` scopes. Any group permission check in such a realm then fails with a NPE (HTTP 500) instead of a clean deny. Add a null guard (and consider a migration/upgrade path for already-initialized admin permission clients).\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 156, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Scope loop does not verify that the granted permission belongs to the evaluated resource\", \"body\": \"The result loop in `GroupPermissionsV2.hasPermission` accepts any returned `Permission` whose scope list intersects the expected scopes, without checking `permission.getResourceId().equals(resource.getId())`. The analogous `UserPermissionsV2.hasPermission` (same file layout, line ~123) explicitly performs that check, which indicates the evaluation result can contain permissions for resources other than the one being evaluated (e.g. resource-type level resources). Without the check, access to one group resource can be granted by a permission evaluated for a different resource. Please align the two implementations.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/MgmtPermissionsV2.java\", \"line\": 58, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"V1 group permission management breaks when both FGAP v1 and v2 features are enabled\", \"body\": \"`MgmtPermissionsV2` now overrides `groups()` to return `GroupPermissionsV2`, whose `isPermissionsEnabled`, `setPermissionsEnabled`, `resource`, `getPermissions` and `*Permission` methods all throw `UnsupportedOperationException`. `AdminPermissions.management(session, realm)` returns `MgmtPermissionsV2` as soon as `ADMIN_FINE_GRAINED_AUTHZ_V2` is enabled, independently of `ADMIN_FINE_GRAINED_AUTHZ`. Therefore, with both preview features enabled:\\n\\n- `AdminPermissions.registerListener` (registered because v1 is enabled) handles `GroupModel.GroupRemovedEvent` by calling `management(...).groups().setPermissionsEnabled(group, false)` \u2192 `UnsupportedOperationException`, so deleting any group fails with an internal server error.\\n- `GroupResource.getManagementPermissions()` / `setManagementPermissionsEnabled()` (guarded only by the v1 feature flag) call `permissions.groups().isPermissionsEnabled(...)` / `setPermissionsEnabled(...)` \u2192 HTTP 500 instead of the previous behaviour.\\n\\nBefore this change `MgmtPermissionsV2` inherited the working V1 `GroupPermissions` for these management operations. Either keep returning the V1 management implementation for these paths or make the listener/endpoints v2-aware.\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\", \"line\": 334, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"getResourceName has no branch for the new Groups resource type\", \"body\": \"`getResourceName` resolves human-readable names only for the `Users` resource type (`All users` or the username) and otherwise falls back to `resource.getDisplayName()`. Group resources are created in `getOrCreateResource` with only a name (the group ID) and no display name, so permissions scoped to a single group will be reported with a `null` name in the policy/permission representation shown in the admin console. A `Groups` branch is needed that returns `All groups` for the resource-type resource and the group name/path for an individual group (and that handles a stale resource whose group no longer exists).\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\", \"line\": 107, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"switch on resourceType throws NullPointerException for a null resource type\", \"body\": \"`getOrCreateResource` now does `switch (resourceType) { case CLIENTS_RESOURCE_TYPE -> ... default -> throw new IllegalStateException(...) }`. A Java `switch` over a `String` throws `NullPointerException` when the selector is null, so callers that pass a null resource type now get an unhandled NPE (HTTP 500) instead of the previous `IllegalStateException(\\\"Could not map resource object ...\\\")`/validation error. Add an explicit null check before the switch so the failure surfaces as a validation error.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java\", \"line\": 133, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Javadoc of requireManageMembers and getGroupIdsWithViewPermission is wrong\", \"body\": \"The Javadoc added for `requireManageMembers(GroupModel)` says it throws `ForbiddenException` if `canManageMembership(GroupModel)` returns false, but the implementation checks `canManageMembers(GroupModel)` \u2014 the copy/pasted reference documents the wrong contract. Likewise, the Javadoc of `getGroupIdsWithViewPermission()` (line 145) says \\\"@return Stream of IDs of groups\\\" while the method returns a `Set<String>`. Both should be corrected since this interface is the contract documentation for the new FGAP evaluators.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/GroupsResource.java\", \"line\": 113, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Removal of the global view short-circuit causes a policy evaluation per group\", \"body\": \"`getGroups` previously computed `boolean canViewGlobal = groupsEvaluator.canView()` once and only fell back to the per-group check when the global check failed; the same pattern was removed from `GroupResource.getSubGroups`. Now `canView(g)` is invoked for every group in the result. With FGAP v2 that means, for an admin without the `view-users`/`manage-users` roles, one `resourceStore.findByName` lookup plus a full authorization policy evaluation per returned group even when a single \\\"all groups\\\" view permission already grants access. For realms with large group lists this multiplies the cost of the group listing endpoints; consider restoring a cheap global short-circuit.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 123,
+   "severity": "high",
+   "category": "bug",
+   "title": "getGroupIdsWithViewPermission returns authz resource IDs, not group IDs",
+   "body": "In `getGroupIdsWithViewPermission()` the code iterates authz resources of type `Groups` and (a) calls `hasPermission(groupResource.getId(), ...)` and (b) adds `groupResource.getId()` to the returned set. For group resources created by `AdminPermissionsSchema.getOrCreateResource`, the *resource name* is the group ID; the resource ID is an unrelated UUID. Consequently:\n\n1. `hasPermission(resource.getId(), ...)` does `resourceStore.findByName(server, <resource UUID>)`, which never matches, so evaluation silently falls back to the \"all groups\" resource instead of evaluating the individual group.\n2. The returned set contains resource UUIDs, while the only consumers (`UsersResource.searchForUser`/`getUsersCount` and `BruteForceUsersResource.searchForUser`, which put the set in `session.setAttribute(UserModel.GROUPS, ...)` and pass it to `UserProvider.getUsersCount(realm, ..., groupIds)`) expect group IDs.\n\nResult: when an admin's only access to users comes from group `view-members`/`manage-members` permissions, the user search/count is filtered by non-existent group IDs and returns nothing (or, when the set is empty, the DB query is not restricted at all and the admin may see an empty page because filtering happens after pagination). The V1 implementation correctly derived the group ID from the resource name (`resource.getName().substring(RESOURCE_NAME_PREFIX.length())`). The set should contain `groupResource.getName()` and the permission check should be done with the resource name/group ID."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 70,
+   "severity": "high",
+   "category": "security",
+   "title": "canManage() grants management rights to admins that only have the view scope",
+   "body": "`GroupPermissionsV2.canManage()` (the no-argument variant) returns `true` when the caller has either `AdminPermissionsSchema.VIEW` or `AdminPermissionsSchema.MANAGE` on the `Groups` resource type. `canManage()` is used by `GroupsResource.addTopLevelGroup` via `auth.groups().requireManage()`, so an administrator who was only granted the `view` scope on all groups can create top-level groups. This is a privilege escalation: the `view` scope must not satisfy a manage check. Only `MANAGE` should be accepted here (as in `canManage(GroupModel)`). Note that the new test `testViewGroups` only grants `VIEW` and never asserts that write operations stay forbidden, so this escalation is untested."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 144,
+   "severity": "medium",
+   "category": "bug",
+   "title": "NullPointerException when the \"Groups\" resource-type resource does not exist",
+   "body": "In `hasPermission(String groupId, String... scopes)`, when no resource is found for the group the code falls back to `AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, GROUPS_RESOURCE_TYPE)` and then immediately dereferences the result (`policyStore.findByResource(server, resource)` and `resource.getScopes()`), without a null check. `getResourceTypeResource` returns `null` whenever `supportsAuthorizationSchema` is false (e.g. the realm has an admin-permissions client but `adminPermissionsEnabled` is false) or when the resource named `Groups` simply does not exist. The latter is reachable in practice: `AdminPermissionsSchema.init()` returns early if the admin permissions client already exists, so realms that enabled FGAP v2 before the `Groups` resource type was added never get the `Groups` resource or the new `manage-membership`/`manage-members`/`view-members` scopes. Any group permission check in such a realm then fails with a NPE (HTTP 500) instead of a clean deny. Add a null guard (and consider a migration/upgrade path for already-initialized admin permission clients)."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 156,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Scope loop does not verify that the granted permission belongs to the evaluated resource",
+   "body": "The result loop in `GroupPermissionsV2.hasPermission` accepts any returned `Permission` whose scope list intersects the expected scopes, without checking `permission.getResourceId().equals(resource.getId())`. The analogous `UserPermissionsV2.hasPermission` (same file layout, line ~123) explicitly performs that check, which indicates the evaluation result can contain permissions for resources other than the one being evaluated (e.g. resource-type level resources). Without the check, access to one group resource can be granted by a permission evaluated for a different resource. Please align the two implementations."
+  },
+  {
+   "index": 4,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/MgmtPermissionsV2.java",
+   "line": 58,
+   "severity": "medium",
+   "category": "bug",
+   "title": "V1 group permission management breaks when both FGAP v1 and v2 features are enabled",
+   "body": "`MgmtPermissionsV2` now overrides `groups()` to return `GroupPermissionsV2`, whose `isPermissionsEnabled`, `setPermissionsEnabled`, `resource`, `getPermissions` and `*Permission` methods all throw `UnsupportedOperationException`. `AdminPermissions.management(session, realm)` returns `MgmtPermissionsV2` as soon as `ADMIN_FINE_GRAINED_AUTHZ_V2` is enabled, independently of `ADMIN_FINE_GRAINED_AUTHZ`. Therefore, with both preview features enabled:\n\n- `AdminPermissions.registerListener` (registered because v1 is enabled) handles `GroupModel.GroupRemovedEvent` by calling `management(...).groups().setPermissionsEnabled(group, false)` \u2192 `UnsupportedOperationException`, so deleting any group fails with an internal server error.\n- `GroupResource.getManagementPermissions()` / `setManagementPermissionsEnabled()` (guarded only by the v1 feature flag) call `permissions.groups().isPermissionsEnabled(...)` / `setPermissionsEnabled(...)` \u2192 HTTP 500 instead of the previous behaviour.\n\nBefore this change `MgmtPermissionsV2` inherited the working V1 `GroupPermissions` for these management operations. Either keep returning the V1 management implementation for these paths or make the listener/endpoints v2-aware."
+  },
+  {
+   "index": 5,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 334,
+   "severity": "low",
+   "category": "bug",
+   "title": "getResourceName has no branch for the new Groups resource type",
+   "body": "`getResourceName` resolves human-readable names only for the `Users` resource type (`All users` or the username) and otherwise falls back to `resource.getDisplayName()`. Group resources are created in `getOrCreateResource` with only a name (the group ID) and no display name, so permissions scoped to a single group will be reported with a `null` name in the policy/permission representation shown in the admin console. A `Groups` branch is needed that returns `All groups` for the resource-type resource and the group name/path for an individual group (and that handles a stale resource whose group no longer exists)."
+  },
+  {
+   "index": 6,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 107,
+   "severity": "low",
+   "category": "bug",
+   "title": "switch on resourceType throws NullPointerException for a null resource type",
+   "body": "`getOrCreateResource` now does `switch (resourceType) { case CLIENTS_RESOURCE_TYPE -> ... default -> throw new IllegalStateException(...) }`. A Java `switch` over a `String` throws `NullPointerException` when the selector is null, so callers that pass a null resource type now get an unhandled NPE (HTTP 500) instead of the previous `IllegalStateException(\"Could not map resource object ...\")`/validation error. Add an explicit null check before the switch so the failure surfaces as a validation error."
+  },
+  {
+   "index": 7,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java",
+   "line": 133,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Javadoc of requireManageMembers and getGroupIdsWithViewPermission is wrong",
+   "body": "The Javadoc added for `requireManageMembers(GroupModel)` says it throws `ForbiddenException` if `canManageMembership(GroupModel)` returns false, but the implementation checks `canManageMembers(GroupModel)` \u2014 the copy/pasted reference documents the wrong contract. Likewise, the Javadoc of `getGroupIdsWithViewPermission()` (line 145) says \"@return Stream of IDs of groups\" while the method returns a `Set<String>`. Both should be corrected since this interface is the contract documentation for the new FGAP evaluators."
+  },
+  {
+   "index": 8,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/GroupsResource.java",
+   "line": 113,
+   "severity": "low",
+   "category": "perf",
+   "title": "Removal of the global view short-circuit causes a policy evaluation per group",
+   "body": "`getGroups` previously computed `boolean canViewGlobal = groupsEvaluator.canView()` once and only fell back to the per-group check when the global check failed; the same pattern was removed from `GroupResource.getSubGroups`. Now `canView(g)` is invoked for every group in the result. With FGAP v2 that means, for an admin without the `view-users`/`manage-users` roles, one `resourceStore.findByName` lookup plus a full authorization policy evaluation per returned group even when a single \"all groups\" view permission already grants access. For realms with large group lists this multiplies the cost of the group listing endpoints; consider restoring a cheap global short-circuit."
+  }
+ ],
+ "finding_count": 9
+}

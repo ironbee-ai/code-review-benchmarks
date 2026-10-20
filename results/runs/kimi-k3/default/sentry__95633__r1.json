@@ -1,0 +1,128 @@
+{
+ "run_id": "kimi-k3__default__sentry__95633__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-17T14:00:13Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30263,
+    "output": 27319,
+    "reasoning": 26015,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 702723,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6054,
+   "raw_usage": {
+    "completion_tokens": 27319,
+    "prompt_tokens": 30263,
+    "total_tokens": 57582,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 26015,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T14:00:13Z",
+   "first_chunk_ms": 5572,
+   "first_text_ms": 668333,
+   "response_id": "chatcmpl-joo2zieryst4gb6nufzqy3bd33tqfcyurgh43idubssk226lev6a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30263,
+  "output": 27319,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 26015
+ },
+ "cost_reported": null,
+ "latency_ms": 702723,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"critical\", \"category\": \"data\", \"title\": \"Strategy close() kills the factory-shared queue pool; after any rebalance all messages are silently dropped but their offsets are committed\", \"body\": \"The FixedQueuePool is created once in ResultsStrategyFactory.__init__ (result_consumer.py, mode == 'thread-queue-parallel') and the same pool object is handed to every strategy built by create_with_partitions. However, SimpleQueueProcessingStrategy.close() calls self.queue_pool.shutdown(), which sets worker.shutdown=True, shuts down every queue, and joins the worker threads. Arroyo's StreamProcessor closes and joins the current strategy on every partition revocation and creates a new one on the next assignment, so after the first routine consumer-group rebalance (deploy, autoscaling, another group member joining) the new strategy is built on a dead pool. From then on every submit() reaches work_queue.put(), which raises queue.ShutDown; SimpleQueueProcessingStrategy.submit() catches that with a broad 'except Exception', logs it, and then calls offset_tracker.add_offset + complete_offset for the message. The commit thread therefore commits offsets for messages that were never enqueued or processed, and since this consumer has no DLQ configured the data is silently lost until the process is restarted. Nothing recreates the pool (ResultsStrategyFactory.shutdown() is never invoked by the StreamProcessor). Fix by creating the pool per create_with_partitions call (or not shutting it down from the strategy), and by not marking offsets complete when the work item was never actually queued.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Unbounded queues and no backpressure despite docstring claiming 'Natural backpressure when queues fill up'\", \"body\": \"FixedQueuePool creates plain queue.Queue() instances with no maxsize, and SimpleQueueProcessingStrategy never applies backpressure: submit() always enqueues immediately and poll() only emits a gauge (arroyo strategies signal backpressure by raising MessageRejected from poll/submit). The SimpleQueueProcessingStrategy docstring claims 'Natural backpressure when queues fill up', but put() on an unbounded queue never blocks, so the Kafka consumer thread keeps polling and buffering messages in memory no matter how far behind the workers fall. A single slow group \u2014 the exact scenario this mode is built to tolerate \u2014 grows its queue without bound and the partition's entire backlog accumulates in the process heap, eventually OOM-killing the consumer pod. The queues should be bounded (maxsize) and/or poll() should raise MessageRejected when total depth exceeds a threshold.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 234, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Shutdown drops queued work without draining or a final offset commit, causing duplicate processing on every rebalance/deploy\", \"body\": \"FixedQueuePool.shutdown() sets worker.shutdown = True before calling q.shutdown(immediate=False). OrderedQueueWorker.run loops on 'while not self.shutdown', so each worker exits immediately after its current item and never drains the remaining queued items \u2014 the immediate=False 'graceful' drain is dead code. Additionally, SimpleQueueProcessingStrategy.close()/join() never waits for queued work (wait_until_empty exists but is unused) and performs no final commit after workers finish: the commit thread is joined before the pool is shut down, and its last pass races with in-flight items. The result is that on every deploy or partition revocation the queued backlog plus roughly the last commit-interval's worth of completed-but-uncommitted work is redelivered by Kafka and processed a second time. join(timeout) should drain the queues within the timeout and then stage a final commit of all completed offsets.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts the opposite of the implemented behavior and races the 1s commit thread\", \"body\": \"The test mocks the result processor to raise on the first of two messages and then asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`, i.e. that nothing is ever committed. That contradicts both the implementation and the test's own docstring ('errors in processing don't block offset commits for other messages'): OrderedQueueWorker.run marks the failed item's offset complete in its finally block, so once the strategy's commit thread wakes on its 1-second tick it will commit offset 102 for the partition. The test only passes because the assertion usually runs before the commit thread's first 1s iteration; on a slow CI worker the commit fires first and the test fails nondeterministically. The test should instead wait on a commit and assert the real intended semantics \u2014 that the processing error did not prevent the partition's offsets (including the failed message's, which is skipped) from being committed.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 106, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_different_groups_distributed is flaky due to per-process string hash randomization\", \"body\": \"The test submits 20 group keys and asserts len(queue_indices) == 3, i.e. that they cover all 3 queues. Queue assignment is hash(group_key) % num_queues, and CPython randomizes str hash values per process (PYTHONHASHSEED), so each test run is effectively a random draw: the probability that 20 keys land in only 1\u20132 of 3 buckets is about 0.09% (3*(2/3)^20). With no code change at all, roughly 1 in 1100 CI runs will fail this assertion. Use a looser assertion (e.g. indices are within range and ordering per key is stable), pin the hash seed, or mock hash().\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "critical",
+   "category": "data",
+   "title": "Strategy close() kills the factory-shared queue pool; after any rebalance all messages are silently dropped but their offsets are committed",
+   "body": "The FixedQueuePool is created once in ResultsStrategyFactory.__init__ (result_consumer.py, mode == 'thread-queue-parallel') and the same pool object is handed to every strategy built by create_with_partitions. However, SimpleQueueProcessingStrategy.close() calls self.queue_pool.shutdown(), which sets worker.shutdown=True, shuts down every queue, and joins the worker threads. Arroyo's StreamProcessor closes and joins the current strategy on every partition revocation and creates a new one on the next assignment, so after the first routine consumer-group rebalance (deploy, autoscaling, another group member joining) the new strategy is built on a dead pool. From then on every submit() reaches work_queue.put(), which raises queue.ShutDown; SimpleQueueProcessingStrategy.submit() catches that with a broad 'except Exception', logs it, and then calls offset_tracker.add_offset + complete_offset for the message. The commit thread therefore commits offsets for messages that were never enqueued or processed, and since this consumer has no DLQ configured the data is silently lost until the process is restarted. Nothing recreates the pool (ResultsStrategyFactory.shutdown() is never invoked by the StreamProcessor). Fix by creating the pool per create_with_partitions call (or not shutting it down from the strategy), and by not marking offsets complete when the work item was never actually queued."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "perf",
+   "title": "Unbounded queues and no backpressure despite docstring claiming 'Natural backpressure when queues fill up'",
+   "body": "FixedQueuePool creates plain queue.Queue() instances with no maxsize, and SimpleQueueProcessingStrategy never applies backpressure: submit() always enqueues immediately and poll() only emits a gauge (arroyo strategies signal backpressure by raising MessageRejected from poll/submit). The SimpleQueueProcessingStrategy docstring claims 'Natural backpressure when queues fill up', but put() on an unbounded queue never blocks, so the Kafka consumer thread keeps polling and buffering messages in memory no matter how far behind the workers fall. A single slow group \u2014 the exact scenario this mode is built to tolerate \u2014 grows its queue without bound and the partition's entire backlog accumulates in the process heap, eventually OOM-killing the consumer pod. The queues should be bounded (maxsize) and/or poll() should raise MessageRejected when total depth exceeds a threshold."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 234,
+   "severity": "low",
+   "category": "bug",
+   "title": "Shutdown drops queued work without draining or a final offset commit, causing duplicate processing on every rebalance/deploy",
+   "body": "FixedQueuePool.shutdown() sets worker.shutdown = True before calling q.shutdown(immediate=False). OrderedQueueWorker.run loops on 'while not self.shutdown', so each worker exits immediately after its current item and never drains the remaining queued items \u2014 the immediate=False 'graceful' drain is dead code. Additionally, SimpleQueueProcessingStrategy.close()/join() never waits for queued work (wait_until_empty exists but is unused) and performs no final commit after workers finish: the commit thread is joined before the pool is shut down, and its last pass races with in-flight items. The result is that on every deploy or partition revocation the queued backlog plus roughly the last commit-interval's worth of completed-but-uncommitted work is redelivered by Kafka and processed a second time. join(timeout) should drain the queues within the timeout and then stage a final commit of all completed offsets."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts the opposite of the implemented behavior and races the 1s commit thread",
+   "body": "The test mocks the result processor to raise on the first of two messages and then asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`, i.e. that nothing is ever committed. That contradicts both the implementation and the test's own docstring ('errors in processing don't block offset commits for other messages'): OrderedQueueWorker.run marks the failed item's offset complete in its finally block, so once the strategy's commit thread wakes on its 1-second tick it will commit offset 102 for the partition. The test only passes because the assertion usually runs before the commit thread's first 1s iteration; on a slow CI worker the commit fires first and the test fails nondeterministically. The test should instead wait on a commit and assert the real intended semantics \u2014 that the processing error did not prevent the partition's offsets (including the failed message's, which is skipped) from being committed."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 106,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_different_groups_distributed is flaky due to per-process string hash randomization",
+   "body": "The test submits 20 group keys and asserts len(queue_indices) == 3, i.e. that they cover all 3 queues. Queue assignment is hash(group_key) % num_queues, and CPython randomizes str hash values per process (PYTHONHASHSEED), so each test run is effectively a random draw: the probability that 20 keys land in only 1\u20132 of 3 buckets is about 0.09% (3*(2/3)^20). With no code change at all, roughly 1 in 1100 CI runs will fail this assertion. Use a looser assertion (e.g. indices are within range and ordering per key is stable), pin the hash seed, or mock hash()."
+  }
+ ],
+ "finding_count": 5
+}

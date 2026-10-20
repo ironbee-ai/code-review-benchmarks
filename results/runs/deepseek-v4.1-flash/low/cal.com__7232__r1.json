@@ -1,0 +1,142 @@
+{
+ "run_id": "deepseek-v4.1-flash__low__cal.com__7232__r1",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 1,
+ "started_at": "2026-10-18T18:09:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 72574,
+    "output": 12964,
+    "reasoning": 11820,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.018664884,
+   "latency_ms": 60285,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 4753,
+   "raw_usage": {
+    "completion_tokens": 12964,
+    "prompt_tokens": 72702,
+    "total_tokens": 85666,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 11820,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.018664884,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.018664884,
+     "upstream_inference_prompt_cost": 0.010886484,
+     "upstream_inference_completions_cost": 0.0077784
+    }
+   },
+   "started_at": "2026-10-18T18:09:04Z",
+   "first_chunk_ms": 2024,
+   "first_text_ms": 55998,
+   "response_id": "gen-1792346944-GXk4CAQAA0TfdDB5S7m7",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 72574,
+  "output": 12964,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 11820
+ },
+ "cost_reported": 0.018664884,
+ "latency_ms": 60285,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\":[{\"file\":\"packages/features/bookings/lib/handleNewBooking.ts\",\"line\":968,\"severity\":\"high\",\"category\":\"bug\",\"title\":\"Reschedule path still relies on immediate SendGrid cancel, bypassing the new cancellation mechanism\",\"body\":\"When rescheduling, the old booking's workflow reminders are cancelled with `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)`, i.e. `immediateDelete = true`. That path performs the SendGrid `POST /v3/user/scheduled_sends {status:\\\"cancel\\\"}` synchronously and returns without setting `cancelled = true` on the row. This is exactly the mechanism the PR says is broken: SendGrid keeps up to 100 pending cancellations, so once that limit is hit new cancel requests fail. Because the reminder is never marked `cancelled`, the CRON job (`scheduleEmailReminders`) will not pick it up and retry it, so the reminder email is still sent for rescheduled bookings \u2014 the very bug the PR claims to fix for reschedules. The reschedule flow should mark the reminder `cancelled` (non-immediate path) and let the CRON job cancel it, so that failures are retried.\"},{\"file\":\"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\",\"line\":213,\"severity\":\"medium\",\"category\":\"data\",\"title\":\"immediateDelete neither deletes the DB row nor marks it cancelled, leaving a stale scheduled reminder on failure\",\"body\":\"In `deleteScheduledEmailReminder`, when `immediateDelete` is true and `referenceId` exists, the function cancels the SendGrid batch and then `return`s without deleting the `workflowReminder` row and without setting `cancelled = true`. Callers that do not cascade-delete the row (notably the reschedule flow in `handleNewBooking`, where the old booking stays in the DB) are left with a row that still has `scheduled = true` and a live `referenceId`. If the SendGrid cancel call fails (e.g. the 100-pending-cancellations limit), the row is not marked as cancelled, so the CRON job cannot retry it, and the email is still delivered. The row is also left dangling until the CRON cleanup deletes it by date. The immediate path should at minimum record the cancellation (or delete the row) so a failed SendGrid call is recoverable.\"},{\"file\":\"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\"line\":53,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"One failed cancellation aborts all remaining cancellations and all DB deletes\",\"body\":\"The loop that cancels reminders is wrapped in a single try/catch (lines 53-77). Inside it, each `client.request` is awaited sequentially and the Prisma delete operations are only pushed to `workflowRemindersToDelete` and executed later via a single `await Promise.all(workflowRemindersToDelete)` after the loop. If any `client.request` throws (e.g. a rate-limited/failed SendGrid cancel), the loop exits, the `Promise.all` at line 74 is never reached, and therefore none of the deletions for already-cancelled reminders run, and the remaining reminders in `remindersToCancel` are never cancelled. The catch only logs. The next CRON run re-attempts them, but one bad reminder can repeatedly block the whole batch and prevent emails from being cancelled in time. Each reminder should be handled in its own try/catch so a single failure doesn't abort the rest.\"},{\"file\":\"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\"line\":44,\"severity\":\"low\",\"category\":\"bug\",\"title\":\"remindersToCancel query lacks method/scheduled filters\",\"body\":\"The `findMany` for `remindersToCancel` filters only on `cancelled: true` and `scheduledDate <= now + 1h`, without `method: WorkflowMethods.EMAIL` (or `scheduled: true`). The cancellation branch then unconditionally calls the SendGrid scheduled_sends cancel endpoint with `batch_id: reminder.referenceId`. Today only EMAIL reminders ever get `cancelled = true`, but nothing enforces this, and `referenceId` for an SMS reminder is a Twilio SID rather than a SendGrid batch id. Any future code path that marks a non-email reminder cancelled would send a bogus batch id to SendGrid. Add `method: WorkflowMethods.EMAIL` to the query to make the intent explicit and safe.\"},{\"file\":\"packages/trpc/server/routers/viewer/workflows.tsx\",\"line\":9,\"severity\":\"low\",\"category\":\"style\",\"title\":\"Unused `Prisma` import after removing Prisma.BatchPayload usage\",\"body\":\"The diff moved `Prisma` into the runtime import from `@prisma/client`, but the only previous use (`PrismaPromise<Prisma.BatchPayload>`) was removed and no `Prisma.` reference remains in the file. An unused import will be flagged by `@typescript-eslint/no-unused-vars` and may fail the lint/CI step. Remove `Prisma` from the import (do the same check for the reformatted import block, which also dropped the trailing comma after `Prisma`).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 968,
+   "severity": "high",
+   "category": "bug",
+   "title": "Reschedule path still relies on immediate SendGrid cancel, bypassing the new cancellation mechanism",
+   "body": "When rescheduling, the old booking's workflow reminders are cancelled with `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)`, i.e. `immediateDelete = true`. That path performs the SendGrid `POST /v3/user/scheduled_sends {status:\"cancel\"}` synchronously and returns without setting `cancelled = true` on the row. This is exactly the mechanism the PR says is broken: SendGrid keeps up to 100 pending cancellations, so once that limit is hit new cancel requests fail. Because the reminder is never marked `cancelled`, the CRON job (`scheduleEmailReminders`) will not pick it up and retry it, so the reminder email is still sent for rescheduled bookings \u2014 the very bug the PR claims to fix for reschedules. The reschedule flow should mark the reminder `cancelled` (non-immediate path) and let the CRON job cancel it, so that failures are retried."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "medium",
+   "category": "data",
+   "title": "immediateDelete neither deletes the DB row nor marks it cancelled, leaving a stale scheduled reminder on failure",
+   "body": "In `deleteScheduledEmailReminder`, when `immediateDelete` is true and `referenceId` exists, the function cancels the SendGrid batch and then `return`s without deleting the `workflowReminder` row and without setting `cancelled = true`. Callers that do not cascade-delete the row (notably the reschedule flow in `handleNewBooking`, where the old booking stays in the DB) are left with a row that still has `scheduled = true` and a live `referenceId`. If the SendGrid cancel call fails (e.g. the 100-pending-cancellations limit), the row is not marked as cancelled, so the CRON job cannot retry it, and the email is still delivered. The row is also left dangling until the CRON cleanup deletes it by date. The immediate path should at minimum record the cancellation (or delete the row) so a failed SendGrid call is recoverable."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 53,
+   "severity": "medium",
+   "category": "bug",
+   "title": "One failed cancellation aborts all remaining cancellations and all DB deletes",
+   "body": "The loop that cancels reminders is wrapped in a single try/catch (lines 53-77). Inside it, each `client.request` is awaited sequentially and the Prisma delete operations are only pushed to `workflowRemindersToDelete` and executed later via a single `await Promise.all(workflowRemindersToDelete)` after the loop. If any `client.request` throws (e.g. a rate-limited/failed SendGrid cancel), the loop exits, the `Promise.all` at line 74 is never reached, and therefore none of the deletions for already-cancelled reminders run, and the remaining reminders in `remindersToCancel` are never cancelled. The catch only logs. The next CRON run re-attempts them, but one bad reminder can repeatedly block the whole batch and prevent emails from being cancelled in time. Each reminder should be handled in its own try/catch so a single failure doesn't abort the rest."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 44,
+   "severity": "low",
+   "category": "bug",
+   "title": "remindersToCancel query lacks method/scheduled filters",
+   "body": "The `findMany` for `remindersToCancel` filters only on `cancelled: true` and `scheduledDate <= now + 1h`, without `method: WorkflowMethods.EMAIL` (or `scheduled: true`). The cancellation branch then unconditionally calls the SendGrid scheduled_sends cancel endpoint with `batch_id: reminder.referenceId`. Today only EMAIL reminders ever get `cancelled = true`, but nothing enforces this, and `referenceId` for an SMS reminder is a Twilio SID rather than a SendGrid batch id. Any future code path that marks a non-email reminder cancelled would send a bogus batch id to SendGrid. Add `method: WorkflowMethods.EMAIL` to the query to make the intent explicit and safe."
+  },
+  {
+   "index": 4,
+   "file": "packages/trpc/server/routers/viewer/workflows.tsx",
+   "line": 9,
+   "severity": "low",
+   "category": "style",
+   "title": "Unused `Prisma` import after removing Prisma.BatchPayload usage",
+   "body": "The diff moved `Prisma` into the runtime import from `@prisma/client`, but the only previous use (`PrismaPromise<Prisma.BatchPayload>`) was removed and no `Prisma.` reference remains in the file. An unused import will be flagged by `@typescript-eslint/no-unused-vars` and may fail the lint/CI step. Remove `Prisma` from the import (do the same check for the reformatted import block, which also dropped the trailing comma after `Prisma`)."
+  }
+ ],
+ "finding_count": 5
+}

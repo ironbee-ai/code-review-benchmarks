@@ -1,0 +1,142 @@
+{
+ "run_id": "grok-4.7__xhigh__cal.com__14943__r3",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 3,
+ "started_at": "2026-10-18T13:28:46Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19197,
+    "output": 29279,
+    "reasoning": 28195,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.214644,
+   "latency_ms": 400542,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4881,
+   "raw_usage": {
+    "completion_tokens": 29279,
+    "prompt_tokens": 20349,
+    "total_tokens": 49628,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 28195,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.214644,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.214644,
+     "upstream_inference_prompt_cost": 0.03897,
+     "upstream_inference_completions_cost": 0.175674
+    }
+   },
+   "started_at": "2026-10-18T13:28:46Z",
+   "first_chunk_ms": 1789,
+   "first_text_ms": 391933,
+   "response_id": "gen-1792330126-g3XyRTA4oZtQQFKxqwRM",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19197,
+  "output": 29279,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 28195
+ },
+ "cost_reported": 0.214644,
+ "latency_ms": 400542,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"high\", \"category\": \"data\", \"title\": \"retryCount cleanup deletes reminders this job does not own\", \"body\": \"The new deleteMany ORs a bare retryCount > 1 predicate that is not limited to method SMS, scheduled false, or unsent rows. WorkflowReminder is shared by EMAIL, SMS, and WHATSAPP, and the comment above the query still claims it only removes past-dated SMS reminders. Any row whose retryCount exceeds 1 is hard-deleted, including future email/WhatsApp reminders and rows already marked scheduled that still store a Twilio referenceId. Today only this handler writes the column, so non-SMS rows stay at 0 unless another writer sets them, but a concurrent cron can already produce a bad row: both runs load the same unscheduled reminder, one sets scheduled true and referenceId after a successful scheduleSMS, and the other writes retryCount from the stale in-memory value without touching scheduled. The next run then deletes that live provider message, so booking cancellation can no longer look up the SID and stop it. Scope the predicate to unscheduled SMS reminders.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 40, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Two transient errors permanently wipe pending SMS reminders\", \"body\": \"Every exception in the per-reminder try, and every falsy scheduleSMS result, increments retryCount, and the next cron deletes all rows with retryCount > 1. That includes Twilio timeouts, rate limits, and failures while loading the organizer profile or rendering the template, not only permanent rejections such as an invalid number. There is no backoff, so two consecutive runs during a short provider or DB outage set retryCount to 2 on every unscheduled SMS reminder in the 7-day window. The following run's deleteMany removes all of them. Those reminders are not recreated, the delete is not logged per id, and attendees never get the SMS after the provider recovers. Only permanent send failures should count, or the limit needs backoff before rows are deleted.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unsendable reminders never increment retryCount\", \"body\": \"retryCount is updated only when scheduleSMS returns a falsy value or throws. If there is no destination (SMS_NUMBER sendTo empty, or booking.smsReminderNumber null) or the rendered message is empty, the handler skips the row and leaves retryCount at 0. The earlier continue when workflowStep or booking is missing does the same. Those rows stay scheduled false with a future scheduledDate, so every cron run loads them again until scheduledDate is in the past. That is the unbounded reschedule loop this change is meant to stop, and a booking with no phone number never enters the Twilio path the new counter covers. Treat these terminal cases as failures, or delete them, so they are retired after the same limit.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Failed retry bookkeeping aborts the rest of the batch\", \"body\": \"The new catch block awaits workflowReminder.update and does not handle that update failing. Previously the catch only logged, so the loop always continued. If the update throws \u2014 the row was already removed by this cleanup in an overlapping run, the reminder disappeared mid-batch, or the DB blipped \u2014 the exception escapes the for-loop, the handler 500s, and every later reminder in the batch is left unscheduled. findMany has no orderBy, so which reminders sit behind the failing row is undefined, and a cron retry hits the same hole. The original scheduling error is also never logged when the bookkeeping update throws. Ignore a missing row (or otherwise guard the update) so one bookkeeping failure cannot stop the rest of the batch.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"retryCount is a lost-update read-modify-write\", \"body\": \"Failures write retryCount to the value read at the start of the iteration plus one, instead of an atomic increment, and nothing claims the row (for example updateMany where id and scheduled false) before calling Twilio. This endpoint has no lock, and each reminder does several awaits, so a slow run overlaps the next cron tick. Both invocations can read the same retryCount, both call scheduleSMS, and both store the same next count. The new cap is then under-counted, so a reminder is attempted more than twice, and both runs can schedule a duplicate SMS. Use an atomic increment and a conditional update so a concurrent run cannot reset the counter or send twice.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "high",
+   "category": "data",
+   "title": "retryCount cleanup deletes reminders this job does not own",
+   "body": "The new deleteMany ORs a bare retryCount > 1 predicate that is not limited to method SMS, scheduled false, or unsent rows. WorkflowReminder is shared by EMAIL, SMS, and WHATSAPP, and the comment above the query still claims it only removes past-dated SMS reminders. Any row whose retryCount exceeds 1 is hard-deleted, including future email/WhatsApp reminders and rows already marked scheduled that still store a Twilio referenceId. Today only this handler writes the column, so non-SMS rows stay at 0 unless another writer sets them, but a concurrent cron can already produce a bad row: both runs load the same unscheduled reminder, one sets scheduled true and referenceId after a successful scheduleSMS, and the other writes retryCount from the stale in-memory value without touching scheduled. The next run then deletes that live provider message, so booking cancellation can no longer look up the SID and stop it. Scope the predicate to unscheduled SMS reminders."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 40,
+   "severity": "high",
+   "category": "bug",
+   "title": "Two transient errors permanently wipe pending SMS reminders",
+   "body": "Every exception in the per-reminder try, and every falsy scheduleSMS result, increments retryCount, and the next cron deletes all rows with retryCount > 1. That includes Twilio timeouts, rate limits, and failures while loading the organizer profile or rendering the template, not only permanent rejections such as an invalid number. There is no backoff, so two consecutive runs during a short provider or DB outage set retryCount to 2 on every unscheduled SMS reminder in the 7-day window. The following run's deleteMany removes all of them. Those reminders are not recreated, the delete is not logged per id, and attendees never get the SMS after the provider recovers. Only permanent send failures should count, or the limit needs backoff before rows are deleted."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unsendable reminders never increment retryCount",
+   "body": "retryCount is updated only when scheduleSMS returns a falsy value or throws. If there is no destination (SMS_NUMBER sendTo empty, or booking.smsReminderNumber null) or the rendered message is empty, the handler skips the row and leaves retryCount at 0. The earlier continue when workflowStep or booking is missing does the same. Those rows stay scheduled false with a future scheduledDate, so every cron run loads them again until scheduledDate is in the past. That is the unbounded reschedule loop this change is meant to stop, and a booking with no phone number never enters the Twilio path the new counter covers. Treat these terminal cases as failures, or delete them, so they are retired after the same limit."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Failed retry bookkeeping aborts the rest of the batch",
+   "body": "The new catch block awaits workflowReminder.update and does not handle that update failing. Previously the catch only logged, so the loop always continued. If the update throws \u2014 the row was already removed by this cleanup in an overlapping run, the reminder disappeared mid-batch, or the DB blipped \u2014 the exception escapes the for-loop, the handler 500s, and every later reminder in the batch is left unscheduled. findMany has no orderBy, so which reminders sit behind the failing row is undefined, and a cron retry hits the same hole. The original scheduling error is also never logged when the bookkeeping update throws. Ignore a missing row (or otherwise guard the update) so one bookkeeping failure cannot stop the rest of the batch."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "retryCount is a lost-update read-modify-write",
+   "body": "Failures write retryCount to the value read at the start of the iteration plus one, instead of an atomic increment, and nothing claims the row (for example updateMany where id and scheduled false) before calling Twilio. This endpoint has no lock, and each reminder does several awaits, so a slow run overlaps the next cron tick. Both invocations can read the same retryCount, both call scheduleSMS, and both store the same next count. The new cap is then under-counted, so a reminder is attempted more than twice, and both runs can schedule a duplicate SMS. Use an atomic increment and a conditional update so a concurrent run cannot reset the counter or send twice."
+  }
+ ],
+ "finding_count": 5
+}

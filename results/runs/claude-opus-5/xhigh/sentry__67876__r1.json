@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-opus-5__xhigh__sentry__67876__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__67876",
+ "golden_url": "https://github.com/getsentry/sentry/pull/67876",
+ "repeat": 1,
+ "started_at": "2026-10-18T22:38:03Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 100237,
+  "sha": "7c38d228f2867683",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 37811,
+    "output": 22326,
+    "reasoning": 19865,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 267921,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7007,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 37811,
+    "output_tokens": 22326,
+    "output_tokens_details": {
+     "thinking_tokens": 19865
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:38:03Z",
+   "first_chunk_ms": 1900,
+   "first_text_ms": 239960,
+   "response_id": "msg_bdrk_j7sfw23klm7uhv6i2dmmvbcepqt5yvou5haho3ijpkixvh755cpq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 37811,
+  "output": 22326,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 19865
+ },
+ "cost_reported": null,
+ "latency_ms": 267921,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 402, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"OAuth `state` uses `pipeline.signature`, which is not a per-session nonce\", \"body\": \"`OAuthLoginView.dispatch` sends `state = pipeline.signature` to GitHub and then validates the callback with `request.GET.get(\\\"state\\\") != pipeline.signature` (line 412). `Pipeline.signature` is derived from the pipeline view definitions, not from the user's session, so it is the same constant for every user and every installation attempt of the provider \u2014 the new tests hardcode `9cae5e88803f35ed7970fc131e6e65d3` and reuse it across different users and organizations, which demonstrates this. As a result the `state` check provides no CSRF/replay protection (any party can supply the correct value), contrary to what the PR description claims. The established pattern in `sentry/identity/oauth2.py` (`OAuth2LoginView`) is to generate `secrets.token_hex()`, `pipeline.bind_state(\\\"state\\\", ...)` it, and compare the callback value against the bound state; this view should do the same.\"}, {\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 503, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unguarded `integration.metadata[\\\"sender\\\"][\\\"login\\\"]` can raise KeyError/TypeError\", \"body\": \"The new user check indexes `integration.metadata[\\\"sender\\\"][\\\"login\\\"]` directly. `GitHubIntegrationProvider.build_integration` only sets `metadata[\\\"sender\\\"]` when `state.get(\\\"sender\\\")` is present (line 376-377), so integrations created through the normal pipeline have no `sender` key at all (see `test_basic_flow`, which asserts the metadata dict without `sender`). This branch is reached whenever an `Integration` row exists but no `OrganizationIntegration` does (e.g. the org integration was removed while the Integration row survived, or legacy rows), and it will raise an unhandled `KeyError` (or `TypeError` if `sender` is stored in a different shape), producing a 500 instead of the intended failure page. Use `(integration.metadata.get(\\\"sender\\\") or {}).get(\\\"login\\\")` and fail closed.\"}, {\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 434, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Token exchange and user-info request can raise unhandled exceptions\", \"body\": \"`safe_urlopen(...)` on line 423 is outside the try/except, and `get_user_info(payload[\\\"access_token\\\"])` on line 434 is not wrapped at all. `sentry.identity.github.get_user_info` performs an HTTP request and calls `raise_for_status()`, so a revoked/invalid token, a GitHub outage, or any network error raises out of the pipeline view and yields a 500 error page rather than the user-facing `github-integration-failed.html` page this PR is designed to show. Both calls should be wrapped and converted into the `error(request, self.active_organization)` response (ideally with logging so these failures are observable).\"}, {\"file\": \"src/sentry/integrations/github/integration.py\", \"line\": 482, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"GitHub user validation is skipped when no local Integration row exists\", \"body\": \"In `GitHubInstallation.dispatch`, if `Integration.objects.get(external_id=installation_id)` raises `DoesNotExist` the pipeline continues immediately (`return pipeline.next_step()`) without comparing the OAuth-authenticated GitHub user to the owner/sender of the installation. `installation_id` is attacker-controllable (it is read straight from the query string at line 448, or from state bound from the query string in `OAuthLoginView`) and GitHub installation ids are small sequential integers. Whenever Sentry has no Integration row for a live GitHub installation (installation webhook never delivered/processed, row deleted while the GitHub-side installation remains, self-hosted installs), an attacker can submit someone else's installation id and `build_integration` will fetch it from the App API and attach it to the attacker's Sentry org, exposing the victim's repositories. The ownership check should be made against the installation data fetched from GitHub (e.g. `installation[\\\"account\\\"]`), not only in the branch where a local Integration happens to exist.\"}, {\"file\": \"tests/sentry/integrations/github/test_integration.py\", \"line\": 396, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_installation_not_found no longer verifies the installation-not-found error\", \"body\": \"The assertion was changed from `b\\\"The GitHub installation could not be found.\\\"` to the generic `b\\\"Invalid installation request.\\\"`, which is the default `error_short` emitted by nearly every failure path in the new code (state mismatch, failed token exchange, missing `login`, user mismatch). In addition, the `state` value hardcoded here (`ddd023d87a913d5226e2a882c4c4cc05`) differs from the value every other test uses (`9cae5e88803f35ed7970fc131e6e65d3`) even though `pipeline.signature` does not depend on bound state, so this request almost certainly fails the new `state` check in `OAuthLoginView` and never reaches the installation lookup. The 404 stub installed by `responses.replace` is therefore dead, and the regression this test used to cover (GitHub returning 404 for `/app/installations/{id}` surfacing a specific message) is no longer tested.\"}, {\"file\": \"tests/sentry/integrations/github/test_integration.py\", \"line\": 399, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the state-mismatch and failed-token-exchange failure modes\", \"body\": \"The PR description lists three new failure modes (GitHub user mismatch, `state` mismatch, and GitHub not returning an `access_token`), but only the user mismatch is covered by `test_github_user_mismatch`. There is no test asserting that a tampered/missing `state` or an access-token response without `access_token` (e.g. `error=bad_verification_code`, which GitHub returns with HTTP 200) renders the failure page, so regressions in those branches would go unnoticed. There is also no test for an existing `Integration` whose metadata lacks a `sender` key, which currently crashes (see the `metadata[\\\"sender\\\"]` finding).\"}, {\"file\": \"tests/sentry/integrations/github/test_integration.py\", \"line\": 235, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Hardcoded pipeline signature makes the setup tests brittle\", \"body\": \"`assert_setup_flow` asserts the exact redirect query string including `state=9cae5e88803f35ed7970fc131e6e65d3`, and five other tests hardcode the same md5 value as the `state` parameter. This value is an implementation detail of `Pipeline.signature` (a hash over the pipeline views): adding, removing or renaming a pipeline view will silently change it and break all of these tests with an opaque \\\"Invalid installation request.\\\" failure rather than a clear assertion error. Reading the `state` out of the redirect `Location` (or binding a real nonce, as suggested elsewhere) would make the tests robust and self-explanatory.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 402,
+   "severity": "medium",
+   "category": "security",
+   "title": "OAuth `state` uses `pipeline.signature`, which is not a per-session nonce",
+   "body": "`OAuthLoginView.dispatch` sends `state = pipeline.signature` to GitHub and then validates the callback with `request.GET.get(\"state\") != pipeline.signature` (line 412). `Pipeline.signature` is derived from the pipeline view definitions, not from the user's session, so it is the same constant for every user and every installation attempt of the provider \u2014 the new tests hardcode `9cae5e88803f35ed7970fc131e6e65d3` and reuse it across different users and organizations, which demonstrates this. As a result the `state` check provides no CSRF/replay protection (any party can supply the correct value), contrary to what the PR description claims. The established pattern in `sentry/identity/oauth2.py` (`OAuth2LoginView`) is to generate `secrets.token_hex()`, `pipeline.bind_state(\"state\", ...)` it, and compare the callback value against the bound state; this view should do the same."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 503,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unguarded `integration.metadata[\"sender\"][\"login\"]` can raise KeyError/TypeError",
+   "body": "The new user check indexes `integration.metadata[\"sender\"][\"login\"]` directly. `GitHubIntegrationProvider.build_integration` only sets `metadata[\"sender\"]` when `state.get(\"sender\")` is present (line 376-377), so integrations created through the normal pipeline have no `sender` key at all (see `test_basic_flow`, which asserts the metadata dict without `sender`). This branch is reached whenever an `Integration` row exists but no `OrganizationIntegration` does (e.g. the org integration was removed while the Integration row survived, or legacy rows), and it will raise an unhandled `KeyError` (or `TypeError` if `sender` is stored in a different shape), producing a 500 instead of the intended failure page. Use `(integration.metadata.get(\"sender\") or {}).get(\"login\")` and fail closed."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 434,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Token exchange and user-info request can raise unhandled exceptions",
+   "body": "`safe_urlopen(...)` on line 423 is outside the try/except, and `get_user_info(payload[\"access_token\"])` on line 434 is not wrapped at all. `sentry.identity.github.get_user_info` performs an HTTP request and calls `raise_for_status()`, so a revoked/invalid token, a GitHub outage, or any network error raises out of the pipeline view and yields a 500 error page rather than the user-facing `github-integration-failed.html` page this PR is designed to show. Both calls should be wrapped and converted into the `error(request, self.active_organization)` response (ideally with logging so these failures are observable)."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 482,
+   "severity": "medium",
+   "category": "security",
+   "title": "GitHub user validation is skipped when no local Integration row exists",
+   "body": "In `GitHubInstallation.dispatch`, if `Integration.objects.get(external_id=installation_id)` raises `DoesNotExist` the pipeline continues immediately (`return pipeline.next_step()`) without comparing the OAuth-authenticated GitHub user to the owner/sender of the installation. `installation_id` is attacker-controllable (it is read straight from the query string at line 448, or from state bound from the query string in `OAuthLoginView`) and GitHub installation ids are small sequential integers. Whenever Sentry has no Integration row for a live GitHub installation (installation webhook never delivered/processed, row deleted while the GitHub-side installation remains, self-hosted installs), an attacker can submit someone else's installation id and `build_integration` will fetch it from the App API and attach it to the attacker's Sentry org, exposing the victim's repositories. The ownership check should be made against the installation data fetched from GitHub (e.g. `installation[\"account\"]`), not only in the branch where a local Integration happens to exist."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 396,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_installation_not_found no longer verifies the installation-not-found error",
+   "body": "The assertion was changed from `b\"The GitHub installation could not be found.\"` to the generic `b\"Invalid installation request.\"`, which is the default `error_short` emitted by nearly every failure path in the new code (state mismatch, failed token exchange, missing `login`, user mismatch). In addition, the `state` value hardcoded here (`ddd023d87a913d5226e2a882c4c4cc05`) differs from the value every other test uses (`9cae5e88803f35ed7970fc131e6e65d3`) even though `pipeline.signature` does not depend on bound state, so this request almost certainly fails the new `state` check in `OAuthLoginView` and never reaches the installation lookup. The 404 stub installed by `responses.replace` is therefore dead, and the regression this test used to cover (GitHub returning 404 for `/app/installations/{id}` surfacing a specific message) is no longer tested."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 399,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the state-mismatch and failed-token-exchange failure modes",
+   "body": "The PR description lists three new failure modes (GitHub user mismatch, `state` mismatch, and GitHub not returning an `access_token`), but only the user mismatch is covered by `test_github_user_mismatch`. There is no test asserting that a tampered/missing `state` or an access-token response without `access_token` (e.g. `error=bad_verification_code`, which GitHub returns with HTTP 200) renders the failure page, so regressions in those branches would go unnoticed. There is also no test for an existing `Integration` whose metadata lacks a `sender` key, which currently crashes (see the `metadata[\"sender\"]` finding)."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 235,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Hardcoded pipeline signature makes the setup tests brittle",
+   "body": "`assert_setup_flow` asserts the exact redirect query string including `state=9cae5e88803f35ed7970fc131e6e65d3`, and five other tests hardcode the same md5 value as the `state` parameter. This value is an implementation detail of `Pipeline.signature` (a hash over the pipeline views): adding, removing or renaming a pipeline view will silently change it and break all of these tests with an opaque \"Invalid installation request.\" failure rather than a clear assertion error. Reading the `state` out of the redirect `Location` (or binding a real nonce, as suggested elsewhere) would make the tests robust and self-explanatory."
+  }
+ ],
+ "finding_count": 7
+}

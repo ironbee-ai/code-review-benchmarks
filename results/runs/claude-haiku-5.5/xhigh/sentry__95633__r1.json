@@ -1,0 +1,176 @@
+{
+ "run_id": "claude-haiku-5.5__xhigh__sentry__95633__r1",
+ "model_id": "claude-haiku-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-haiku-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:57:48Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51300,
+    "output": 60813,
+    "reasoning": 58083,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 258775,
+   "finish_reason": "end_turn",
+   "served_model": "claude-haiku-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7979,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51300,
+    "output_tokens": 60813,
+    "output_tokens_details": {
+     "thinking_tokens": 58083
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T11:57:48Z",
+   "first_chunk_ms": 1793,
+   "first_text_ms": 249513,
+   "response_id": "msg_bdrk_fqlwqgsbnmwlhbcnwwzjthow6srxors5mld32233tdynklztk2aa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51300,
+  "output": 60813,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 58083
+ },
+ "cost_reported": null,
+ "latency_ms": 258775,
+ "served_model": "claude-haiku-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"close() shuts down the factory-owned queue pool, so the next rebalance silently drops every message\", \"body\": \"FixedQueuePool is created once in ResultsStrategyFactory.__init__, and the same instance is passed to every SimpleQueueProcessingStrategy that create_with_partitions builds. Arroyo closes the strategy and builds a new one on each partition revoke/assign. close() (and join(), which calls close(), and terminate()) calls self.queue_pool.shutdown(), which shuts down every queue and stops every worker permanently. The next strategy's submit() then calls work_queue.put() on a shut-down queue, which raises queue.ShutDown. submit()'s generic except (lines 317-325) logs and marks the offset complete, so the message is never processed but its offset is committed. Every message after the first rebalance is skipped this way. Items still queued at shutdown never complete their offsets, so the shared OffsetTracker also stops committing for those partitions for the rest of the consumer's lifetime. No test creates a second strategy from the same factory, so this is not caught.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 287, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Arroyo commit callback is invoked from a background thread while the processor loop runs\", \"body\": \"_commit_loop calls commit_function every second from a separate daemon thread. commit_function forwards to the Arroyo Commit callable that create_with_partitions received. Other commit paths in this codebase (CommitOffsets, the batch paths) call Commit from the StreamProcessor's own thread. Arroyo's commit path updates consumer staging and commit state that the processor loop also owns, so this unsynchronized cross-thread call can race with the poll/commit cycle. The consequence could be lost or duplicated offsets or exceptions from the Kafka consumer. Nothing in the PR synchronizes these calls. The unit and integration tests replace commit with a plain dict update, so they cannot surface this.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 337, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Shutdown stops the commit thread before draining queues and abandons queued work\", \"body\": \"close() joins the commit thread (line 337) and only afterwards calls queue_pool.shutdown() (line 338). Workers then finish processing whatever is still queued, but no commit is ever issued for those completions. The next owner of the partition reprocesses them, producing duplicate uptime results. Separately, FixedQueuePool.shutdown() sets worker.shutdown = True (line 234) before shutting the queues down. Workers check that flag after each item (loop at line 129) and exit, so items still sitting in the queue are never processed and their offsets never complete. This contradicts the 'graceful shutdown' docstring and leaves outstanding offsets that block later commits.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 253, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Docstring promises backpressure, but the queues are unbounded\", \"body\": \"The docstring claims 'Natural backpressure when queues fill up', but the queues are created with queue.Queue() and no maxsize (line 185), and submit() never blocks. Arroyo keeps polling Kafka while a slow group accumulates work. Each queued WorkItem also keeps a reference to the full Message and its payload (WorkItem.message, which is never read). This is exactly the slow-item scenario the PR is meant to address, and it turns it into unbounded memory growth rather than backpressure. Either bound the queues and pause consumption when they are full, or correct the docstring.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Error-handling test asserts the partition is NOT committed, contradicting its own docstring and the implementation\", \"body\": \"The test docstring says errors in processing must not block offset commits for other messages. The implementation marks the failed offset complete in the worker's finally block, so the second message's offset (101) is committed as 102. The assertion instead requires that test_partition is absent from committed_offsets. It passes only because the commit thread ticks once per second and the test checks within about 0.3 seconds, before the first tick. If the tick lands earlier, the test fails. The assertion encodes the opposite of the intended behavior and should check that the partition is committed past the failed message.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 351, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Offset-gap test does not check gap blocking, and the implementation only blocks on the first batch\", \"body\": \"test_offset_gaps_block_commits claims gaps block commits, but nothing asserts that. After offset 100 is committed, the next tick computes start = max(last_committed+1, min(all_offsets)) = 102. The missing 101 is therefore skipped, and 103 is committed on the next tick even if 101 never arrives. So the gap blocks the first batch but not later ones. The test only waits for commits that happen after 101 has already been submitted, so it passes either way. The same mismatch makes test_thread_queue_parallel_offset_gaps in test_results_consumer.py (about line 1982) pass only because it exits before the next commit tick. The intended gap semantics should be decided and asserted.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 312, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_preserves_order_within_group never checks the order\", \"body\": \"The test submits five messages for the same subscription and asserts only len(self.processed_results) == 5. The recorded list is never compared to the expected sequence, so the test would still pass if ordering within a group were broken. Since per-group ordering is the core guarantee of this design, the test should assert the processed sequence.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 200, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Racy assertion that total_items > 0 right after submitting\", \"body\": \"Worker threads start consuming as soon as items are put, so by the time get_stats() runs, they may already have drained the queues. The assertion assert stats['total_items'] > 0 can then fail intermittently. It is a timing assumption, not a guarantee.\"}, {\"file\": \"src/sentry/consumers/__init__.py\", \"line\": 123, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"--mode help text is wrong and does not describe the new thread-queue-parallel mode\", \"body\": \"The help says 'Parallel uses multithreading', but the 'parallel' mode uses MultiprocessingPool (see result_consumer.py, create_multiprocess_worker). The PR adds the 'thread-queue-parallel' choice but does not describe it in the help text, so operators cannot tell the modes apart.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 238, \"severity\": \"low\", \"category\": \"speculative\", \"title\": \"queue.ShutDown and Queue.shutdown() require Python 3.13; earlier interpreters fail silently\", \"body\": \"queue.ShutDown and Queue.shutdown() exist only on Python 3.13+. If this code can run on an earlier interpreter, q.shutdown() raises AttributeError, which the except at line 239 swallows, so queues and workers are never stopped. Also, on older versions the 'except queue.ShutDown' clause in the worker (line 142) raises AttributeError whenever result_processor raises, which kills the worker thread and stalls its queue. The minimum supported Python version should be confirmed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "critical",
+   "category": "bug",
+   "title": "close() shuts down the factory-owned queue pool, so the next rebalance silently drops every message",
+   "body": "FixedQueuePool is created once in ResultsStrategyFactory.__init__, and the same instance is passed to every SimpleQueueProcessingStrategy that create_with_partitions builds. Arroyo closes the strategy and builds a new one on each partition revoke/assign. close() (and join(), which calls close(), and terminate()) calls self.queue_pool.shutdown(), which shuts down every queue and stops every worker permanently. The next strategy's submit() then calls work_queue.put() on a shut-down queue, which raises queue.ShutDown. submit()'s generic except (lines 317-325) logs and marks the offset complete, so the message is never processed but its offset is committed. Every message after the first rebalance is skipped this way. Items still queued at shutdown never complete their offsets, so the shared OffsetTracker also stops committing for those partitions for the rest of the consumer's lifetime. No test creates a second strategy from the same factory, so this is not caught."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 287,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Arroyo commit callback is invoked from a background thread while the processor loop runs",
+   "body": "_commit_loop calls commit_function every second from a separate daemon thread. commit_function forwards to the Arroyo Commit callable that create_with_partitions received. Other commit paths in this codebase (CommitOffsets, the batch paths) call Commit from the StreamProcessor's own thread. Arroyo's commit path updates consumer staging and commit state that the processor loop also owns, so this unsynchronized cross-thread call can race with the poll/commit cycle. The consequence could be lost or duplicated offsets or exceptions from the Kafka consumer. Nothing in the PR synchronizes these calls. The unit and integration tests replace commit with a plain dict update, so they cannot surface this."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 337,
+   "severity": "medium",
+   "category": "data",
+   "title": "Shutdown stops the commit thread before draining queues and abandons queued work",
+   "body": "close() joins the commit thread (line 337) and only afterwards calls queue_pool.shutdown() (line 338). Workers then finish processing whatever is still queued, but no commit is ever issued for those completions. The next owner of the partition reprocesses them, producing duplicate uptime results. Separately, FixedQueuePool.shutdown() sets worker.shutdown = True (line 234) before shutting the queues down. Workers check that flag after each item (loop at line 129) and exit, so items still sitting in the queue are never processed and their offsets never complete. This contradicts the 'graceful shutdown' docstring and leaves outstanding offsets that block later commits."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 253,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Docstring promises backpressure, but the queues are unbounded",
+   "body": "The docstring claims 'Natural backpressure when queues fill up', but the queues are created with queue.Queue() and no maxsize (line 185), and submit() never blocks. Arroyo keeps polling Kafka while a slow group accumulates work. Each queued WorkItem also keeps a reference to the full Message and its payload (WorkItem.message, which is never read). This is exactly the slow-item scenario the PR is meant to address, and it turns it into unbounded memory growth rather than backpressure. Either bound the queues and pause consumption when they are full, or correct the docstring."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Error-handling test asserts the partition is NOT committed, contradicting its own docstring and the implementation",
+   "body": "The test docstring says errors in processing must not block offset commits for other messages. The implementation marks the failed offset complete in the worker's finally block, so the second message's offset (101) is committed as 102. The assertion instead requires that test_partition is absent from committed_offsets. It passes only because the commit thread ticks once per second and the test checks within about 0.3 seconds, before the first tick. If the tick lands earlier, the test fails. The assertion encodes the opposite of the intended behavior and should check that the partition is committed past the failed message."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 351,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Offset-gap test does not check gap blocking, and the implementation only blocks on the first batch",
+   "body": "test_offset_gaps_block_commits claims gaps block commits, but nothing asserts that. After offset 100 is committed, the next tick computes start = max(last_committed+1, min(all_offsets)) = 102. The missing 101 is therefore skipped, and 103 is committed on the next tick even if 101 never arrives. So the gap blocks the first batch but not later ones. The test only waits for commits that happen after 101 has already been submitted, so it passes either way. The same mismatch makes test_thread_queue_parallel_offset_gaps in test_results_consumer.py (about line 1982) pass only because it exits before the next commit tick. The intended gap semantics should be decided and asserted."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 312,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_preserves_order_within_group never checks the order",
+   "body": "The test submits five messages for the same subscription and asserts only len(self.processed_results) == 5. The recorded list is never compared to the expected sequence, so the test would still pass if ordering within a group were broken. Since per-group ordering is the core guarantee of this design, the test should assert the processed sequence."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 200,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Racy assertion that total_items > 0 right after submitting",
+   "body": "Worker threads start consuming as soon as items are put, so by the time get_stats() runs, they may already have drained the queues. The assertion assert stats['total_items'] > 0 can then fail intermittently. It is a timing assumption, not a guarantee."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/consumers/__init__.py",
+   "line": 123,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "--mode help text is wrong and does not describe the new thread-queue-parallel mode",
+   "body": "The help says 'Parallel uses multithreading', but the 'parallel' mode uses MultiprocessingPool (see result_consumer.py, create_multiprocess_worker). The PR adds the 'thread-queue-parallel' choice but does not describe it in the help text, so operators cannot tell the modes apart."
+  },
+  {
+   "index": 9,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 238,
+   "severity": "low",
+   "category": "speculative",
+   "title": "queue.ShutDown and Queue.shutdown() require Python 3.13; earlier interpreters fail silently",
+   "body": "queue.ShutDown and Queue.shutdown() exist only on Python 3.13+. If this code can run on an earlier interpreter, q.shutdown() raises AttributeError, which the except at line 239 swallows, so queues and workers are never stopped. Also, on older versions the 'except queue.ShutDown' clause in the worker (line 142) raises AttributeError whenever result_processor raises, which kills the worker thread and stalls its queue. The minimum supported Python version should be confirmed."
+  }
+ ],
+ "finding_count": 10
+}

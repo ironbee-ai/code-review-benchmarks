@@ -1,0 +1,162 @@
+{
+ "run_id": "minimax-m3__low__sentry__95633__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:01:19Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30846,
+    "output": 21782,
+    "reasoning": 20128,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03539988,
+   "latency_ms": 142469,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6951,
+   "raw_usage": {
+    "completion_tokens": 21782,
+    "prompt_tokens": 30974,
+    "total_tokens": 52756,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 20128,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.03539988,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03539988,
+     "upstream_inference_prompt_cost": 0.00926148,
+     "upstream_inference_completions_cost": 0.0261384
+    }
+   },
+   "started_at": "2026-10-18T12:01:19Z",
+   "first_chunk_ms": 2580,
+   "first_text_ms": 132703,
+   "response_id": "gen-1792324879-49PDE2EORAv0HD6Z2gKP",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30846,
+  "output": 21782,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 20128
+ },
+ "cost_reported": 0.03539988,
+ "latency_ms": 142469,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 100, \"severity\": \"critical\", \"category\": \"data\", \"title\": \"OffsetTracker commits past unseen offsets, causing silent data loss\", \"body\": \"In `OffsetTracker.mark_committed` (lines 100\u2013105), after committing offset X, all offsets \u2264 X are removed from `self.all_offsets`. On the next `get_committable_offsets` call, the loop starts at `max(last_committed + 1, min(all_offsets))`, so any offset that was never submitted to the tracker is forgotten. If the consumer skips an offset (e.g., 101) but submits 100, 102, 103, the tracker will first commit 100 then, after removal, commit 103 \u2014 committing past the unseen 101 to Kafka. On restart, Kafka would begin reading from offset 104, permanently losing offset 101. The tracker assumes gaps are always due to filtering/compaction, but it has no way to distinguish that from a bug where `submit()` was never called for an offset. The test `test_thread_queue_parallel_offset_gaps` in `tests/sentry/uptime/consumers/test_results_consumer.py` was clearly designed to catch this behavior (it asserts commits never exceed 101), but the implementation violates that assertion \u2014 the last commit would be 104. A safer design would either keep removed offsets to detect gaps, or require every offset in [last_committed, X] to have been at least seen.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1898, \"severity\": \"high\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts the opposite of its docstring intent and fails\", \"body\": \"The test docstring says 'errors in processing don't block offset commits for other messages', but the final assertion is `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`, which is the opposite. With the current implementation (`OrderedQueueWorker.run` catches `Exception`, logs it, and in `finally` calls `self.offset_tracker.complete_offset(...)`), both messages get their offsets marked complete regardless of the raised exception. The commit loop then commits offset 101 \u2192 Kafka offset 102. So `committed_offsets` will be `{test_partition: 102}`, both halves of the disjunction are False, and the test fails. The assertion should instead verify that the commit did happen (matching the docstring), e.g. `assert committed_offsets[test_partition] == 102`. As written, the test contradicts the implementation's actual behavior and would never pass.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 132, \"severity\": \"high\", \"category\": \"api\", \"title\": \"Code depends on Python 3.13-only queue APIs\", \"body\": \"The file uses `queue.ShutDown` (caught in `OrderedQueueWorker.run` lines 132 and 142) and `q.shutdown(immediate=False)` in `FixedQueuePool.shutdown` (line 238). Both `queue.Queue.shutdown()` and the `queue.ShutDown` exception were introduced in Python 3.13 (October 2024). If sentry still supports Python 3.11 or 3.12, the workers will crash with `AttributeError: module 'queue' has no attribute 'ShutDown'` / `'shutdown'` the first time a shutdown is attempted or an exception is raised inside `run()`. The minimum Python version supported by sentry needs to be verified; if it is below 3.13, this module cannot be imported safely and will break the uptime-results consumer at runtime. A portable alternative is to use a sentinel object via `Queue.put` and check it in the worker, or a `threading.Event` plus a final empty marker, neither requiring Python 3.13.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 340, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"SimpleQueueProcessingStrategy.terminate does not join commit thread\", \"body\": \"`terminate` sets `shutdown_event` and calls `self.queue_pool.shutdown()`, but unlike `close` it never calls `self.commit_thread.join(...)`. The commit thread is daemonized, so the process exit will reap it, but during the window between `terminate` returning and the process actually exiting, the commit thread can still invoke `self.commit_function` (the arroyo `commit` callback) and mutate `OffsetTracker` state. This violates the symmetry with `close`, and means callers using `terminate` for a forced shutdown can have an arbitrary amount of background work still running against a strategy they consider terminated.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 344, \"severity\": \"low\", \"category\": \"api\", \"title\": \"SimpleQueueProcessingStrategy.join ignores its timeout argument\", \"body\": \"`join(self, timeout: float | None = None)` simply calls `self.close()`, dropping the `timeout` parameter. `close()` in turn calls `self.commit_thread.join(timeout=5.0)` (hard-coded 5s) and `self.queue_pool.shutdown()` (which joins workers with another hard-coded 5s). Callers that pass a smaller timeout via `join(0.5)` expecting bounded shutdown will wait up to ~10 seconds instead. The `timeout` argument should either be honored by passing it to the underlying joins or removed from the signature.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 98, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_different_groups_distributed is probabilistic and can be flaky\", \"body\": \"The test submits 20 distinct group keys to a pool of 3 queues and asserts `len(queue_indices) == 3`. The probability of missing a queue with 20 keys and 3 buckets is 3 * (2/3)^20 - 3 * (1/3)^20 \u2248 0.00078, or about 1 in 1300. With Python's randomized string hashing (`PYTHONHASHSEED`) this is not controllable from the test. Worse, `hash()` can in principle produce collisions that bunch keys into fewer buckets than expected. The test should either use enough keys that the probability of collision is negligible (e.g. 200+), or directly assert `>= 2` rather than `== 3`, or seed/force the hash distribution.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1981, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Kafka integration test relies on private methods and tight timing\", \"body\": \"`ProcessResultThreadQueueParallelKafkaTest.test_thread_queue_parallel_kafka_offset_commit` reaches into `processor._run_once()` and `processor._shutdown()` (private Arroyo APIs) and only spins for 5 seconds before asserting `committed[0].offset == 5`. Under load or slow CI the consumer may not have time to fetch, decode, queue, and commit all 5 messages; the assertion then fails for timing reasons rather than correctness. Additionally, the test wraps `factory.create_with_partitions` to count commits but does not verify that all produced messages were actually decoded (`mock_processor.return_value = None` bypasses real processing). Consider using Arroyo's public `run()` loop, increasing the deadline, and asserting a lower bound (e.g. offset >= 1) rather than equality.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 100,
+   "severity": "critical",
+   "category": "data",
+   "title": "OffsetTracker commits past unseen offsets, causing silent data loss",
+   "body": "In `OffsetTracker.mark_committed` (lines 100\u2013105), after committing offset X, all offsets \u2264 X are removed from `self.all_offsets`. On the next `get_committable_offsets` call, the loop starts at `max(last_committed + 1, min(all_offsets))`, so any offset that was never submitted to the tracker is forgotten. If the consumer skips an offset (e.g., 101) but submits 100, 102, 103, the tracker will first commit 100 then, after removal, commit 103 \u2014 committing past the unseen 101 to Kafka. On restart, Kafka would begin reading from offset 104, permanently losing offset 101. The tracker assumes gaps are always due to filtering/compaction, but it has no way to distinguish that from a bug where `submit()` was never called for an offset. The test `test_thread_queue_parallel_offset_gaps` in `tests/sentry/uptime/consumers/test_results_consumer.py` was clearly designed to catch this behavior (it asserts commits never exceed 101), but the implementation violates that assertion \u2014 the last commit would be 104. A safer design would either keep removed offsets to detect gaps, or require every offset in [last_committed, X] to have been at least seen."
+  },
+  {
+   "index": 1,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1898,
+   "severity": "high",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts the opposite of its docstring intent and fails",
+   "body": "The test docstring says 'errors in processing don't block offset commits for other messages', but the final assertion is `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`, which is the opposite. With the current implementation (`OrderedQueueWorker.run` catches `Exception`, logs it, and in `finally` calls `self.offset_tracker.complete_offset(...)`), both messages get their offsets marked complete regardless of the raised exception. The commit loop then commits offset 101 \u2192 Kafka offset 102. So `committed_offsets` will be `{test_partition: 102}`, both halves of the disjunction are False, and the test fails. The assertion should instead verify that the commit did happen (matching the docstring), e.g. `assert committed_offsets[test_partition] == 102`. As written, the test contradicts the implementation's actual behavior and would never pass."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 132,
+   "severity": "high",
+   "category": "api",
+   "title": "Code depends on Python 3.13-only queue APIs",
+   "body": "The file uses `queue.ShutDown` (caught in `OrderedQueueWorker.run` lines 132 and 142) and `q.shutdown(immediate=False)` in `FixedQueuePool.shutdown` (line 238). Both `queue.Queue.shutdown()` and the `queue.ShutDown` exception were introduced in Python 3.13 (October 2024). If sentry still supports Python 3.11 or 3.12, the workers will crash with `AttributeError: module 'queue' has no attribute 'ShutDown'` / `'shutdown'` the first time a shutdown is attempted or an exception is raised inside `run()`. The minimum Python version supported by sentry needs to be verified; if it is below 3.13, this module cannot be imported safely and will break the uptime-results consumer at runtime. A portable alternative is to use a sentinel object via `Queue.put` and check it in the worker, or a `threading.Event` plus a final empty marker, neither requiring Python 3.13."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 340,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "SimpleQueueProcessingStrategy.terminate does not join commit thread",
+   "body": "`terminate` sets `shutdown_event` and calls `self.queue_pool.shutdown()`, but unlike `close` it never calls `self.commit_thread.join(...)`. The commit thread is daemonized, so the process exit will reap it, but during the window between `terminate` returning and the process actually exiting, the commit thread can still invoke `self.commit_function` (the arroyo `commit` callback) and mutate `OffsetTracker` state. This violates the symmetry with `close`, and means callers using `terminate` for a forced shutdown can have an arbitrary amount of background work still running against a strategy they consider terminated."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 344,
+   "severity": "low",
+   "category": "api",
+   "title": "SimpleQueueProcessingStrategy.join ignores its timeout argument",
+   "body": "`join(self, timeout: float | None = None)` simply calls `self.close()`, dropping the `timeout` parameter. `close()` in turn calls `self.commit_thread.join(timeout=5.0)` (hard-coded 5s) and `self.queue_pool.shutdown()` (which joins workers with another hard-coded 5s). Callers that pass a smaller timeout via `join(0.5)` expecting bounded shutdown will wait up to ~10 seconds instead. The `timeout` argument should either be honored by passing it to the underlying joins or removed from the signature."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 98,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_different_groups_distributed is probabilistic and can be flaky",
+   "body": "The test submits 20 distinct group keys to a pool of 3 queues and asserts `len(queue_indices) == 3`. The probability of missing a queue with 20 keys and 3 buckets is 3 * (2/3)^20 - 3 * (1/3)^20 \u2248 0.00078, or about 1 in 1300. With Python's randomized string hashing (`PYTHONHASHSEED`) this is not controllable from the test. Worse, `hash()` can in principle produce collisions that bunch keys into fewer buckets than expected. The test should either use enough keys that the probability of collision is negligible (e.g. 200+), or directly assert `>= 2` rather than `== 3`, or seed/force the hash distribution."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1981,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Kafka integration test relies on private methods and tight timing",
+   "body": "`ProcessResultThreadQueueParallelKafkaTest.test_thread_queue_parallel_kafka_offset_commit` reaches into `processor._run_once()` and `processor._shutdown()` (private Arroyo APIs) and only spins for 5 seconds before asserting `committed[0].offset == 5`. Under load or slow CI the consumer may not have time to fetch, decode, queue, and commit all 5 messages; the assertion then fails for timing reasons rather than correctness. Additionally, the test wraps `factory.create_with_partitions` to count commits but does not verify that all produced messages were actually decoded (`mock_processor.return_value = None` bypasses real processing). Consider using Arroyo's public `run()` loop, increasing the deadline, and asserting a lower bound (e.g. offset >= 1) rather than equality."
+  }
+ ],
+ "finding_count": 7
+}

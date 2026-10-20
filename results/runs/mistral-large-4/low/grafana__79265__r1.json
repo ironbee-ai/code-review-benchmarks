@@ -1,0 +1,190 @@
+{
+ "run_id": "mistral-large-4__low__grafana__79265__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:33:02Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30749,
+    "output": 2557,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02625345,
+   "latency_ms": 33366,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 11480,
+   "raw_usage": {
+    "completion_tokens": 2557,
+    "prompt_tokens": 30749,
+    "total_tokens": 33306,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.02625345,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02625345,
+     "upstream_inference_prompt_cost": 0.02090932,
+     "upstream_inference_completions_cost": 0.00534413
+    }
+   },
+   "started_at": "2026-10-17T11:33:02Z",
+   "first_chunk_ms": 4562,
+   "first_text_ms": 4562,
+   "response_id": "gen-1792236782-MlvRT1yKoIqqbFDed3T5",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30749,
+  "output": 2557,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.02625345,
+ "latency_ms": 33366,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 109,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Device limit check is a TOCTOU race that allows exceeding the configured limit\",\n      \"body\": \"CreateOrUpdateDevice first calls CountDevices and then, if count < deviceLimit, performs an INSERT ... ON CONFLICT/ON DUPLICATE KEY. Between the COUNT and the INSERT there is no transaction, lock, or atomic guard, so N concurrent requests can all observe count = limit-1 and all insert new devices, exceeding the configured anonymous device limit. The limit is a resource-protection control (preventing unbounded growth of the anon_device table from anonymous traffic), so a race that lets it be bypassed defeats the feature's purpose. The check-then-act should be made atomic (e.g. a transaction with a locking read, or a conditional INSERT that fails when the count is at the limit, or a unique constraint plus retry logic).\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 73,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"updateDevice returns ErrDeviceLimitReached for any device that does not match the time window, not only when the limit is actually reached\",\n      \"body\": \"updateDevice runs UPDATE ... WHERE device_id = ? AND updated_at BETWEEN (now-30d) AND (now+1m) and returns ErrDeviceLimitReached whenever rowsAffected == 0. rowsAffected is 0 both when (a) the device does not exist or its updated_at is outside the window, and (b) the device exists but was not updated. Case (a) is the normal path for a brand-new device when the limit is reached: the caller (CreateOrUpdateDevice) only calls updateDevice when count >= deviceLimit, so a new device ID will never match the WHERE clause and will always get ErrDeviceLimitReached \u2014 which is the intended rejection. However, the error is also returned when the UPDATE fails to match for reasons unrelated to the limit (e.g. clock skew pushing updated_at outside the +1m future bound, or a device whose updated_at is older than 30 days but still counted differently by CountDevices). More importantly, the error name/semantics conflate 'device not found / not updatable' with 'limit reached', and callers such as client.go treat any ErrDeviceLimitReached as a hard authentication failure. If the UPDATE matches 0 rows for a transient reason, a legitimate returning device is rejected as if the limit were reached. The function should distinguish 'no such device' from other failures and only surface ErrDeviceLimitReached when the limit is genuinely the cause.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/client.go\",\n      \"line\": 44,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Returning ErrDeviceLimitReached from Authenticate breaks anonymous authentication entirely once the limit is hit\",\n      \"body\": \"In Anonymous.Authenticate, when TagDevice returns anonstore.ErrDeviceLimitReached the code does `return nil, err`, aborting authentication. Since TagDevice is called synchronously on every anonymous request, once the device count reaches the configured limit every subsequent anonymous request \u2014 including from already-registered devices whose UPDATE would succeed \u2014 is evaluated in CreateOrUpdateDevice: count >= limit triggers updateDevice, which succeeds for existing devices, so existing devices keep working. But the failure mode is still wrong for the intended UX: the whole point of a configurable limit is to cap the number of tracked devices, not to lock out anonymous access. Returning an error from Authenticate causes the authn pipeline to fail the request (typically a 401/500), turning a telemetry/storage limit into a denial of service for anonymous users. The correct behavior is to log and continue authenticating (as was done for all other TagDevice errors), letting the limit only affect whether new devices are recorded. As written, an operator who sets device_limit will break anonymous access for any device not already in the table, which is almost certainly not the intended semantics.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/client.go\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"TagDevice is now called synchronously with the request context, removing the previous timeout isolation\",\n      \"body\": \"The diff removes the goroutine with `context.WithTimeout(context.Background(), 2*time.Minute)` and instead calls `a.anonDeviceService.TagDevice(ctx, ...)` directly with the incoming request's context. Previously the DB write was bounded by an independent 2-minute timeout and ran off the request path; now a slow or hung database (the new code adds a COUNT query plus an UPDATE/INSERT on every anonymous request when a limit is configured) will block authentication and is bounded only by the request context. Under DB latency or lock contention this adds the anon_device write latency to every anonymous request's critical path and can cause request timeouts. If the synchronous call is intentional (needed to propagate ErrDeviceLimitReached), it should still be wrapped in its own timeout so a DB stall cannot take down anonymous authentication.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/impl.go\",\n      \"line\": 144,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"TagDevice now returns errors that were previously swallowed, changing behavior for all callers\",\n      \"body\": \"TagDevice previously logged tagDeviceUI failures at Debug level and returned nil; the diff adds `return err` after the debug log. TagDevice is a public method (marked FIXME: unexport and remove interface) on AnonDeviceService and is part of the anonymous.Service interface used by the authn client. Now any store error (DB down, unsupported driver, or ErrDeviceLimitReached) propagates to callers. In client.go this is handled, but the change silently alters the contract for any other caller of anonymous.Service.TagDevice and for the post-login untag path expectations; combined with the synchronous call this means transient DB errors now fail anonymous authentication instead of being logged. At minimum this contract change should be called out and all callers audited; the previous behavior (best-effort tagging) was deliberate.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 110,\n      \"severity\": \"medium\",\n      \"category\": \"perf\",\n      \"title\": \"Every CreateOrUpdateDevice call now performs an extra COUNT query when a limit is configured\",\n      \"body\": \"When deviceLimit > 0, CreateOrUpdateDevice unconditionally runs CountDevices (SELECT COUNT(*) FROM anon_device WHERE updated_at BETWEEN ...) before every insert/update. This is a full table scan/range count on every anonymous request that reaches the store (the local cache in impl.go mitigates repeats per instance for ~29 minutes, but multi-instance deployments and cache misses all pay it). On large anon_device tables this adds meaningful per-request DB load. Consider caching the count with a short TTL, using an approximate count, or only checking periodically rather than on every write.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\",\n      \"line\": 51,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test covers the update path for an existing device when the limit is reached\",\n      \"body\": \"TestIntegrationBeyondDeviceLimit only verifies that a second, different device is rejected with ErrDeviceLimitReached when the limit is 1. It does not verify the intended behavior that an already-registered device can still update itself (updateDevice succeeding) once the limit is reached \u2014 the path that keeps existing anonymous users working. Without that test, a regression that rejects existing devices too (e.g. the rowsAffected==0 semantics described in updateDevice) would not be caught. Add a case: create device A with limit 1, then call CreateOrUpdateDevice again with the same device ID and assert NoError and that updated_at changed.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/impl_test.go\",\n      \"line\": 116,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"Tests construct the service with setting.NewCfg() whose AnonymousDeviceLimit is 0, so the limit path is untested at the service layer\",\n      \"body\": \"Both tests call ProvideAnonymousDeviceService(..., store, setting.NewCfg(), ...). setting.NewCfg() leaves AnonymousDeviceLimit at its zero value, so ProvideAnonDBStore receives deviceLimit=0 and the limit logic in CreateOrUpdateDevice is disabled. The service-level tests therefore never exercise the limit, the synchronous error propagation from TagDevice, or the ErrDeviceLimitReached handling. The store-level test covers the store in isolation, but there is no test that a configured limit causes TagDevice to return ErrDeviceLimitReached through the service (including the local-cache interaction, which caches the key before the store call and would suppress the error on repeat calls within 29 minutes).\"\n    },\n    {\n      \"file\": \"pkg/setting/setting.go\",\n      \"line\": 1654,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"New device_limit setting has no documentation, sample config entry, or validation\",\n      \"body\": \"cfg.AnonymousDeviceLimit is read from auth.anonymous device_limit with MustInt64(0) (0 = unlimited). There is no corresponding entry in conf/sample.ini or docs, no validation that rejects negative values (a negative limit would make `s.deviceLimit > 0` false, silently disabling the limit \u2014 arguably fine, but undocumented), and no default.ini documentation. Operators cannot discover the setting. Additionally, the frontend DTO exposes it as a non-omitempty int64, so it is always serialized as 0 when unset, which is consistent with the TS type `number | undefined` only because 0 is falsy-checked in the store; worth confirming the frontend treats 0 as unlimited.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 80,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"updateDevice time window uses device.UpdatedAt (caller-supplied) rather than the server clock, and the +1 minute future bound is fragile\",\n      \"body\": \"The WHERE clause bounds updated_at by device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration) and .Add(time.Minute). device.UpdatedAt is set by the caller (impl.go uses time.Now(), but the store API accepts any Device). If a caller passes a stale or future UpdatedAt, the window shifts accordingly and the UPDATE can match or miss unexpectedly. The comment in impl.go notes MySQL second-precision motivated the +1 minute fudge, but basing the window on the row's own updated_at value (which for an existing row is the previous update time, not now) means the BETWEEN window is [device.UpdatedAt-30d, device.UpdatedAt+1m] \u2014 for a returning device whose stored updated_at is, say, 10 days ago and whose new UpdatedAt is now, the stored row's updated_at (10 days ago) falls inside [now-30d, now+1m], so it matches; this works, but it is subtle and undocumented. Using the server clock (time.Now()) for the window would be clearer and immune to caller-supplied timestamps.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Device limit check is a TOCTOU race that allows exceeding the configured limit",
+   "body": "CreateOrUpdateDevice first calls CountDevices and then, if count < deviceLimit, performs an INSERT ... ON CONFLICT/ON DUPLICATE KEY. Between the COUNT and the INSERT there is no transaction, lock, or atomic guard, so N concurrent requests can all observe count = limit-1 and all insert new devices, exceeding the configured anonymous device limit. The limit is a resource-protection control (preventing unbounded growth of the anon_device table from anonymous traffic), so a race that lets it be bypassed defeats the feature's purpose. The check-then-act should be made atomic (e.g. a transaction with a locking read, or a conditional INSERT that fails when the count is at the limit, or a unique constraint plus retry logic)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 73,
+   "severity": "medium",
+   "category": "bug",
+   "title": "updateDevice returns ErrDeviceLimitReached for any device that does not match the time window, not only when the limit is actually reached",
+   "body": "updateDevice runs UPDATE ... WHERE device_id = ? AND updated_at BETWEEN (now-30d) AND (now+1m) and returns ErrDeviceLimitReached whenever rowsAffected == 0. rowsAffected is 0 both when (a) the device does not exist or its updated_at is outside the window, and (b) the device exists but was not updated. Case (a) is the normal path for a brand-new device when the limit is reached: the caller (CreateOrUpdateDevice) only calls updateDevice when count >= deviceLimit, so a new device ID will never match the WHERE clause and will always get ErrDeviceLimitReached \u2014 which is the intended rejection. However, the error is also returned when the UPDATE fails to match for reasons unrelated to the limit (e.g. clock skew pushing updated_at outside the +1m future bound, or a device whose updated_at is older than 30 days but still counted differently by CountDevices). More importantly, the error name/semantics conflate 'device not found / not updatable' with 'limit reached', and callers such as client.go treat any ErrDeviceLimitReached as a hard authentication failure. If the UPDATE matches 0 rows for a transient reason, a legitimate returning device is rejected as if the limit were reached. The function should distinguish 'no such device' from other failures and only surface ErrDeviceLimitReached when the limit is genuinely the cause."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "high",
+   "category": "bug",
+   "title": "Returning ErrDeviceLimitReached from Authenticate breaks anonymous authentication entirely once the limit is hit",
+   "body": "In Anonymous.Authenticate, when TagDevice returns anonstore.ErrDeviceLimitReached the code does `return nil, err`, aborting authentication. Since TagDevice is called synchronously on every anonymous request, once the device count reaches the configured limit every subsequent anonymous request \u2014 including from already-registered devices whose UPDATE would succeed \u2014 is evaluated in CreateOrUpdateDevice: count >= limit triggers updateDevice, which succeeds for existing devices, so existing devices keep working. But the failure mode is still wrong for the intended UX: the whole point of a configurable limit is to cap the number of tracked devices, not to lock out anonymous access. Returning an error from Authenticate causes the authn pipeline to fail the request (typically a 401/500), turning a telemetry/storage limit into a denial of service for anonymous users. The correct behavior is to log and continue authenticating (as was done for all other TagDevice errors), letting the limit only affect whether new devices are recorded. As written, an operator who sets device_limit will break anonymous access for any device not already in the table, which is almost certainly not the intended semantics."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TagDevice is now called synchronously with the request context, removing the previous timeout isolation",
+   "body": "The diff removes the goroutine with `context.WithTimeout(context.Background(), 2*time.Minute)` and instead calls `a.anonDeviceService.TagDevice(ctx, ...)` directly with the incoming request's context. Previously the DB write was bounded by an independent 2-minute timeout and ran off the request path; now a slow or hung database (the new code adds a COUNT query plus an UPDATE/INSERT on every anonymous request when a limit is configured) will block authentication and is bounded only by the request context. Under DB latency or lock contention this adds the anon_device write latency to every anonymous request's critical path and can cause request timeouts. If the synchronous call is intentional (needed to propagate ErrDeviceLimitReached), it should still be wrapped in its own timeout so a DB stall cannot take down anonymous authentication."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 144,
+   "severity": "medium",
+   "category": "bug",
+   "title": "TagDevice now returns errors that were previously swallowed, changing behavior for all callers",
+   "body": "TagDevice previously logged tagDeviceUI failures at Debug level and returned nil; the diff adds `return err` after the debug log. TagDevice is a public method (marked FIXME: unexport and remove interface) on AnonDeviceService and is part of the anonymous.Service interface used by the authn client. Now any store error (DB down, unsupported driver, or ErrDeviceLimitReached) propagates to callers. In client.go this is handled, but the change silently alters the contract for any other caller of anonymous.Service.TagDevice and for the post-login untag path expectations; combined with the synchronous call this means transient DB errors now fail anonymous authentication instead of being logged. At minimum this contract change should be called out and all callers audited; the previous behavior (best-effort tagging) was deliberate."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 110,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Every CreateOrUpdateDevice call now performs an extra COUNT query when a limit is configured",
+   "body": "When deviceLimit > 0, CreateOrUpdateDevice unconditionally runs CountDevices (SELECT COUNT(*) FROM anon_device WHERE updated_at BETWEEN ...) before every insert/update. This is a full table scan/range count on every anonymous request that reaches the store (the local cache in impl.go mitigates repeats per instance for ~29 minutes, but multi-instance deployments and cache misses all pay it). On large anon_device tables this adds meaningful per-request DB load. Consider caching the count with a short TTL, using an approximate count, or only checking periodically rather than on every write."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test covers the update path for an existing device when the limit is reached",
+   "body": "TestIntegrationBeyondDeviceLimit only verifies that a second, different device is rejected with ErrDeviceLimitReached when the limit is 1. It does not verify the intended behavior that an already-registered device can still update itself (updateDevice succeeding) once the limit is reached \u2014 the path that keeps existing anonymous users working. Without that test, a regression that rejects existing devices too (e.g. the rowsAffected==0 semantics described in updateDevice) would not be caught. Add a case: create device A with limit 1, then call CreateOrUpdateDevice again with the same device ID and assert NoError and that updated_at changed."
+  },
+  {
+   "index": 7,
+   "file": "pkg/services/anonymous/anonimpl/impl_test.go",
+   "line": 116,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Tests construct the service with setting.NewCfg() whose AnonymousDeviceLimit is 0, so the limit path is untested at the service layer",
+   "body": "Both tests call ProvideAnonymousDeviceService(..., store, setting.NewCfg(), ...). setting.NewCfg() leaves AnonymousDeviceLimit at its zero value, so ProvideAnonDBStore receives deviceLimit=0 and the limit logic in CreateOrUpdateDevice is disabled. The service-level tests therefore never exercise the limit, the synchronous error propagation from TagDevice, or the ErrDeviceLimitReached handling. The store-level test covers the store in isolation, but there is no test that a configured limit causes TagDevice to return ErrDeviceLimitReached through the service (including the local-cache interaction, which caches the key before the store call and would suppress the error on repeat calls within 29 minutes)."
+  },
+  {
+   "index": 8,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New device_limit setting has no documentation, sample config entry, or validation",
+   "body": "cfg.AnonymousDeviceLimit is read from auth.anonymous device_limit with MustInt64(0) (0 = unlimited). There is no corresponding entry in conf/sample.ini or docs, no validation that rejects negative values (a negative limit would make `s.deviceLimit > 0` false, silently disabling the limit \u2014 arguably fine, but undocumented), and no default.ini documentation. Operators cannot discover the setting. Additionally, the frontend DTO exposes it as a non-omitempty int64, so it is always serialized as 0 when unset, which is consistent with the TS type `number | undefined` only because 0 is falsy-checked in the store; worth confirming the frontend treats 0 as unlimited."
+  },
+  {
+   "index": 9,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 80,
+   "severity": "low",
+   "category": "data",
+   "title": "updateDevice time window uses device.UpdatedAt (caller-supplied) rather than the server clock, and the +1 minute future bound is fragile",
+   "body": "The WHERE clause bounds updated_at by device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration) and .Add(time.Minute). device.UpdatedAt is set by the caller (impl.go uses time.Now(), but the store API accepts any Device). If a caller passes a stale or future UpdatedAt, the window shifts accordingly and the UPDATE can match or miss unexpectedly. The comment in impl.go notes MySQL second-precision motivated the +1 minute fudge, but basing the window on the row's own updated_at value (which for an existing row is the previous update time, not now) means the BETWEEN window is [device.UpdatedAt-30d, device.UpdatedAt+1m] \u2014 for a returning device whose stored updated_at is, say, 10 days ago and whose new UpdatedAt is now, the stored row's updated_at (10 days ago) falls inside [now-30d, now+1m], so it matches; this works, but it is subtle and undocumented. Using the server clock (time.Now()) for the window would be clearer and immune to caller-supplied timestamps."
+  }
+ ],
+ "finding_count": 10
+}

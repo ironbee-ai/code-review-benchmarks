@@ -1,0 +1,161 @@
+{
+ "run_id": "mistral-large-4__low__sentry__77754__r3",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:01:22Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18655,
+    "output": 1854,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01656026,
+   "latency_ms": 92834,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 7943,
+   "raw_usage": {
+    "completion_tokens": 1854,
+    "prompt_tokens": 18655,
+    "total_tokens": 20509,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01656026,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01656026,
+     "upstream_inference_prompt_cost": 0.0126854,
+     "upstream_inference_completions_cost": 0.00387486
+    }
+   },
+   "started_at": "2026-10-18T12:01:22Z",
+   "first_chunk_ms": 2436,
+   "first_text_ms": 2436,
+   "response_id": "gen-1792324883-wnYEBZBFkAOmB0zblMmr",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18655,
+  "output": 1854,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01656026,
+ "latency_ms": 92834,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/integrations/services/assignment_source.py\",\n      \"line\": 18,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Mutable default evaluated once at class definition time for `queued` field\",\n      \"body\": \"The `queued: datetime = timezone.now()` default in the frozen dataclass is evaluated a single time when the module is imported, not per-instance. Every `AssignmentSource` created without an explicit `queued` value (which is every call site, including `from_integration`) will share the exact same timestamp \u2014 the process start time. The field is named `queued` and typed as a datetime, strongly implying it records when the assignment was queued, but it actually records when the Python module was first loaded. This makes the field useless for its apparent purpose (e.g., detecting stale/delayed sync tasks, ordering, or debugging sync loops) and is misleading. Either remove the field, make it a `field(default_factory=timezone.now)`, or populate it explicitly at creation time.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/services/assignment_source.py\",\n      \"line\": 31,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"`from_dict` does not round-trip `to_dict` output: datetime becomes a string and reconstruction fails\",\n      \"body\": \"`to_dict()` uses `dataclasses.asdict`, which serializes the `queued` datetime to an ISO-format string (asdict does not preserve datetime objects). When that dict is passed through the Celery task queue (JSON serialization in `sync_group_assignee_outbound` \u2192 `sync_assignee_outbound` task kwargs) and then reconstructed via `AssignmentSource.from_dict(assignment_source_dict)`, `cls(**input_dict)` is called with `queued` as a `str`, not a `datetime`. The dataclass has no runtime type enforcement, so this does not raise \u2014 `from_dict` returns an `AssignmentSource` whose `queued` is a string. Any code that later treats `queued` as a datetime (comparisons, arithmetic, `.timestamp()`, etc.) will break with a TypeError. The `try/except (ValueError, TypeError)` in `from_dict` does not catch this because dataclass `__init__` performs no type coercion. Fix by parsing the ISO string back to a datetime in `from_dict` (e.g., `datetime.fromisoformat`), or by excluding `queued` from `to_dict`/`from_dict` entirely since it is never actually used for the sync-cycle prevention logic.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/mixins/issues.py\",\n      \"line\": 390,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"`should_sync` cycle-prevention compares `sync_source.integration_id` to `org_integration.integration_id`, but these are different ID spaces\",\n      \"body\": \"In `IssueSyncIntegration.should_sync`, the guard `sync_source.integration_id == self.org_integration.integration_id` compares the `Integration.id` (from `AssignmentSource.from_integration(integration)`, where `integration` is an `RpcIntegration`/`Integration` model row) against `self.org_integration.integration_id`. `org_integration` is an `OrganizationIntegration` row, and its `integration_id` foreign key points to the same `Integration` table, so this comparison is actually correct in intent. However, the naming is confusing and fragile: `AssignmentSource.integration_id` holds an `Integration.id` while the field name suggests it could be an org-integration id. More importantly, the guard only works if `AssignmentSource.from_integration` is always called with the `Integration` (not the `OrganizationIntegration`). In `sync_group_assignee_inbound` (sync.py line 98/115) it is called with `integration: RpcIntegration`, which is correct. But any future caller passing an `OrganizationIntegration` would silently break the cycle prevention (the loop would return). Consider renaming the field to `source_integration_id` or adding an assertion/documentation to make the ID space explicit, since a mismatch here silently reintroduces the infinite sync loop this PR is meant to fix.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/mixins/issues.py\",\n      \"line\": 66,\n      \"severity\": \"low\",\n      \"category\": \"api\",\n      \"title\": \"`IssueBasicIntegration.should_sync` signature diverges from `IssueSyncIntegration.should_sync` (missing return type annotation)\",\n      \"body\": \"The base class `IssueBasicIntegration.should_sync(self, attribute, sync_source: AssignmentSource | None = None)` has no `-> bool` return annotation, while the override in `IssueSyncIntegration` (line 382) declares `-> bool`. The base always returns `False` (a bool), so this is not a runtime bug, but the missing annotation is an inconsistency that weakens type checking for any subclass that relies on the base signature. Add `-> bool` to match the override and the abstract contract.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/tasks/sync_assignee_outbound.py\",\n      \"line\": 56,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test covers the `assignment_source_dict` \u2192 `should_sync` suppression path through the actual Celery task\",\n      \"body\": \"The new behavior \u2014 that `sync_assignee_outbound` task skips calling `installation.sync_assignee_outbound` when `assignment_source_dict` matches the integration \u2014 is only tested indirectly: `test_assignee_sync_outbound_assign_with_matching_source_integration` mocks `ExampleIntegration.sync_assignee_outbound` and asserts it is not called, but it exercises `GroupAssignee.objects.assign` \u2192 `sync_group_assignee_outbound` \u2192 `sync_assignee_outbound.apply_async` with `self.tasks()` running inline. The test does verify the end-to-end suppression, which is good. However, there is no test for `AssignmentSource.from_dict` returning `None` on malformed data flowing through the task (e.g., a corrupted `assignment_source_dict` in the queue should result in `parsed_assignment_source=None` and normal sync behavior, not a crash). Given `from_dict` swallows errors and returns `None`, a malformed payload silently disables cycle prevention and could reintroduce the loop. A test feeding a bad dict to the task would lock in the intended fallback behavior.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/utils/sync.py\",\n      \"line\": 141,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"`assignment_source.to_dict()` includes a datetime that will not survive JSON task serialization and round-trip\",\n      \"body\": \"In `sync_group_assignee_outbound`, `assignment_source.to_dict()` is placed directly into `sync_assignee_outbound.apply_async(kwargs={...})`. Celery serializes task kwargs to JSON (by default), which converts the `queued` datetime to a string. When the task later calls `AssignmentSource.from_dict(assignment_source_dict)`, the `queued` field arrives as a string. As noted in the `assignment_source.py` finding, `from_dict` does not coerce it back to a datetime, so the reconstructed `AssignmentSource.queued` is a `str`. This is a latent type-integrity bug in the data crossing the task boundary. Since `queued` is never read anywhere in the codebase, the simplest fix is to exclude it from `to_dict` (e.g., `asdict(self, dict_factory=lambda x: {k: v for k, v in x if k != 'queued'})` or just not include it), or to make `from_dict` parse it. At minimum, the field should not be serialized across the wire if it cannot be faithfully reconstructed.\"\n    },\n    {\n      \"file\": \"tests/sentry/integrations/services/test_assignment_source.py\",\n      \"line\": 13,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Typo in test method name: `test_from_dict_inalid_data`\",\n      \"body\": \"The test method is named `test_from_dict_inalid_data` \u2014 missing the 'v' in 'invalid'. This is a trivial typo but it is in a test name that other engineers may search for; fixing it improves discoverability and readability. Rename to `test_from_dict_invalid_data`.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "high",
+   "category": "bug",
+   "title": "Mutable default evaluated once at class definition time for `queued` field",
+   "body": "The `queued: datetime = timezone.now()` default in the frozen dataclass is evaluated a single time when the module is imported, not per-instance. Every `AssignmentSource` created without an explicit `queued` value (which is every call site, including `from_integration`) will share the exact same timestamp \u2014 the process start time. The field is named `queued` and typed as a datetime, strongly implying it records when the assignment was queued, but it actually records when the Python module was first loaded. This makes the field useless for its apparent purpose (e.g., detecting stale/delayed sync tasks, ordering, or debugging sync loops) and is misleading. Either remove the field, make it a `field(default_factory=timezone.now)`, or populate it explicitly at creation time."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 31,
+   "severity": "medium",
+   "category": "data",
+   "title": "`from_dict` does not round-trip `to_dict` output: datetime becomes a string and reconstruction fails",
+   "body": "`to_dict()` uses `dataclasses.asdict`, which serializes the `queued` datetime to an ISO-format string (asdict does not preserve datetime objects). When that dict is passed through the Celery task queue (JSON serialization in `sync_group_assignee_outbound` \u2192 `sync_assignee_outbound` task kwargs) and then reconstructed via `AssignmentSource.from_dict(assignment_source_dict)`, `cls(**input_dict)` is called with `queued` as a `str`, not a `datetime`. The dataclass has no runtime type enforcement, so this does not raise \u2014 `from_dict` returns an `AssignmentSource` whose `queued` is a string. Any code that later treats `queued` as a datetime (comparisons, arithmetic, `.timestamp()`, etc.) will break with a TypeError. The `try/except (ValueError, TypeError)` in `from_dict` does not catch this because dataclass `__init__` performs no type coercion. Fix by parsing the ISO string back to a datetime in `from_dict` (e.g., `datetime.fromisoformat`), or by excluding `queued` from `to_dict`/`from_dict` entirely since it is never actually used for the sync-cycle prevention logic."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 390,
+   "severity": "medium",
+   "category": "api",
+   "title": "`should_sync` cycle-prevention compares `sync_source.integration_id` to `org_integration.integration_id`, but these are different ID spaces",
+   "body": "In `IssueSyncIntegration.should_sync`, the guard `sync_source.integration_id == self.org_integration.integration_id` compares the `Integration.id` (from `AssignmentSource.from_integration(integration)`, where `integration` is an `RpcIntegration`/`Integration` model row) against `self.org_integration.integration_id`. `org_integration` is an `OrganizationIntegration` row, and its `integration_id` foreign key points to the same `Integration` table, so this comparison is actually correct in intent. However, the naming is confusing and fragile: `AssignmentSource.integration_id` holds an `Integration.id` while the field name suggests it could be an org-integration id. More importantly, the guard only works if `AssignmentSource.from_integration` is always called with the `Integration` (not the `OrganizationIntegration`). In `sync_group_assignee_inbound` (sync.py line 98/115) it is called with `integration: RpcIntegration`, which is correct. But any future caller passing an `OrganizationIntegration` would silently break the cycle prevention (the loop would return). Consider renaming the field to `source_integration_id` or adding an assertion/documentation to make the ID space explicit, since a mismatch here silently reintroduces the infinite sync loop this PR is meant to fix."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 66,
+   "severity": "low",
+   "category": "api",
+   "title": "`IssueBasicIntegration.should_sync` signature diverges from `IssueSyncIntegration.should_sync` (missing return type annotation)",
+   "body": "The base class `IssueBasicIntegration.should_sync(self, attribute, sync_source: AssignmentSource | None = None)` has no `-> bool` return annotation, while the override in `IssueSyncIntegration` (line 382) declares `-> bool`. The base always returns `False` (a bool), so this is not a runtime bug, but the missing annotation is an inconsistency that weakens type checking for any subclass that relies on the base signature. Add `-> bool` to match the override and the abstract contract."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+   "line": 56,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test covers the `assignment_source_dict` \u2192 `should_sync` suppression path through the actual Celery task",
+   "body": "The new behavior \u2014 that `sync_assignee_outbound` task skips calling `installation.sync_assignee_outbound` when `assignment_source_dict` matches the integration \u2014 is only tested indirectly: `test_assignee_sync_outbound_assign_with_matching_source_integration` mocks `ExampleIntegration.sync_assignee_outbound` and asserts it is not called, but it exercises `GroupAssignee.objects.assign` \u2192 `sync_group_assignee_outbound` \u2192 `sync_assignee_outbound.apply_async` with `self.tasks()` running inline. The test does verify the end-to-end suppression, which is good. However, there is no test for `AssignmentSource.from_dict` returning `None` on malformed data flowing through the task (e.g., a corrupted `assignment_source_dict` in the queue should result in `parsed_assignment_source=None` and normal sync behavior, not a crash). Given `from_dict` swallows errors and returns `None`, a malformed payload silently disables cycle prevention and could reintroduce the loop. A test feeding a bad dict to the task would lock in the intended fallback behavior."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/integrations/utils/sync.py",
+   "line": 141,
+   "severity": "low",
+   "category": "bug",
+   "title": "`assignment_source.to_dict()` includes a datetime that will not survive JSON task serialization and round-trip",
+   "body": "In `sync_group_assignee_outbound`, `assignment_source.to_dict()` is placed directly into `sync_assignee_outbound.apply_async(kwargs={...})`. Celery serializes task kwargs to JSON (by default), which converts the `queued` datetime to a string. When the task later calls `AssignmentSource.from_dict(assignment_source_dict)`, the `queued` field arrives as a string. As noted in the `assignment_source.py` finding, `from_dict` does not coerce it back to a datetime, so the reconstructed `AssignmentSource.queued` is a `str`. This is a latent type-integrity bug in the data crossing the task boundary. Since `queued` is never read anywhere in the codebase, the simplest fix is to exclude it from `to_dict` (e.g., `asdict(self, dict_factory=lambda x: {k: v for k, v in x if k != 'queued'})` or just not include it), or to make `from_dict` parse it. At minimum, the field should not be serialized across the wire if it cannot be faithfully reconstructed."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/integrations/services/test_assignment_source.py",
+   "line": 13,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Typo in test method name: `test_from_dict_inalid_data`",
+   "body": "The test method is named `test_from_dict_inalid_data` \u2014 missing the 'v' in 'invalid'. This is a trivial typo but it is in a test name that other engineers may search for; fixing it improves discoverability and readability. Rename to `test_from_dict_invalid_data`."
+  }
+ ],
+ "finding_count": 7
+}

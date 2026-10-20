@@ -1,0 +1,154 @@
+{
+ "run_id": "claude-sonnet-5__default__cal.com__11059__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__11059",
+ "golden_url": "https://github.com/calcom/cal.com/pull/11059",
+ "repeat": 3,
+ "started_at": "2026-10-18T20:33:36Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 281003,
+  "sha": "92f29a4b7281004a",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 123447,
+    "output": 17494,
+    "reasoning": 14862,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 177286,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7122,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 123447,
+    "output_tokens": 17494,
+    "output_tokens_details": {
+     "thinking_tokens": 14862
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T20:33:36Z",
+   "first_chunk_ms": 11579,
+   "first_text_ms": 153988,
+   "response_id": "msg_bdrk_ef2ng5jvplcy5zbtbdx4kcdjizq6jerzi3nqadergvnm4ra5nwlq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 123447,
+  "output": 17494,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 14862
+ },
+ "cost_reported": null,
+ "latency_ms": 177286,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/app-store/googlecalendar/lib/CalendarService.ts\", \"line\": 97, \"severity\": \"critical\", \"title\": \"Wrong value stored as credential key breaks Google Calendar token refresh\", \"body\": \"`parseRefreshTokenResponse` returns the whole `safeParse` result object (`{ success, data }`), not the parsed token data itself. Here the return value is assigned directly to `key` and persisted via `prisma.credential.update({ data: { key } })`. This means the stored credential.key becomes `{ success: true, data: { access_token, ... } }` instead of the flat token object the rest of the code (and `googleCredentialSchema.parse(credential.key)` on the next load) expects. Every time a Google Calendar token is refreshed (which happens regardless of whether app-credential-sync is enabled), the credential record is corrupted and subsequent calendar operations for that user will fail to parse the stored key. Other call sites of this helper (office365calendar, zoomvideo, salesforce) correctly destructure `.data`, but this one does not.\"}, {\"file\": \"packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts\", \"line\": 8, \"severity\": \"critical\", \"title\": \"minimumTokenResponseSchema's dynamic keys don't implement a catch-all and strip/corrupt token data\", \"body\": \"The schema uses computed property keys `[z.string().toString()]: z.number()` and `[z.string().optional().toString()]: z.unknown().optional()`. `z.string().toString()` evaluates to a fixed literal string (e.g. \\\"ZodString\\\"), not a wildcard match for arbitrary keys, so this does not create a pass-through/catch-all schema. Since the zod object schema has no `.passthrough()`, any field in the actual refreshed-token response that isn't `access_token` (e.g. `expiry_date`, `refresh_token`, `instance_url`) is silently stripped from `.data` when APP_CREDENTIAL_SHARING_ENABLED is true. Combined with the fallback below (`refreshTokenResponse.data.refresh_token = \\\"refresh_token\\\"`), this causes the stored credential's refresh_token to be overwritten with the literal placeholder string `\\\"refresh_token\\\"` and other required fields (expiry_date, instance_url, etc.) to disappear, corrupting every synced credential's stored key (affects google-calendar, office365calendar, salesforce, zoomvideo refresh flows).\"}, {\"file\": \"packages/app-store/_utils/oauth/refreshOAuthTokens.ts\", \"line\": 15, \"severity\": \"critical\", \"title\": \"Sync-mode response shape mismatches callers' expectations across multiple apps\", \"body\": \"When APP_CREDENTIAL_SHARING_ENABLED and CALCOM_CREDENTIAL_SYNC_ENDPOINT are set, this helper resolves to a raw, un-parsed `fetch` `Response` object. Several call sites assume the resolved value is already a parsed object: e.g. packages/app-store/zoho-bigin/lib/CalendarService.ts does `tokenInfo.data.error` and packages/app-store/zohocrm/lib/CalendarService.ts does `zohoCrmTokenInfo.data.error` (expecting an axios-like `.data` wrapper), and packages/app-store/hubspot/lib/CalendarService.ts assigns the result directly to a `HubspotToken` and reads `hubspotRefreshToken.expiresIn`/`.accessToken` directly. A raw fetch `Response` has none of these properties, so when credential syncing is enabled, token refresh for hubspot, zoho-bigin, and zohocrm will throw (`Cannot read properties of undefined`) or silently store `undefined`/`NaN` values, breaking those integrations entirely under the very feature this PR is adding.\"}, {\"file\": \"packages/app-store/salesforce/lib/CalendarService.ts\", \"line\": 75, \"severity\": \"medium\", \"title\": \"Salesforce access token is unconditionally refreshed on every CalendarService instantiation\", \"body\": \"Unlike every other provider in this PR, `getClient` performs an OAuth refresh-token request unconditionally, with no check of whether the current access token is still valid (there is no `isTokenValid`/expiry check before calling the Salesforce token endpoint). Since `getClient` runs in the constructor and a new `SalesforceCalendarService` is created per operation, this triggers an extra network round-trip and a token refresh call to Salesforce on every single booking/calendar action, which is wasteful and can hit Salesforce's rate limits. It also introduces a concurrency risk: concurrent requests using the same credential will each attempt to refresh the token independently, risking invalidation/race conditions if Salesforce invalidates the previous access token on refresh.\"}, {\"file\": \"packages/app-store/salesforce/lib/CalendarService.ts\", \"line\": 86, \"severity\": \"low\", \"title\": \"Fragile success check using statusText === 'OK'\", \"body\": \"`if (response.statusText !== \\\"OK\\\") throw ...` is unreliable: `statusText` is not guaranteed to be the literal string \\\"OK\\\" across all environments/HTTP versions (e.g., HTTP/2 responses commonly have an empty statusText), and conversely a non-200 response could still have statusText \\\"OK\\\" in rare cases. This should check `response.ok` or `response.status === 200` instead, otherwise valid refresh responses can be incorrectly treated as failures (or vice versa).\"}, {\"file\": \"apps/web/pages/api/webhook/app-credential.ts\", \"line\": 25, \"severity\": \"medium\", \"title\": \"Non constant-time secret comparison and no HTTP method restriction\", \"body\": \"The webhook secret check (`req.headers[...] !== process.env.CALCOM_WEBHOOK_SECRET`) uses a plain string inequality comparison, which is vulnerable to timing attacks that could help an attacker brute-force the secret. Additionally, the handler never checks `req.method`, so it will process the body on any HTTP verb that reaches it (not just POST), and malformed/invalid encrypted payloads (`symmetricDecrypt` / `JSON.parse` failures) are not caught, resulting in an unhandled exception and a generic 500 instead of a controlled error response.\"}, {\"file\": \"apps/web/pages/api/webhook/app-credential.ts\", \"line\": 25, \"severity\": \"low\", \"title\": \"CALCOM_WEBHOOK_HEADER_NAME is not normalized to lowercase\", \"body\": \"`.env.example` documents that `CALCOM_WEBHOOK_HEADER_NAME` 'should be in lowercase', but the code never lowercases the configured value before using it as a key into `req.headers`. Node/Next.js always lowercases incoming header names, so if an operator sets this env var with any uppercase character, the lookup will always miss and the webhook will always return 403, with no indication of why. The code should normalize the header name itself (e.g. `.toLowerCase()`) instead of relying on operator discipline.\"}, {\"file\": \"packages/app-store/_utils/oauth/refreshOAuthTokens.ts\", \"line\": 1, \"severity\": \"medium\", \"title\": \"No automated tests for new credential-sync logic\", \"body\": \"The PR adds several new, trust-sensitive pieces of logic (the `/api/webhook/app-credential` endpoint, `refreshOAuthTokens`, and `parseRefreshTokenResponse`) that directly affect how OAuth credentials are persisted, but no unit or integration tests were added for any of them (the author's own checklist states tests were not added). Given the data-corruption risks identified in the token-refresh code paths, this is an area that should have had test coverage before merging.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+   "line": 97,
+   "severity": "critical",
+   "category": null,
+   "title": "Wrong value stored as credential key breaks Google Calendar token refresh",
+   "body": "`parseRefreshTokenResponse` returns the whole `safeParse` result object (`{ success, data }`), not the parsed token data itself. Here the return value is assigned directly to `key` and persisted via `prisma.credential.update({ data: { key } })`. This means the stored credential.key becomes `{ success: true, data: { access_token, ... } }` instead of the flat token object the rest of the code (and `googleCredentialSchema.parse(credential.key)` on the next load) expects. Every time a Google Calendar token is refreshed (which happens regardless of whether app-credential-sync is enabled), the credential record is corrupted and subsequent calendar operations for that user will fail to parse the stored key. Other call sites of this helper (office365calendar, zoomvideo, salesforce) correctly destructure `.data`, but this one does not."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+   "line": 8,
+   "severity": "critical",
+   "category": null,
+   "title": "minimumTokenResponseSchema's dynamic keys don't implement a catch-all and strip/corrupt token data",
+   "body": "The schema uses computed property keys `[z.string().toString()]: z.number()` and `[z.string().optional().toString()]: z.unknown().optional()`. `z.string().toString()` evaluates to a fixed literal string (e.g. \"ZodString\"), not a wildcard match for arbitrary keys, so this does not create a pass-through/catch-all schema. Since the zod object schema has no `.passthrough()`, any field in the actual refreshed-token response that isn't `access_token` (e.g. `expiry_date`, `refresh_token`, `instance_url`) is silently stripped from `.data` when APP_CREDENTIAL_SHARING_ENABLED is true. Combined with the fallback below (`refreshTokenResponse.data.refresh_token = \"refresh_token\"`), this causes the stored credential's refresh_token to be overwritten with the literal placeholder string `\"refresh_token\"` and other required fields (expiry_date, instance_url, etc.) to disappear, corrupting every synced credential's stored key (affects google-calendar, office365calendar, salesforce, zoomvideo refresh flows)."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/_utils/oauth/refreshOAuthTokens.ts",
+   "line": 15,
+   "severity": "critical",
+   "category": null,
+   "title": "Sync-mode response shape mismatches callers' expectations across multiple apps",
+   "body": "When APP_CREDENTIAL_SHARING_ENABLED and CALCOM_CREDENTIAL_SYNC_ENDPOINT are set, this helper resolves to a raw, un-parsed `fetch` `Response` object. Several call sites assume the resolved value is already a parsed object: e.g. packages/app-store/zoho-bigin/lib/CalendarService.ts does `tokenInfo.data.error` and packages/app-store/zohocrm/lib/CalendarService.ts does `zohoCrmTokenInfo.data.error` (expecting an axios-like `.data` wrapper), and packages/app-store/hubspot/lib/CalendarService.ts assigns the result directly to a `HubspotToken` and reads `hubspotRefreshToken.expiresIn`/`.accessToken` directly. A raw fetch `Response` has none of these properties, so when credential syncing is enabled, token refresh for hubspot, zoho-bigin, and zohocrm will throw (`Cannot read properties of undefined`) or silently store `undefined`/`NaN` values, breaking those integrations entirely under the very feature this PR is adding."
+  },
+  {
+   "index": 3,
+   "file": "packages/app-store/salesforce/lib/CalendarService.ts",
+   "line": 75,
+   "severity": "medium",
+   "category": null,
+   "title": "Salesforce access token is unconditionally refreshed on every CalendarService instantiation",
+   "body": "Unlike every other provider in this PR, `getClient` performs an OAuth refresh-token request unconditionally, with no check of whether the current access token is still valid (there is no `isTokenValid`/expiry check before calling the Salesforce token endpoint). Since `getClient` runs in the constructor and a new `SalesforceCalendarService` is created per operation, this triggers an extra network round-trip and a token refresh call to Salesforce on every single booking/calendar action, which is wasteful and can hit Salesforce's rate limits. It also introduces a concurrency risk: concurrent requests using the same credential will each attempt to refresh the token independently, risking invalidation/race conditions if Salesforce invalidates the previous access token on refresh."
+  },
+  {
+   "index": 4,
+   "file": "packages/app-store/salesforce/lib/CalendarService.ts",
+   "line": 86,
+   "severity": "low",
+   "category": null,
+   "title": "Fragile success check using statusText === 'OK'",
+   "body": "`if (response.statusText !== \"OK\") throw ...` is unreliable: `statusText` is not guaranteed to be the literal string \"OK\" across all environments/HTTP versions (e.g., HTTP/2 responses commonly have an empty statusText), and conversely a non-200 response could still have statusText \"OK\" in rare cases. This should check `response.ok` or `response.status === 200` instead, otherwise valid refresh responses can be incorrectly treated as failures (or vice versa)."
+  },
+  {
+   "index": 5,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 25,
+   "severity": "medium",
+   "category": null,
+   "title": "Non constant-time secret comparison and no HTTP method restriction",
+   "body": "The webhook secret check (`req.headers[...] !== process.env.CALCOM_WEBHOOK_SECRET`) uses a plain string inequality comparison, which is vulnerable to timing attacks that could help an attacker brute-force the secret. Additionally, the handler never checks `req.method`, so it will process the body on any HTTP verb that reaches it (not just POST), and malformed/invalid encrypted payloads (`symmetricDecrypt` / `JSON.parse` failures) are not caught, resulting in an unhandled exception and a generic 500 instead of a controlled error response."
+  },
+  {
+   "index": 6,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 25,
+   "severity": "low",
+   "category": null,
+   "title": "CALCOM_WEBHOOK_HEADER_NAME is not normalized to lowercase",
+   "body": "`.env.example` documents that `CALCOM_WEBHOOK_HEADER_NAME` 'should be in lowercase', but the code never lowercases the configured value before using it as a key into `req.headers`. Node/Next.js always lowercases incoming header names, so if an operator sets this env var with any uppercase character, the lookup will always miss and the webhook will always return 403, with no indication of why. The code should normalize the header name itself (e.g. `.toLowerCase()`) instead of relying on operator discipline."
+  },
+  {
+   "index": 7,
+   "file": "packages/app-store/_utils/oauth/refreshOAuthTokens.ts",
+   "line": 1,
+   "severity": "medium",
+   "category": null,
+   "title": "No automated tests for new credential-sync logic",
+   "body": "The PR adds several new, trust-sensitive pieces of logic (the `/api/webhook/app-credential` endpoint, `refreshOAuthTokens`, and `parseRefreshTokenResponse`) that directly affect how OAuth credentials are persisted, but no unit or integration tests were added for any of them (the author's own checklist states tests were not added). Given the data-corruption risks identified in the token-refresh code paths, this is an area that should have had test coverage before merging."
+  }
+ ],
+ "finding_count": 8
+}

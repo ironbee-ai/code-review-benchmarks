@@ -1,0 +1,199 @@
+{
+ "run_id": "mistral-large-4__low__discourse-graphite__3__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:25:52Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18264,
+    "output": 2569,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01778873,
+   "latency_ms": 86901,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 11558,
+   "raw_usage": {
+    "completion_tokens": 2569,
+    "prompt_tokens": 18264,
+    "total_tokens": 20833,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01778873,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01778873,
+     "upstream_inference_prompt_cost": 0.01241952,
+     "upstream_inference_completions_cost": 0.00536921
+    }
+   },
+   "started_at": "2026-10-17T11:25:52Z",
+   "first_chunk_ms": 2366,
+   "first_text_ms": 2366,
+   "response_id": "gen-1792236352-lcSd0fIMzxvC1lUWFqhD",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18264,
+  "output": 2569,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01778873,
+ "latency_ms": 86901,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 11, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Race condition in BlockedEmail.should_block? increments match_count non-atomically\", \"body\": \"should_block? does a read-modify-write of match_count (record.match_count += 1; record.save) without any locking or atomic SQL. Two concurrent signup attempts with the same blocked email can both read the same match_count and both write match_count+1, losing an increment. Worse, the method performs a write (save) during what is called from a validation path (EmailValidator#validate_each), meaning every validation of a user record triggers a database UPDATE on blocked_emails \u2014 including validations that never persist the user, inflating match_count with phantom matches and adding an unexpected write inside a read/validation flow. Use an atomic update (e.g. BlockedEmail.where(email: email).update_all('match_count = match_count + 1, last_match_at = ?', Time.zone.now)) or move the statistics update out of the validation path.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 11, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"should_block? performs a database write during validation and does not normalize the email\", \"body\": \"BlockedEmail.should_block?(email) is invoked from EmailValidator#validate_each on every user validation where the email changed. It unconditionally saves match_count/last_match_at even when the user record is never saved (e.g. other validations fail), corrupting the match statistics. Additionally, the lookup BlockedEmail.where(email: email) is case-sensitive and not stripped, while user emails are stored downcased/stripped elsewhere (e.g. Email.downcase in users_controller#change_email); 'User@Example.com' and 'user@example.com' would be treated as different emails, letting a blocked address bypass the block by varying case. The lookup should use Email.downcase(email).strip (or an equivalent normalization) and the statistics update should be atomic and separated from the pure predicate.\"}, {\"file\": \"lib/validators/email_validator.rb\", \"line\": 13, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Blocked-email check is skipped when the value is nil, causing a NoMethodError instead of a clean validation failure\", \"body\": \"EmailValidator#validate_each calls BlockedEmail.should_block?(value) whenever record.errors[attribute] is blank. When the email attribute is nil (User only runs this validator if :email_changed?, but a change to nil is possible, and other models may use the validator without a presence check ordering guarantee), should_block?(nil) executes BlockedEmail.where(email: nil).first, which is harmless, but the guard `record.errors[attribute].blank?` means the blocked check runs even when the whitelist/blacklist checks already failed \u2014 that part is intended \u2014 however the real issue is that with a nil value the validator adds no 'blocked' error and, more importantly, the validator assumes `value` responds to the operations in should_block?; combined with the missing presence ordering, a nil email reaches BlockedEmail.should_block? and the method's `record && record.action_type == actions[:block]` path is fine, but any non-string value (e.g. an array from a malformed param) would raise inside the validator. The validator should guard `if value.present? && record.errors[attribute].blank? && BlockedEmail.should_block?(value)`.\"}, {\"file\": \"app/models/user.rb\", \"line\": 47, \"severity\": \"high\", \"category\": \"api\", \"title\": \"Switching email validation from a custom validate method to the `email: true` validator changes error messages and drops the whitelist/blacklist error key\", \"body\": \"The old code used `validate :email_validator, if: :email_changed?` which ran the custom email_validator that added errors with the specific I18n key :'user.email.not_allowed' (and now :'user.email.blocked'). The new code uses `validates :email, email: true, if: :email_changed?`, which delegates to EmailValidator \u2014 but EmailValidator only adds the domain whitelist/blacklist and blocked checks; it does NOT perform any email format validation. There is no built-in Rails `email` validator in this era of Rails/Discourse (the `email: true` option expects an EmailValidator class whose validate_each must do the format check), so this validator as written never rejects malformed emails like 'not-an-email' \u2014 a regression from the previous behavior where format checking existed elsewhere, and the client-side JS (Discourse.Utilities.emailValid) is the only remaining format gate, which is trivially bypassable. The EmailValidator must also validate email format (e.g. using the existing Email::VALID_REGEX or Mail::Address parsing) or the format check must be restored.\"}, {\"file\": \"app/models/user.rb\", \"line\": 46, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Uniqueness validation on email is now case-sensitive, allowing duplicate accounts with differently-cased emails\", \"body\": \"The old code used `validates_uniqueness_of :email` and the new code uses `validates :email, presence: true, uniqueness: true`. Both are case-sensitive by default in Rails, but the previous custom email_validator path and the rest of the codebase normalize emails (Email.downcase is used in users_controller#change_email and User.find_by_username_or_email). More importantly, the database has a UNIQUE index on users.email (index_users_on_email UNIQUE per the schema comment), which in PostgreSQL is case-sensitive, so 'Foo@bar.com' and 'foo@bar.com' can both be inserted, creating two accounts that downstream code (which downcases before lookup) will treat as the same person \u2014 enabling account impersonation/confusion in email-based lookups, password resets, and the DiscourseHub nickname matching. The uniqueness validation should be case-insensitive (e.g. uniqueness: { case_sensitive: false } or a custom validator comparing Email.downcase), and ideally the DB index should be on a downcased expression.\"}, {\"file\": \"app/controllers/users_controller.rb\", \"line\": 199, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Error response now leaks user attribute values (name, username, email) back to the client on failed signup\", \"body\": \"The create action's failure branch now renders `values: user.attributes.slice(\\\"name\\\", \\\"username\\\", \\\"email\\\")` in the JSON response. Combined with the client change that pushes result.values.email into rejectedEmails, this echoes back attacker-supplied input. While the values are attacker-supplied in the normal signup flow, this response shape is also produced for any validation failure \u2014 including uniqueness failures where the email may belong to an existing account. Returning the submitted email in a structured `values` field alongside `errors` makes it easier for scripts to enumerate which emails are already registered (the errors hash already reveals this via the uniqueness error, but the explicit values echo normalizes the probing interface). More concretely, the client code at create_account_controller.js line 274-275 pushes result.values.email into rejectedEmails whenever result.errors.email is present, which means a user who typos an email that is already taken gets that email permanently stuck in their rejectedEmails list client-side, and the server is now explicitly designed to return these values. The values echo should be removed or limited; the client should not need server-echoed values to know which email was rejected since it already has it in accountEmail.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 69, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"rejectedEmails check compares raw email without normalization and permanently blocks the email client-side\", \"body\": \"The new check `this.get('rejectedEmails').contains(email)` compares the raw accountEmail string against previously rejected emails. Emails are case-insensitive in practice, so 'User@Example.com' and 'user@example.com' are different strings; a user whose email was rejected once (e.g. for being already registered) will not be blocked from re-submitting the same address with different casing, and conversely the rejectedEmails entry is pushed from result.values.email (server-normalized or not) which may not string-match the client's accountEmail. Additionally, once an email is pushed into rejectedEmails it can never be removed, so a transient server error (e.g. DiscourseHub failure) that returns errors.email will permanently prevent that email from being used in this session even after the underlying issue is resolved. The comparison should be case-insensitive (compare downcased) and the push should use the client's own accountEmail value.\"}, {\"file\": \"lib/validators/email_validator.rb\", \"line\": 1, \"severity\": \"low\", \"category\": \"style\", \"title\": \"Missing trailing newline at end of file\", \"body\": \"The file ends without a newline character (the diff shows '\\\\ No newline at end of file'). This is a minor style issue but can cause problems with some tools and patch application.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 5, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"EmailValidator spec does not test the whitelist/blacklist behavior that the validator implements\", \"body\": \"The spec only covers the BlockedEmail.should_block? branch. The validator's primary responsibility (moved from User#email_validator) is enforcing SiteSetting.email_domains_whitelist and email_domains_blacklist, but there are no tests exercising those settings \u2014 neither that a whitelisted domain passes, a non-whitelisted domain fails with :'user.email.not_allowed', nor that the blacklist blocks matching domains. Since this logic was moved out of the User model (where it presumably had coverage) into a new validator, the move is untested for its main purpose. Add contexts that set SiteSetting.email_domains_whitelist / email_domains_blacklist and assert the appropriate errors.\"}, {\"file\": \"spec/models/blocked_email_spec.rb\", \"line\": 22, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"should_block? spec does not cover case-insensitivity or whitespace, which the implementation does not handle\", \"body\": \"The spec only tests exact-match emails. Given that user emails are downcased/stripped elsewhere in the codebase, should_block? should be tested (and implemented) to handle 'Block@SpamFromHome.org' matching a stored 'block@spamfromhome.org'. Without such a test the case-sensitivity gap in BlockedEmail.should_block? (see separate finding) will persist. Add a test that a differently-cased or whitespace-padded email still matches a blocked record.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 7, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Enum.new is not a standard Rails/Discourse API; actions may not behave as an integer-backed enum\", \"body\": \"BlockedEmail.actions uses Enum.new(:block, :do_nothing). If Enum is a Discourse core class that maps symbols to integers (as the action_type integer column and the fabricator's BlockedEmail.actions[:block] assignment suggest), this is fine, but the model relies on it without requiring or documenting it, and the migration stores action_type as a plain integer with no constraint. If Enum is not loaded in all contexts (e.g. rake tasks, console), BlockedEmail.actions will raise NameError. Verify Enum is required/available and consider using Rails' built-in enum (Rails 4.1+) or a constant hash with a validation that action_type is in the allowed set.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 11,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Race condition in BlockedEmail.should_block? increments match_count non-atomically",
+   "body": "should_block? does a read-modify-write of match_count (record.match_count += 1; record.save) without any locking or atomic SQL. Two concurrent signup attempts with the same blocked email can both read the same match_count and both write match_count+1, losing an increment. Worse, the method performs a write (save) during what is called from a validation path (EmailValidator#validate_each), meaning every validation of a user record triggers a database UPDATE on blocked_emails \u2014 including validations that never persist the user, inflating match_count with phantom matches and adding an unexpected write inside a read/validation flow. Use an atomic update (e.g. BlockedEmail.where(email: email).update_all('match_count = match_count + 1, last_match_at = ?', Time.zone.now)) or move the statistics update out of the validation path."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 11,
+   "severity": "medium",
+   "category": "data",
+   "title": "should_block? performs a database write during validation and does not normalize the email",
+   "body": "BlockedEmail.should_block?(email) is invoked from EmailValidator#validate_each on every user validation where the email changed. It unconditionally saves match_count/last_match_at even when the user record is never saved (e.g. other validations fail), corrupting the match statistics. Additionally, the lookup BlockedEmail.where(email: email) is case-sensitive and not stripped, while user emails are stored downcased/stripped elsewhere (e.g. Email.downcase in users_controller#change_email); 'User@Example.com' and 'user@example.com' would be treated as different emails, letting a blocked address bypass the block by varying case. The lookup should use Email.downcase(email).strip (or an equivalent normalization) and the statistics update should be atomic and separated from the pure predicate."
+  },
+  {
+   "index": 2,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Blocked-email check is skipped when the value is nil, causing a NoMethodError instead of a clean validation failure",
+   "body": "EmailValidator#validate_each calls BlockedEmail.should_block?(value) whenever record.errors[attribute] is blank. When the email attribute is nil (User only runs this validator if :email_changed?, but a change to nil is possible, and other models may use the validator without a presence check ordering guarantee), should_block?(nil) executes BlockedEmail.where(email: nil).first, which is harmless, but the guard `record.errors[attribute].blank?` means the blocked check runs even when the whitelist/blacklist checks already failed \u2014 that part is intended \u2014 however the real issue is that with a nil value the validator adds no 'blocked' error and, more importantly, the validator assumes `value` responds to the operations in should_block?; combined with the missing presence ordering, a nil email reaches BlockedEmail.should_block? and the method's `record && record.action_type == actions[:block]` path is fine, but any non-string value (e.g. an array from a malformed param) would raise inside the validator. The validator should guard `if value.present? && record.errors[attribute].blank? && BlockedEmail.should_block?(value)`."
+  },
+  {
+   "index": 3,
+   "file": "app/models/user.rb",
+   "line": 47,
+   "severity": "high",
+   "category": "api",
+   "title": "Switching email validation from a custom validate method to the `email: true` validator changes error messages and drops the whitelist/blacklist error key",
+   "body": "The old code used `validate :email_validator, if: :email_changed?` which ran the custom email_validator that added errors with the specific I18n key :'user.email.not_allowed' (and now :'user.email.blocked'). The new code uses `validates :email, email: true, if: :email_changed?`, which delegates to EmailValidator \u2014 but EmailValidator only adds the domain whitelist/blacklist and blocked checks; it does NOT perform any email format validation. There is no built-in Rails `email` validator in this era of Rails/Discourse (the `email: true` option expects an EmailValidator class whose validate_each must do the format check), so this validator as written never rejects malformed emails like 'not-an-email' \u2014 a regression from the previous behavior where format checking existed elsewhere, and the client-side JS (Discourse.Utilities.emailValid) is the only remaining format gate, which is trivially bypassable. The EmailValidator must also validate email format (e.g. using the existing Email::VALID_REGEX or Mail::Address parsing) or the format check must be restored."
+  },
+  {
+   "index": 4,
+   "file": "app/models/user.rb",
+   "line": 46,
+   "severity": "medium",
+   "category": "data",
+   "title": "Uniqueness validation on email is now case-sensitive, allowing duplicate accounts with differently-cased emails",
+   "body": "The old code used `validates_uniqueness_of :email` and the new code uses `validates :email, presence: true, uniqueness: true`. Both are case-sensitive by default in Rails, but the previous custom email_validator path and the rest of the codebase normalize emails (Email.downcase is used in users_controller#change_email and User.find_by_username_or_email). More importantly, the database has a UNIQUE index on users.email (index_users_on_email UNIQUE per the schema comment), which in PostgreSQL is case-sensitive, so 'Foo@bar.com' and 'foo@bar.com' can both be inserted, creating two accounts that downstream code (which downcases before lookup) will treat as the same person \u2014 enabling account impersonation/confusion in email-based lookups, password resets, and the DiscourseHub nickname matching. The uniqueness validation should be case-insensitive (e.g. uniqueness: { case_sensitive: false } or a custom validator comparing Email.downcase), and ideally the DB index should be on a downcased expression."
+  },
+  {
+   "index": 5,
+   "file": "app/controllers/users_controller.rb",
+   "line": 199,
+   "severity": "medium",
+   "category": "security",
+   "title": "Error response now leaks user attribute values (name, username, email) back to the client on failed signup",
+   "body": "The create action's failure branch now renders `values: user.attributes.slice(\"name\", \"username\", \"email\")` in the JSON response. Combined with the client change that pushes result.values.email into rejectedEmails, this echoes back attacker-supplied input. While the values are attacker-supplied in the normal signup flow, this response shape is also produced for any validation failure \u2014 including uniqueness failures where the email may belong to an existing account. Returning the submitted email in a structured `values` field alongside `errors` makes it easier for scripts to enumerate which emails are already registered (the errors hash already reveals this via the uniqueness error, but the explicit values echo normalizes the probing interface). More concretely, the client code at create_account_controller.js line 274-275 pushes result.values.email into rejectedEmails whenever result.errors.email is present, which means a user who typos an email that is already taken gets that email permanently stuck in their rejectedEmails list client-side, and the server is now explicitly designed to return these values. The values echo should be removed or limited; the client should not need server-echoed values to know which email was rejected since it already has it in accountEmail."
+  },
+  {
+   "index": 6,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 69,
+   "severity": "low",
+   "category": "bug",
+   "title": "rejectedEmails check compares raw email without normalization and permanently blocks the email client-side",
+   "body": "The new check `this.get('rejectedEmails').contains(email)` compares the raw accountEmail string against previously rejected emails. Emails are case-insensitive in practice, so 'User@Example.com' and 'user@example.com' are different strings; a user whose email was rejected once (e.g. for being already registered) will not be blocked from re-submitting the same address with different casing, and conversely the rejectedEmails entry is pushed from result.values.email (server-normalized or not) which may not string-match the client's accountEmail. Additionally, once an email is pushed into rejectedEmails it can never be removed, so a transient server error (e.g. DiscourseHub failure) that returns errors.email will permanently prevent that email from being used in this session even after the underlying issue is resolved. The comparison should be case-insensitive (compare downcased) and the push should use the client's own accountEmail value."
+  },
+  {
+   "index": 7,
+   "file": "lib/validators/email_validator.rb",
+   "line": 1,
+   "severity": "low",
+   "category": "style",
+   "title": "Missing trailing newline at end of file",
+   "body": "The file ends without a newline character (the diff shows '\\ No newline at end of file'). This is a minor style issue but can cause problems with some tools and patch application."
+  },
+  {
+   "index": 8,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 5,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "EmailValidator spec does not test the whitelist/blacklist behavior that the validator implements",
+   "body": "The spec only covers the BlockedEmail.should_block? branch. The validator's primary responsibility (moved from User#email_validator) is enforcing SiteSetting.email_domains_whitelist and email_domains_blacklist, but there are no tests exercising those settings \u2014 neither that a whitelisted domain passes, a non-whitelisted domain fails with :'user.email.not_allowed', nor that the blacklist blocks matching domains. Since this logic was moved out of the User model (where it presumably had coverage) into a new validator, the move is untested for its main purpose. Add contexts that set SiteSetting.email_domains_whitelist / email_domains_blacklist and assert the appropriate errors."
+  },
+  {
+   "index": 9,
+   "file": "spec/models/blocked_email_spec.rb",
+   "line": 22,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "should_block? spec does not cover case-insensitivity or whitespace, which the implementation does not handle",
+   "body": "The spec only tests exact-match emails. Given that user emails are downcased/stripped elsewhere in the codebase, should_block? should be tested (and implemented) to handle 'Block@SpamFromHome.org' matching a stored 'block@spamfromhome.org'. Without such a test the case-sensitivity gap in BlockedEmail.should_block? (see separate finding) will persist. Add a test that a differently-cased or whitespace-padded email still matches a blocked record."
+  },
+  {
+   "index": 10,
+   "file": "app/models/blocked_email.rb",
+   "line": 7,
+   "severity": "low",
+   "category": "api",
+   "title": "Enum.new is not a standard Rails/Discourse API; actions may not behave as an integer-backed enum",
+   "body": "BlockedEmail.actions uses Enum.new(:block, :do_nothing). If Enum is a Discourse core class that maps symbols to integers (as the action_type integer column and the fabricator's BlockedEmail.actions[:block] assignment suggest), this is fine, but the model relies on it without requiring or documenting it, and the migration stores action_type as a plain integer with no constraint. If Enum is not loaded in all contexts (e.g. rake tasks, console), BlockedEmail.actions will raise NameError. Verify Enum is required/available and consider using Rails' built-in enum (Rails 4.1+) or a constant hash with a validation that action_type is in the allowed set."
+  }
+ ],
+ "finding_count": 11
+}

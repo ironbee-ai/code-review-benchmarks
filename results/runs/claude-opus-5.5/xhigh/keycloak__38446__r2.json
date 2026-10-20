@@ -1,0 +1,129 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__keycloak__38446__r2",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "keycloak__38446",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/38446",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:51:00Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 108849,
+  "sha": "9cbbde40d2baa4e9",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 45819,
+    "output": 17112,
+    "reasoning": 14965,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 150456,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5989,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 45819,
+    "output_tokens": 17112,
+    "output_tokens_details": {
+     "thinking_tokens": 14965
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T20:51:00Z",
+   "first_chunk_ms": 2343,
+   "first_text_ms": 132333,
+   "response_id": "msg_bdrk_rg4dtm6cussdsmkbnhr5ioflo5mnnzs3wftjmtnrnrycns33y3qa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 45819,
+  "output": 17112,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 14965
+ },
+ "cost_reported": null,
+ "latency_ms": 150456,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java\", \"line\": 126, \"severity\": \"medium\", \"category\": \"security\", \"body\": \"Before this change, regenerating recovery codes went through `RecoveryAuthnCodesCredentialProvider.createCredential`, which deletes any existing recovery-codes credential before storing the new one. Regeneration therefore revoked the old codes.\\n\\nNow, when `user.credentialManager().updateCredential(...)` returns true because the user storage accepted the codes, the local path is skipped. Any recovery-codes credential already stored locally for that user is left in place. This happens for users who set up codes before their provider supported the type, or while it was disabled.\\n\\n`UserCredentialManager.isValid` falls back to local `CredentialInputValidator` providers when the user storage rejects an input. So the stale local codes are still accepted at login. A user who regenerates codes because the old ones leaked would still be able to log in with the leaked codes.\\n\\nFix: remove any locally stored `RecoveryAuthnCodesCredentialModel.TYPE` credentials when the user storage takes ownership.\", \"title\": \"Old local recovery codes stay valid after regenerating into user storage\"}, {\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java\", \"line\": 86, \"severity\": \"medium\", \"category\": \"bug\", \"body\": \"`RecoveryAuthnCodesUtils.getCredential` can now return a credential that lives in the user storage provider. When that credential reports `allCodesUsed()`, the code calls `removeStoredCredentialById(id)`. That method only deletes from Keycloak's own DB (local or federated-storage tables), so it cannot remove the credential held by the user storage provider.\\n\\nThe call is a silent no-op, or it fails if the provider-built model has a null id. For example, `createFromValues` does not set an id, and `em.find(..., null)` throws `IllegalArgumentException`.\\n\\nThe exhausted credential then stays in the user storage, and `isConfiguredFor` keeps returning true. If the user does not finish the CONFIGURE_RECOVERY_AUTHN_CODES required action, the next login shows the recovery-code form again. `RecoveryAuthnCodeInputLoginBean` then calls `getNextRecoveryAuthnCode().get()` on an empty Optional and the page errors out.\\n\\nFix: use `disableCredentialType` or similar for federated credentials, and guard against a null id.\", \"title\": \"Exhausted federated recovery codes are never removed\"}, {\"file\": \"services/src/main/java/org/keycloak/forms/login/freemarker/model/RecoveryAuthnCodeInputLoginBean.java\", \"line\": 19, \"severity\": \"medium\", \"category\": \"bug\", \"body\": \"Previously, `configuredFor` returning true implied a locally stored credential existed. Now `configuredFor` and `isValid` can be satisfied by a user storage provider through `supportsCredentialType`, `updateCredential`, `isValid` and `isConfiguredFor`.\\n\\nThe credential is read back only via `CredentialInputUpdater.getCredentials`. That is a default method returning an empty stream, and the classic credential SPI does not require providers to override it. For such a provider, `RecoveryAuthnCodesUtils.getCredential(user)` returns an empty Optional.\\n\\n`credentialModelOpt.get()` then throws `NoSuchElementException` while rendering the recovery-code login page, so the user cannot log in with recovery codes. Separately, the authenticator sees `recoveryCodeCredentialModel == null` and adds CONFIGURE_RECOVERY_AUTHN_CODES after every successful recovery-code login.\\n\\nFix: handle the empty case explicitly, or document and enforce the requirement to implement `getCredentials`.\", \"title\": \"Unchecked Optional.get() crashes the login form when the federated provider does not expose credentials\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java\", \"line\": 123, \"severity\": \"low\", \"category\": \"api\", \"body\": \"The read and write sides of the new user-storage contract use different formats, and neither is documented.\\n\\nWrite side: the user storage receives a `UserCredentialModel` whose challenge response is a JSON array of plaintext codes. The user label and generatedAt timestamp are dropped.\\n\\nRead side: `RecoveryAuthnCodesUtils.getCredential` feeds whatever `getCredentials` returns into `RecoveryAuthnCodesCredentialModel.createFromCredentialModel`. That method requires Keycloak's internal credentialData/secretData layout with hashed codes and used flags, and throws a `RuntimeException` on parse failure.\\n\\nA provider that returns the credential it was given, as the test provider does for OTP, breaks the authenticator and login form. The test provider only works because it manually rebuilds the internal model via `createFromValues`. This contract should be documented, or the read side should tolerate the format that was written.\", \"title\": \"Undocumented, asymmetric storage format for federated recovery codes\"}, {\"file\": \"testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java\", \"line\": 340, \"severity\": \"low\", \"category\": \"test_gap\", \"body\": \"The test provider's `isValid` accepts any code in the stored list, whichever code number the form asked for. It also never marks codes as used, and `getCredentials` rebuilds a fresh model every time, so the next code is always #0.\\n\\nAs a result, `testRecoveryKeysSetupAndLogin` only checks one happy-path login. It would still pass if the wrong code were accepted or codes could be reused.\\n\\nThe new federated-specific paths in `RecoveryAuthnCodesFormAuthenticator` have no coverage:\\n- the all-codes-used removal\\n- required-action re-adding\\n- fallback when the provider exposes no credential\\n- regenerating when local codes already exist\", \"title\": \"Test storage never consumes codes, leaving federated single-use and exhaustion paths untested\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java",
+   "line": 126,
+   "severity": "medium",
+   "category": "security",
+   "title": "Old local recovery codes stay valid after regenerating into user storage",
+   "body": "Before this change, regenerating recovery codes went through `RecoveryAuthnCodesCredentialProvider.createCredential`, which deletes any existing recovery-codes credential before storing the new one. Regeneration therefore revoked the old codes.\n\nNow, when `user.credentialManager().updateCredential(...)` returns true because the user storage accepted the codes, the local path is skipped. Any recovery-codes credential already stored locally for that user is left in place. This happens for users who set up codes before their provider supported the type, or while it was disabled.\n\n`UserCredentialManager.isValid` falls back to local `CredentialInputValidator` providers when the user storage rejects an input. So the stale local codes are still accepted at login. A user who regenerates codes because the old ones leaked would still be able to log in with the leaked codes.\n\nFix: remove any locally stored `RecoveryAuthnCodesCredentialModel.TYPE` credentials when the user storage takes ownership."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java",
+   "line": 86,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Exhausted federated recovery codes are never removed",
+   "body": "`RecoveryAuthnCodesUtils.getCredential` can now return a credential that lives in the user storage provider. When that credential reports `allCodesUsed()`, the code calls `removeStoredCredentialById(id)`. That method only deletes from Keycloak's own DB (local or federated-storage tables), so it cannot remove the credential held by the user storage provider.\n\nThe call is a silent no-op, or it fails if the provider-built model has a null id. For example, `createFromValues` does not set an id, and `em.find(..., null)` throws `IllegalArgumentException`.\n\nThe exhausted credential then stays in the user storage, and `isConfiguredFor` keeps returning true. If the user does not finish the CONFIGURE_RECOVERY_AUTHN_CODES required action, the next login shows the recovery-code form again. `RecoveryAuthnCodeInputLoginBean` then calls `getNextRecoveryAuthnCode().get()` on an empty Optional and the page errors out.\n\nFix: use `disableCredentialType` or similar for federated credentials, and guard against a null id."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/forms/login/freemarker/model/RecoveryAuthnCodeInputLoginBean.java",
+   "line": 19,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unchecked Optional.get() crashes the login form when the federated provider does not expose credentials",
+   "body": "Previously, `configuredFor` returning true implied a locally stored credential existed. Now `configuredFor` and `isValid` can be satisfied by a user storage provider through `supportsCredentialType`, `updateCredential`, `isValid` and `isConfiguredFor`.\n\nThe credential is read back only via `CredentialInputUpdater.getCredentials`. That is a default method returning an empty stream, and the classic credential SPI does not require providers to override it. For such a provider, `RecoveryAuthnCodesUtils.getCredential(user)` returns an empty Optional.\n\n`credentialModelOpt.get()` then throws `NoSuchElementException` while rendering the recovery-code login page, so the user cannot log in with recovery codes. Separately, the authenticator sees `recoveryCodeCredentialModel == null` and adds CONFIGURE_RECOVERY_AUTHN_CODES after every successful recovery-code login.\n\nFix: handle the empty case explicitly, or document and enforce the requirement to implement `getCredentials`."
+  },
+  {
+   "index": 3,
+   "file": "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java",
+   "line": 123,
+   "severity": "low",
+   "category": "api",
+   "title": "Undocumented, asymmetric storage format for federated recovery codes",
+   "body": "The read and write sides of the new user-storage contract use different formats, and neither is documented.\n\nWrite side: the user storage receives a `UserCredentialModel` whose challenge response is a JSON array of plaintext codes. The user label and generatedAt timestamp are dropped.\n\nRead side: `RecoveryAuthnCodesUtils.getCredential` feeds whatever `getCredentials` returns into `RecoveryAuthnCodesCredentialModel.createFromCredentialModel`. That method requires Keycloak's internal credentialData/secretData layout with hashed codes and used flags, and throws a `RuntimeException` on parse failure.\n\nA provider that returns the credential it was given, as the test provider does for OTP, breaks the authenticator and login form. The test provider only works because it manually rebuilds the internal model via `createFromValues`. This contract should be documented, or the read side should tolerate the format that was written."
+  },
+  {
+   "index": 4,
+   "file": "testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java",
+   "line": 340,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test storage never consumes codes, leaving federated single-use and exhaustion paths untested",
+   "body": "The test provider's `isValid` accepts any code in the stored list, whichever code number the form asked for. It also never marks codes as used, and `getCredentials` rebuilds a fresh model every time, so the next code is always #0.\n\nAs a result, `testRecoveryKeysSetupAndLogin` only checks one happy-path login. It would still pass if the wrong code were accepted or codes could be reused.\n\nThe new federated-specific paths in `RecoveryAuthnCodesFormAuthenticator` have no coverage:\n- the all-codes-used removal\n- required-action re-adding\n- fallback when the provider exposes no credential\n- regenerating when local codes already exist"
+  }
+ ],
+ "finding_count": 5
+}

@@ -1,0 +1,133 @@
+{
+ "run_id": "muse-wonder__default__grafana__97529__r3",
+ "model_id": "muse-wonder",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-wonder",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:46:19Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33431,
+    "output": 3574,
+    "reasoning": 2564,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.205204,
+   "latency_ms": 46643,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-wonder",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 4297,
+   "raw_usage": {
+    "completion_tokens": 3574,
+    "prompt_tokens": 33431,
+    "total_tokens": 37005,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 2564,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.205204,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.205204,
+     "upstream_inference_prompt_cost": 0.133724,
+     "upstream_inference_completions_cost": 0.07148
+    }
+   },
+   "started_at": "2026-10-18T21:46:19Z",
+   "first_chunk_ms": 5311,
+   "first_text_ms": 37996,
+   "response_id": "gen-1792359979-ZHmHfmsjxpDXus10drLU",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33431,
+  "output": 3574,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2564
+ },
+ "cost_reported": 0.205204,
+ "latency_ms": 46643,
+ "served_model": "meta/muse-wonder",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Concurrent BuildIndex calls for the same key now race and can corrupt or leak indexes\", \"body\": \"BuildIndex no longer holds cacheMu while building, and it unconditionally inserts b.cache[key]=idx at the end without checking whether another goroutine already built the same NamespacedResource. searchSupport.getOrCreateIndex does GetIndex (nil while a build is in flight) then BuildIndex, and searchSupport.init builds many keys in parallel, so two callers for the same key can now run bleve.New/NewMemOnly concurrently: for file-backed indexes both use the same directory path (bleve.New fails or contends on an existing/open index), for memory indexes one index is silently overwritten and the other leaked (with duplicate IndexTenants increments), and writes/searches can be split across the two instances. Previously the whole-build lock serialized this. A per-key build lock/singleflight or an existing-entry check under cacheMu before returning is needed.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the index cache without holding cacheMu while builds now insert concurrently\", \"body\": \"TotalDocs ranges over b.cache without acquiring cacheMu.RLock. With the finer-grained locking in this PR, BuildIndex now inserts into b.cache (line 138) concurrently with any TotalDocs call outside the init path, which is a Go data race and can panic with 'concurrent map iteration and map write'. TotalDocs should take cacheMu.RLock (and note DocCount on an index being flushed concurrently may also need care).\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 189, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"init errgroup goroutines race on totalBatchesIndexed and the shared err variable\", \"body\": \"Inside group.Go, totalBatchesIndexed++ (line 189) and `_, _, err = s.build(...)` (line 190) mutate variables captured from the enclosing scope without synchronization. Multiple workers run concurrently (and this PR makes their index builds actually parallel), so increments are lost and, more importantly, one goroutine's failure can be overwritten by another's nil error (or vice versa) before `return err` is read, causing init to report success despite a failed namespace build or a spurious failure. Use a local err per goroutine returned to errgroup and an atomic/mutex-protected counter.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"NewResourceServer now blocks on full index building and discards the server on init failure without cleanup\", \"body\": \"NewResourceServer unconditionally calls s.Init(ctx) with the internal background context (no timeout), so constructing a ResourceServer now synchronously builds every search index (GetResourceStats plus a full ListIterator scan per namespace) before any caller can serve or health-check it; construction that was previously cheap/lazy and only failed on first use now fails or hangs process startup, including for embedders that create the server but never serve unified-storage traffic. On init error it returns nil without calling s.cancel() or lifecycle Stop, even though search.init may already have started its background WatchWriteEvents goroutine (search.go uses context.Background()), leaking that goroutine and its backend poller.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 916, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Handlers no longer consult initErr, so requests are served after Stop marks the server stopped\", \"body\": \"Every handler previously called s.Init(ctx), which (via sync.Once) returned s.initErr on subsequent calls; Stop() overwrites s.initErr with 'service is stopping/stopped', so post-Stop requests were rejected. With all per-handler Init calls removed, Create/Read/List/Search/etc. proceed against the backend after Stop has cancelled s.ctx and stopped the lifecycle, producing confusing backend errors or partially working requests instead of a clear stopped error. Either keep an explicit stopped/initErr check in handlers or gate serving elsewhere.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Concurrent BuildIndex calls for the same key now race and can corrupt or leak indexes",
+   "body": "BuildIndex no longer holds cacheMu while building, and it unconditionally inserts b.cache[key]=idx at the end without checking whether another goroutine already built the same NamespacedResource. searchSupport.getOrCreateIndex does GetIndex (nil while a build is in flight) then BuildIndex, and searchSupport.init builds many keys in parallel, so two callers for the same key can now run bleve.New/NewMemOnly concurrently: for file-backed indexes both use the same directory path (bleve.New fails or contends on an existing/open index), for memory indexes one index is silently overwritten and the other leaked (with duplicate IndexTenants increments), and writes/searches can be split across the two instances. Previously the whole-build lock serialized this. A per-key build lock/singleflight or an existing-entry check under cacheMu before returning is needed."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the index cache without holding cacheMu while builds now insert concurrently",
+   "body": "TotalDocs ranges over b.cache without acquiring cacheMu.RLock. With the finer-grained locking in this PR, BuildIndex now inserts into b.cache (line 138) concurrently with any TotalDocs call outside the init path, which is a Go data race and can panic with 'concurrent map iteration and map write'. TotalDocs should take cacheMu.RLock (and note DocCount on an index being flushed concurrently may also need care)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "init errgroup goroutines race on totalBatchesIndexed and the shared err variable",
+   "body": "Inside group.Go, totalBatchesIndexed++ (line 189) and `_, _, err = s.build(...)` (line 190) mutate variables captured from the enclosing scope without synchronization. Multiple workers run concurrently (and this PR makes their index builds actually parallel), so increments are lost and, more importantly, one goroutine's failure can be overwritten by another's nil error (or vice versa) before `return err` is read, causing init to report success despite a failed namespace build or a spurious failure. Use a local err per goroutine returned to errgroup and an atomic/mutex-protected counter."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "api",
+   "title": "NewResourceServer now blocks on full index building and discards the server on init failure without cleanup",
+   "body": "NewResourceServer unconditionally calls s.Init(ctx) with the internal background context (no timeout), so constructing a ResourceServer now synchronously builds every search index (GetResourceStats plus a full ListIterator scan per namespace) before any caller can serve or health-check it; construction that was previously cheap/lazy and only failed on first use now fails or hangs process startup, including for embedders that create the server but never serve unified-storage traffic. On init error it returns nil without calling s.cancel() or lifecycle Stop, even though search.init may already have started its background WatchWriteEvents goroutine (search.go uses context.Background()), leaking that goroutine and its backend poller."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 916,
+   "severity": "low",
+   "category": "bug",
+   "title": "Handlers no longer consult initErr, so requests are served after Stop marks the server stopped",
+   "body": "Every handler previously called s.Init(ctx), which (via sync.Once) returned s.initErr on subsequent calls; Stop() overwrites s.initErr with 'service is stopping/stopped', so post-Stop requests were rejected. With all per-handler Init calls removed, Create/Read/List/Search/etc. proceed against the backend after Stop has cancelled s.ctx and stopped the lifecycle, producing confusing backend errors or partially working requests instead of a clear stopped error. Either keep an explicit stopped/initErr check in handlers or gate serving elsewhere."
+  }
+ ],
+ "finding_count": 5
+}

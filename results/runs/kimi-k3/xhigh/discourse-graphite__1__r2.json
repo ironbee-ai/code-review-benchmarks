@@ -1,0 +1,137 @@
+{
+ "run_id": "kimi-k3__xhigh__discourse-graphite__1__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1",
+ "repeat": 2,
+ "started_at": "2026-10-17T23:04:39Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 28941,
+  "sha": "e6ad5d59c5fd0fac",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 7921,
+    "output": 4174,
+    "reasoning": 2941,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 148635,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5228,
+   "raw_usage": {
+    "completion_tokens": 4174,
+    "prompt_tokens": 7921,
+    "total_tokens": 12095,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2941,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T23:04:39Z",
+   "first_chunk_ms": 14457,
+   "first_text_ms": 113253,
+   "response_id": "chatcmpl-7wur2b6yrt2fcstyou3wmjlklumxbjthwjosidkyi5eop3ddeiwq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 7921,
+  "output": 4174,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2941
+ },
+ "cost_reported": null,
+ "latency_ms": 148635,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/optimized_image.rb\", \"line\": 149, \"severity\": \"high\", \"category\": \"api\", \"title\": \"Duplicate `self.downsize` definition makes the 4-argument version dead code and breaks its callers\", \"body\": \"The file now defines `OptimizedImage.downsize` twice: once at line 145 with the signature `(from, to, max_width, max_height, opts={})` and again at line 149 with `(from, to, dimensions, opts={})`. Ruby has no method overloading \u2014 the second definition silently replaces the first, so the 4-argument version is unreachable. Worse, any existing or future caller using the old 4-argument form (`downsize(from, to, width, height)`) will now have `height` bound to `opts`, and `!!opts[:allow_animation]` in `optimize` will raise a TypeError (no implicit conversion of Symbol into Integer) at runtime instead of resizing. The leftover dead definition also misleads readers about the real contract. One of the two definitions should be removed and all callers migrated to a single signature.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 67, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Downsizing large animated GIFs silently destroys their animation\", \"body\": \"The new downsize path calls `OptimizedImage.downsize(tempfile.path, tempfile.path, \\\"80%\\\", allow_animation: SiteSetting.allow_animated_thumbnails)`. Inside `OptimizedImage.optimize`, the animated branch is chosen only when `from =~ /\\\\.GIF$/i`, but `from` here is the upload tempfile path (e.g. `/tmp/RackMultipart...`), which has no file extension, so the regex never matches. The code therefore falls through to `downsize_instructions`, which runs `convert #{from}[0] ...` \u2014 the `[0]` selector flattens the image to its first frame. A user uploading a large animated GIF will have the animation permanently discarded with no warning, even though `allow_animation` was explicitly passed. The animated-detection should be based on the original filename/content type, not the tempfile path.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 66, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Downsize retry loop ignores conversion failures\", \"body\": \"The loop `while attempt > 0 && tempfile.size > SiteSetting.max_image_size_kb.kilobytes` never checks the boolean return value of `OptimizedImage.downsize`. If the conversion fails (corrupt image, unsupported format such as SVG written to an extensionless tempfile path so ImageMagick cannot determine the output format, missing binary), each iteration simply re-runs the same failing `convert` plus `ImageOptim` up to 5 times, wasting CPU in the deferred job and logging nothing about the upload-level failure. The loop should break (and ideally log) when `downsize` returns false.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 55, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"API download limit hardcoded to 10 MB ignores site settings and applies to all types\", \"body\": \"The URL-based upload path for API clients changed from `FileHelper.download(url, SiteSetting.max_image_size_kb.kilobytes, ...)` to a hardcoded `FileHelper.download(url, 10.megabytes, ...)`. This branch handles any upload `type`, not just images, so an admin who raised `max_attachment_size_kb` above 10 MB still cannot pull larger files via the API URL flow (the download is silently truncated/rejected at 10 MB and `rescue nil` swallows it, yielding a confusing nil-tempfile failure), while an admin who lowered limits gets no benefit from the cap at this layer. If the intent was only to accommodate images that will later be downsized, the limit should still derive from a setting (or at least only relax for image types).\"}, {\"file\": \"app/assets/javascripts/discourse/lib/utilities.js\", \"line\": 182, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Client-side upload size validation hardcoded to 10 MB, ignoring configured per-type limits\", \"body\": \"`validateUploadedFile` previously enforced `Discourse.SiteSettings['max_' + type + '_size_kb']`, so the composer blocked oversized files before upload using the admin-configured image/attachment limits. It now uses a hardcoded `10 * 1024`. On sites with lower configured limits, users pass client validation and only fail later with a server error; on sites with higher limits (e.g. large attachments allowed), users are incorrectly blocked at 10 MB. The error message also now interpolates the raw value 10240 as `max_size_kb`. The client should keep reading the site setting; the server-side downsizing added in this PR handles the oversized-image case.\"}, {\"file\": \"app/assets/javascripts/discourse/lib/utilities.js\", \"line\": 246, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"413 error message reports a hardcoded 10 MB limit instead of the actual configured limit\", \"body\": \"In `displayErrorForUpload`, the 413 handler now shows `I18n.t('post.errors.file_too_large', { max_size_kb: 10 * 1024 })` instead of `Discourse.SiteSettings.max_image_size_kb`. Users will be told the limit is 10240 KB even when the site setting (and the web server limit that actually produced the 413) is different, and the raw kilobyte number is shown unformatted. The message should use the real configured limit.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/optimized_image.rb",
+   "line": 149,
+   "severity": "high",
+   "category": "api",
+   "title": "Duplicate `self.downsize` definition makes the 4-argument version dead code and breaks its callers",
+   "body": "The file now defines `OptimizedImage.downsize` twice: once at line 145 with the signature `(from, to, max_width, max_height, opts={})` and again at line 149 with `(from, to, dimensions, opts={})`. Ruby has no method overloading \u2014 the second definition silently replaces the first, so the 4-argument version is unreachable. Worse, any existing or future caller using the old 4-argument form (`downsize(from, to, width, height)`) will now have `height` bound to `opts`, and `!!opts[:allow_animation]` in `optimize` will raise a TypeError (no implicit conversion of Symbol into Integer) at runtime instead of resizing. The leftover dead definition also misleads readers about the real contract. One of the two definitions should be removed and all callers migrated to a single signature."
+  },
+  {
+   "index": 1,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 67,
+   "severity": "medium",
+   "category": "data",
+   "title": "Downsizing large animated GIFs silently destroys their animation",
+   "body": "The new downsize path calls `OptimizedImage.downsize(tempfile.path, tempfile.path, \"80%\", allow_animation: SiteSetting.allow_animated_thumbnails)`. Inside `OptimizedImage.optimize`, the animated branch is chosen only when `from =~ /\\.GIF$/i`, but `from` here is the upload tempfile path (e.g. `/tmp/RackMultipart...`), which has no file extension, so the regex never matches. The code therefore falls through to `downsize_instructions`, which runs `convert #{from}[0] ...` \u2014 the `[0]` selector flattens the image to its first frame. A user uploading a large animated GIF will have the animation permanently discarded with no warning, even though `allow_animation` was explicitly passed. The animated-detection should be based on the original filename/content type, not the tempfile path."
+  },
+  {
+   "index": 2,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 66,
+   "severity": "low",
+   "category": "bug",
+   "title": "Downsize retry loop ignores conversion failures",
+   "body": "The loop `while attempt > 0 && tempfile.size > SiteSetting.max_image_size_kb.kilobytes` never checks the boolean return value of `OptimizedImage.downsize`. If the conversion fails (corrupt image, unsupported format such as SVG written to an extensionless tempfile path so ImageMagick cannot determine the output format, missing binary), each iteration simply re-runs the same failing `convert` plus `ImageOptim` up to 5 times, wasting CPU in the deferred job and logging nothing about the upload-level failure. The loop should break (and ideally log) when `downsize` returns false."
+  },
+  {
+   "index": 3,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 55,
+   "severity": "medium",
+   "category": "bug",
+   "title": "API download limit hardcoded to 10 MB ignores site settings and applies to all types",
+   "body": "The URL-based upload path for API clients changed from `FileHelper.download(url, SiteSetting.max_image_size_kb.kilobytes, ...)` to a hardcoded `FileHelper.download(url, 10.megabytes, ...)`. This branch handles any upload `type`, not just images, so an admin who raised `max_attachment_size_kb` above 10 MB still cannot pull larger files via the API URL flow (the download is silently truncated/rejected at 10 MB and `rescue nil` swallows it, yielding a confusing nil-tempfile failure), while an admin who lowered limits gets no benefit from the cap at this layer. If the intent was only to accommodate images that will later be downsized, the limit should still derive from a setting (or at least only relax for image types)."
+  },
+  {
+   "index": 4,
+   "file": "app/assets/javascripts/discourse/lib/utilities.js",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Client-side upload size validation hardcoded to 10 MB, ignoring configured per-type limits",
+   "body": "`validateUploadedFile` previously enforced `Discourse.SiteSettings['max_' + type + '_size_kb']`, so the composer blocked oversized files before upload using the admin-configured image/attachment limits. It now uses a hardcoded `10 * 1024`. On sites with lower configured limits, users pass client validation and only fail later with a server error; on sites with higher limits (e.g. large attachments allowed), users are incorrectly blocked at 10 MB. The error message also now interpolates the raw value 10240 as `max_size_kb`. The client should keep reading the site setting; the server-side downsizing added in this PR handles the oversized-image case."
+  },
+  {
+   "index": 5,
+   "file": "app/assets/javascripts/discourse/lib/utilities.js",
+   "line": 246,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "413 error message reports a hardcoded 10 MB limit instead of the actual configured limit",
+   "body": "In `displayErrorForUpload`, the 413 handler now shows `I18n.t('post.errors.file_too_large', { max_size_kb: 10 * 1024 })` instead of `Discourse.SiteSettings.max_image_size_kb`. Users will be told the limit is 10240 KB even when the site setting (and the web server limit that actually produced the 413) is different, and the raw kilobyte number is shown unformatted. The message should use the real configured limit."
+  }
+ ],
+ "finding_count": 6
+}

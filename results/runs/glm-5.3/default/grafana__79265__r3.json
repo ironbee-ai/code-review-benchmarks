@@ -1,0 +1,162 @@
+{
+ "run_id": "glm-5.3__default__grafana__79265__r3",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:00:10Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30093,
+    "output": 5988,
+    "reasoning": 4628,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0684774,
+   "latency_ms": 89486,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 6209,
+   "raw_usage": {
+    "completion_tokens": 5988,
+    "prompt_tokens": 30093,
+    "total_tokens": 36081,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 4628,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0684774,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0684774,
+     "upstream_inference_prompt_cost": 0.0421302,
+     "upstream_inference_completions_cost": 0.0263472
+    }
+   },
+   "started_at": "2026-10-18T12:00:10Z",
+   "first_chunk_ms": 2845,
+   "first_text_ms": 73222,
+   "response_id": "gen-1792324810-gUC5kLrwmhvTjLaKwjcG",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30093,
+  "output": 5988,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4628
+ },
+ "cost_reported": 0.0684774,
+ "latency_ms": 89486,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Local cache is populated before the DB write, breaking device-limit enforcement\", \"body\": \"In tagDeviceUI, `a.localCache.SetDefault(key, struct{}{})` is executed before `a.anonStore.CreateOrUpdateDevice` is called. When the device limit is reached, a brand-new device gets ErrDeviceLimitReached from the store (its row doesn't exist, so updateDevice affects 0 rows), and client.Authenticate rejects that one request. However, the cache entry has already been set, so every subsequent request from that same device within the 29-minute cache TTL hits the cache, tagDeviceUI returns nil immediately, and the user is authenticated normally. The result is that an over-limit device is blocked only ~1 request per 29 minutes and then granted access, making the configurable limit ineffective and producing flapping auth failures for users. The cache entry must only be set after a successful CreateOrUpdateDevice (or the 'blocked' state must also be cached so the rejection is consistent).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Anonymous authentication is now blocked on a synchronous DB write using the request context\", \"body\": \"The previous code ran TagDevice asynchronously in a goroutine with a detached context and a 2-minute timeout, deliberately keeping the DB write off the request path. This change calls `a.anonDeviceService.TagDevice(ctx, ...)` synchronously in Authenticate. On every local-cache miss (once per device per ~29 minutes per instance), anonymous requests now pay a COUNT(*) query plus an INSERT/UPDATE against anon_device before the identity is returned, adding DB latency and DB availability coupling to the anonymous login path. Additionally, the request context is now used, so if the client disconnects mid-request the tagging write is cancelled \u2014 the old detached context existed precisely to avoid this. If synchronous enforcement is required, consider a short timeout or a background write with a blocking decision made only from already-cached state.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 115, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Device limit check is a non-atomic count-then-insert, so the limit can be exceeded\", \"body\": \"CreateOrUpdateDevice first runs CountDevices and only falls back to updateDevice when `count >= s.deviceLimit`. This is a time-of-check-to-time-of-use race: two concurrent requests from different new devices can both observe count < limit and both perform the upsert insert path, inserting two devices even when the limit allows one. The same applies across multiple Grafana instances sharing a database. There is no unique constraint-based or transactional guard enforcing the cap, so the configured limit is only advisory under concurrency.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 46, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"ErrDeviceLimitReached fails authentication but its effect on the HTTP response is undefined and untested\", \"body\": \"When TagDevice returns ErrDeviceLimitReached, Authenticate returns the raw error `fmt.Errorf(\\\"device limit reached\\\")`. How this surfaces to the client depends on the authn broker's generic error handling for the anonymous client (likely a 401 with the bare internal error string). There is no mapping to a dedicated status code or user-facing message, no error wrapping with context, and no logging at this site. Combined with the local-cache issue, users hitting the limit will see intermittent, unexplained 401s. The intended HTTP behavior (status code and message for a device over the anonymous device limit) should be defined and covered by a test.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for the service/authn layer behavior when the device limit is reached\", \"body\": \"The only new test (TestIntegrationBeyondDeviceLimit) exercises the store directly. Missing coverage: (1) that an existing, within-30-days device can still be updated and thus authenticate when the limit is reached (the updateDevice success path at the limit is untested), (2) that Anonymous.Authenticate rejects/accepts appropriately when the limit is hit (which would have caught the local-cache hole where a rejected device succeeds on its next request), and (3) that deviceLimit=0 keeps the previous unlimited behavior. The tests in impl_test.go all construct the service with the default cfg (limit 0), so none of the new limit logic is exercised end-to-end.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 43, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Service now hard-codes construction of the concrete AnonDBStore, removing AnonStore injection\", \"body\": \"ProvideAnonymousDeviceService changed from accepting an `anonstore.AnonStore` to accepting `db.DB` and constructing `anonstore.ProvideAnonDBStore(sqlStore, cfg.AnonymousDeviceLimit)` internally. Although the service field and the API layer still use the AnonStore interface, no implementation can be injected anymore (e.g., a fake or an alternative store), which is why the tests had to be rewritten to reach into `anonService.anonStore`. Passing the configured store (or the limit) in via the existing provider would preserve the seam the interface was created for.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New auth.anonymous device_limit setting is undocumented\", \"body\": \"The PR adds a new configuration key `device_limit` under `[auth.anonymous]` (default 0) but includes no documentation update for configure-grafana/configure-security/configure-authentication, and the PR description itself is an unfilled template (no problem statement, no linked issue). Operators have no way to discover the option, its semantics (0 = unlimited, counts unique devices seen in the last 30 days), or the consequence of hitting the limit (new anonymous devices are rejected).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Local cache is populated before the DB write, breaking device-limit enforcement",
+   "body": "In tagDeviceUI, `a.localCache.SetDefault(key, struct{}{})` is executed before `a.anonStore.CreateOrUpdateDevice` is called. When the device limit is reached, a brand-new device gets ErrDeviceLimitReached from the store (its row doesn't exist, so updateDevice affects 0 rows), and client.Authenticate rejects that one request. However, the cache entry has already been set, so every subsequent request from that same device within the 29-minute cache TTL hits the cache, tagDeviceUI returns nil immediately, and the user is authenticated normally. The result is that an over-limit device is blocked only ~1 request per 29 minutes and then granted access, making the configurable limit ineffective and producing flapping auth failures for users. The cache entry must only be set after a successful CreateOrUpdateDevice (or the 'blocked' state must also be cached so the rejection is consistent)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Anonymous authentication is now blocked on a synchronous DB write using the request context",
+   "body": "The previous code ran TagDevice asynchronously in a goroutine with a detached context and a 2-minute timeout, deliberately keeping the DB write off the request path. This change calls `a.anonDeviceService.TagDevice(ctx, ...)` synchronously in Authenticate. On every local-cache miss (once per device per ~29 minutes per instance), anonymous requests now pay a COUNT(*) query plus an INSERT/UPDATE against anon_device before the identity is returned, adding DB latency and DB availability coupling to the anonymous login path. Additionally, the request context is now used, so if the client disconnects mid-request the tagging write is cancelled \u2014 the old detached context existed precisely to avoid this. If synchronous enforcement is required, consider a short timeout or a background write with a blocking decision made only from already-cached state."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 115,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Device limit check is a non-atomic count-then-insert, so the limit can be exceeded",
+   "body": "CreateOrUpdateDevice first runs CountDevices and only falls back to updateDevice when `count >= s.deviceLimit`. This is a time-of-check-to-time-of-use race: two concurrent requests from different new devices can both observe count < limit and both perform the upsert insert path, inserting two devices even when the limit allows one. The same applies across multiple Grafana instances sharing a database. There is no unique constraint-based or transactional guard enforcing the cap, so the configured limit is only advisory under concurrency."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 46,
+   "severity": "medium",
+   "category": "bug",
+   "title": "ErrDeviceLimitReached fails authentication but its effect on the HTTP response is undefined and untested",
+   "body": "When TagDevice returns ErrDeviceLimitReached, Authenticate returns the raw error `fmt.Errorf(\"device limit reached\")`. How this surfaces to the client depends on the authn broker's generic error handling for the anonymous client (likely a 401 with the bare internal error string). There is no mapping to a dedicated status code or user-facing message, no error wrapping with context, and no logging at this site. Combined with the local-cache issue, users hitting the limit will see intermittent, unexplained 401s. The intended HTTP behavior (status code and message for a device over the anonymous device limit) should be defined and covered by a test."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for the service/authn layer behavior when the device limit is reached",
+   "body": "The only new test (TestIntegrationBeyondDeviceLimit) exercises the store directly. Missing coverage: (1) that an existing, within-30-days device can still be updated and thus authenticate when the limit is reached (the updateDevice success path at the limit is untested), (2) that Anonymous.Authenticate rejects/accepts appropriately when the limit is hit (which would have caught the local-cache hole where a rejected device succeeds on its next request), and (3) that deviceLimit=0 keeps the previous unlimited behavior. The tests in impl_test.go all construct the service with the default cfg (limit 0), so none of the new limit logic is exercised end-to-end."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 43,
+   "severity": "low",
+   "category": "api",
+   "title": "Service now hard-codes construction of the concrete AnonDBStore, removing AnonStore injection",
+   "body": "ProvideAnonymousDeviceService changed from accepting an `anonstore.AnonStore` to accepting `db.DB` and constructing `anonstore.ProvideAnonDBStore(sqlStore, cfg.AnonymousDeviceLimit)` internally. Although the service field and the API layer still use the AnonStore interface, no implementation can be injected anymore (e.g., a fake or an alternative store), which is why the tests had to be rewritten to reach into `anonService.anonStore`. Passing the configured store (or the limit) in via the existing provider would preserve the seam the interface was created for."
+  },
+  {
+   "index": 6,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New auth.anonymous device_limit setting is undocumented",
+   "body": "The PR adds a new configuration key `device_limit` under `[auth.anonymous]` (default 0) but includes no documentation update for configure-grafana/configure-security/configure-authentication, and the PR description itself is an unfilled template (no problem statement, no linked issue). Operators have no way to discover the option, its semantics (0 = unlimited, counts unique devices seen in the last 30 days), or the consequence of hitting the limit (new anonymous devices are rejected)."
+  }
+ ],
+ "finding_count": 7
+}

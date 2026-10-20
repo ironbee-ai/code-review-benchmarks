@@ -1,0 +1,123 @@
+{
+ "run_id": "glm-5.3__default__sentry__93824__r1",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 1,
+ "started_at": "2026-10-16T13:40:41Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25950,
+    "output": 11772,
+    "reasoning": 10514,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0881268,
+   "latency_ms": 312880,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5204
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25950,
+  "output": 11772,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 10514
+ },
+ "cost_reported": 0.0881268,
+ "latency_ms": 312880,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 62, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"time.sleep(0.1) in test_basic is a no-op due to the time.sleep monkeypatch, leaving the test racy\", \"body\": \"test_basic monkeypatches `time.sleep` to a no-op at the top of the test (line 15), so the newly added `time.sleep(0.1)` at line 62 \u2014 added specifically to 'Give flusher threads time to process after drift change' \u2014 does nothing. The test therefore still races: `step.join()` immediately sets the shared `stopped` flag, and if the flusher thread observes `stopped` before it has read the new `current_drift` (set at line 58) and flushed the segment, it exits its loop without producing, and `(msg,) = messages` at line 66 raises. The test only passes because the patched-out sleep makes the flusher thread busy-spin; any change that removes the monkeypatch or slows the thread will make this flaky. Replace the no-op sleep with a real wait (e.g. an unpatched wait primitive or polling for `messages` with a timeout).\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 300, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Per-process SpansBuffer memory info double-counts Redis clusters, skewing the hard-backpressure ratio\", \"body\": \"In `submit()` (lines 297-304) the code now aggregates `get_memory_info()` across one SpansBuffer per flusher process. Each shard-group buffer returns memory stats for every Redis cluster its shards live on, so a cluster that hosts shards in several process groups is counted once per group. The `used / available` ratio is then weighted by how the shards happen to be distributed across processes rather than by actual cluster memory: a nearly-full cluster whose shards fall into only one process group can be diluted below `spans.buffer.max-memory-percentage` by other, emptier clusters, delaying the 'Pausing consumer due to Redis being full' backpressure until Redis actually evicts data. The per-cluster ServiceMemory results should be deduplicated (e.g. keyed by cluster/service) before summing.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 255, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Restarted flusher processes are killed but never joined, accumulating zombies\", \"body\": \"In `_ensure_processes_alive()` the unhealthy process is `kill()`ed and a replacement is immediately spawned via `_create_process_for_shards()`, but the killed process is never `join()`ed or waited on. A SIGKILLed child becomes a zombie until the parent reaps it; since `process_restarts` is never reset, up to MAX_PROCESS_RESTARTS (10) killed processes per process slot can accumulate as zombies over the consumer's lifetime, each also holding an unreaped Kafka producer / Redis connection context. Call `process.join(timeout)` (or at least `process.join()` after kill) before spawning the replacement.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 32, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Docstring says 'one process per shard' but default configuration spawns a single process\", \"body\": \"The class docstring (line 32) states 'Creates one process per shard for parallel processing', but the new `max_processes` parameter and the CLI option `--flusher-processes` default to 1 (see src/sentry/consumers/__init__.py, default=1), in which case exactly one process handles all shards. The constructor default (`None` -> len(assigned_shards), i.e. per-shard) also disagrees with the CLI default of 1, so behavior differs depending on whether the factory is built via the click command or programmatically. Update the docstring and align the defaults so operators reading either the code or the `--help` text get the same story.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 127, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"_create_process_for_shard is dead code and would double-spawn if ever called\", \"body\": \"`_create_process_for_shard()` (lines 127-132) is never called anywhere \u2014 the restart path goes through `_ensure_processes_alive` -> `_create_process_for_shards` directly. Worse, if someone did call it, it would start a brand-new process for the shard's group without killing or removing the existing process for that group, leaving two processes simultaneously flushing the same shards (duplicate segment production to buffered-segments) and orphaning the old entry in `self.processes`. Remove the method or make it delegate to the kill-and-restart logic in `_ensure_processes_alive`.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Inconsistent metric tag key: 'shards' vs 'shard' on flusher timers\", \"body\": \"The `spans.buffer.flusher.wait_produce` timer uses tag key `\\\"shards\\\"` (line 199) while `spans.buffer.flusher.produce` (line 185) and `spans.buffer.segment_size_bytes` (line 195) use `\\\"shard\\\"`. Since both carry the same comma-joined shard-list value, anyone building dashboards/queries on the flusher metrics has to handle two different tag names for the same dimension. Use `\\\"shard\\\"` consistently.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "time.sleep(0.1) in test_basic is a no-op due to the time.sleep monkeypatch, leaving the test racy",
+   "body": "test_basic monkeypatches `time.sleep` to a no-op at the top of the test (line 15), so the newly added `time.sleep(0.1)` at line 62 \u2014 added specifically to 'Give flusher threads time to process after drift change' \u2014 does nothing. The test therefore still races: `step.join()` immediately sets the shared `stopped` flag, and if the flusher thread observes `stopped` before it has read the new `current_drift` (set at line 58) and flushed the segment, it exits its loop without producing, and `(msg,) = messages` at line 66 raises. The test only passes because the patched-out sleep makes the flusher thread busy-spin; any change that removes the monkeypatch or slows the thread will make this flaky. Replace the no-op sleep with a real wait (e.g. an unpatched wait primitive or polling for `messages` with a timeout)."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 300,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Per-process SpansBuffer memory info double-counts Redis clusters, skewing the hard-backpressure ratio",
+   "body": "In `submit()` (lines 297-304) the code now aggregates `get_memory_info()` across one SpansBuffer per flusher process. Each shard-group buffer returns memory stats for every Redis cluster its shards live on, so a cluster that hosts shards in several process groups is counted once per group. The `used / available` ratio is then weighted by how the shards happen to be distributed across processes rather than by actual cluster memory: a nearly-full cluster whose shards fall into only one process group can be diluted below `spans.buffer.max-memory-percentage` by other, emptier clusters, delaying the 'Pausing consumer due to Redis being full' backpressure until Redis actually evicts data. The per-cluster ServiceMemory results should be deduplicated (e.g. keyed by cluster/service) before summing."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 255,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Restarted flusher processes are killed but never joined, accumulating zombies",
+   "body": "In `_ensure_processes_alive()` the unhealthy process is `kill()`ed and a replacement is immediately spawned via `_create_process_for_shards()`, but the killed process is never `join()`ed or waited on. A SIGKILLed child becomes a zombie until the parent reaps it; since `process_restarts` is never reset, up to MAX_PROCESS_RESTARTS (10) killed processes per process slot can accumulate as zombies over the consumer's lifetime, each also holding an unreaped Kafka producer / Redis connection context. Call `process.join(timeout)` (or at least `process.join()` after kill) before spawning the replacement."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 32,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Docstring says 'one process per shard' but default configuration spawns a single process",
+   "body": "The class docstring (line 32) states 'Creates one process per shard for parallel processing', but the new `max_processes` parameter and the CLI option `--flusher-processes` default to 1 (see src/sentry/consumers/__init__.py, default=1), in which case exactly one process handles all shards. The constructor default (`None` -> len(assigned_shards), i.e. per-shard) also disagrees with the CLI default of 1, so behavior differs depending on whether the factory is built via the click command or programmatically. Update the docstring and align the defaults so operators reading either the code or the `--help` text get the same story."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "bug",
+   "title": "_create_process_for_shard is dead code and would double-spawn if ever called",
+   "body": "`_create_process_for_shard()` (lines 127-132) is never called anywhere \u2014 the restart path goes through `_ensure_processes_alive` -> `_create_process_for_shards` directly. Worse, if someone did call it, it would start a brand-new process for the shard's group without killing or removing the existing process for that group, leaving two processes simultaneously flushing the same shards (duplicate segment production to buffered-segments) and orphaning the old entry in `self.processes`. Remove the method or make it delegate to the kill-and-restart logic in `_ensure_processes_alive`."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 199,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Inconsistent metric tag key: 'shards' vs 'shard' on flusher timers",
+   "body": "The `spans.buffer.flusher.wait_produce` timer uses tag key `\"shards\"` (line 199) while `spans.buffer.flusher.produce` (line 185) and `spans.buffer.segment_size_bytes` (line 195) use `\"shard\"`. Since both carry the same comma-joined shard-list value, anyone building dashboards/queries on the flusher metrics has to handle two different tag names for the same dimension. Use `\"shard\"` consistently."
+  }
+ ],
+ "finding_count": 6,
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ }
+}

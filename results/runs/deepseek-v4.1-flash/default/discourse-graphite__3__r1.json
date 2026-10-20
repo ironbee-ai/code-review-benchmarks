@@ -1,0 +1,135 @@
+{
+ "run_id": "deepseek-v4.1-flash__default__discourse-graphite__3__r1",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-18T18:30:50Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18714,
+    "output": 14333,
+    "reasoning": 13409,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.011407284,
+   "latency_ms": 64470,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 3717,
+   "raw_usage": {
+    "completion_tokens": 14333,
+    "prompt_tokens": 18842,
+    "total_tokens": 33175,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 13409,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.011407284,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.011407284,
+     "upstream_inference_prompt_cost": 0.002807484,
+     "upstream_inference_completions_cost": 0.0085998
+    }
+   },
+   "started_at": "2026-10-18T18:30:50Z",
+   "first_chunk_ms": 941,
+   "first_text_ms": 60664,
+   "response_id": "gen-1792348251-gpe5GF1rhzotcUbJhjpg",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18714,
+  "output": 14333,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 13409
+ },
+ "cost_reported": 0.011407284,
+ "latency_ms": 64470,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"lib/validators/email_validator.rb\", \"line\": 13, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Validation triggers a DB write and double-counts blocked-email statistics\", \"body\": \"`EmailValidator#validate_each` calls `BlockedEmail.should_block?(value)`, and `should_block?` (app/models/blocked_email.rb lines 12-17) loads the matching record, increments `match_count`, sets `last_match_at`, and calls `record.save`. This means a simple `valid?`/`save` check now performs a database write. In `UsersController#create` the user is validated twice on the same request: `user.valid?` (line 168) and then `user.save` (line 172), so a single signup attempt against a blocked (or even `do_nothing`) email increments `match_count` by 2 instead of 1. Match counts will be inflated unpredictably, defeating the purpose of these statistics for spotting spam campaigns, and read-only validation paths unexpectedly mutate the DB. The stat update should be decoupled from the pure predicate and triggered once per real block event (e.g., after a confirmed rejection), not on every validation invocation.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Non-atomic counter update loses matches under concurrency\", \"body\": \"`should_block?` performs a read-modify-write: `record.match_count += 1; record.save`. Two concurrent requests matching the same blocked email both read count N and write N+1, losing one increment. Since these counters are the signal used to identify spam waves (exactly when many concurrent attempts happen), the undercounting is most severe in the scenario the data is meant to detect. Use an atomic update such as `BlockedEmail.where(id: record.id).update_all([\\\"match_count = match_count + 1, last_match_at = ?\\\", Time.zone.now])` (or `increment_counter`) instead.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Blocked-email lookup is case-sensitive and bypassable\", \"body\": \"`BlockedEmail.where(email: email).first` compares the raw submitted email against the stored string with exact case. E-mail addresses are treated case-insensitively in practice, and nothing downcases the user's email when it is set/validated (`User.new_from_params` stores it verbatim). So an entry for `spam@bad.com` will not block a signup using `Spam@Bad.com` or `spam@BAD.com`, and imported/manually-entered records in mixed case won't match either \u2014 trivially bypassing the blocklist. Normalize on both sides: downcase/`Email.downcase` the value in `should_block?` (and ideally normalize the stored `email` in a `before_validation`/`before_save` so the unique index also behaves case-insensitively).\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 9, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"New validator spec does not cover the ported domain restrictions or the real lookup\", \"body\": \"The only new validator specs stub `BlockedEmail.should_block?`, so they neither exercise the actual database lookup/scoping nor verify the end-to-end behavior (`user.valid?` returning false for a blocked email). More importantly, this PR moves the `email_domains_whitelist`/`email_domains_blacklist` logic out of `User#email_validator` into `EmailValidator`, but no spec covers that moved logic (whitelist pass/fail, blacklist pass/fail). A regression in the relocated domain-restriction behavior would go undetected. Add specs covering the whitelist and blacklist branches (and ideally one integration spec that a blocked email makes a `User` invalid), plus a test for the new `errors`/`values` fields returned by `UsersController#create`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "medium",
+   "category": "data",
+   "title": "Validation triggers a DB write and double-counts blocked-email statistics",
+   "body": "`EmailValidator#validate_each` calls `BlockedEmail.should_block?(value)`, and `should_block?` (app/models/blocked_email.rb lines 12-17) loads the matching record, increments `match_count`, sets `last_match_at`, and calls `record.save`. This means a simple `valid?`/`save` check now performs a database write. In `UsersController#create` the user is validated twice on the same request: `user.valid?` (line 168) and then `user.save` (line 172), so a single signup attempt against a blocked (or even `do_nothing`) email increments `match_count` by 2 instead of 1. Match counts will be inflated unpredictably, defeating the purpose of these statistics for spotting spam campaigns, and read-only validation paths unexpectedly mutate the DB. The stat update should be decoupled from the pure predicate and triggered once per real block event (e.g., after a confirmed rejection), not on every validation invocation."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Non-atomic counter update loses matches under concurrency",
+   "body": "`should_block?` performs a read-modify-write: `record.match_count += 1; record.save`. Two concurrent requests matching the same blocked email both read count N and write N+1, losing one increment. Since these counters are the signal used to identify spam waves (exactly when many concurrent attempts happen), the undercounting is most severe in the scenario the data is meant to detect. Use an atomic update such as `BlockedEmail.where(id: record.id).update_all([\"match_count = match_count + 1, last_match_at = ?\", Time.zone.now])` (or `increment_counter`) instead."
+  },
+  {
+   "index": 2,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "medium",
+   "category": "security",
+   "title": "Blocked-email lookup is case-sensitive and bypassable",
+   "body": "`BlockedEmail.where(email: email).first` compares the raw submitted email against the stored string with exact case. E-mail addresses are treated case-insensitively in practice, and nothing downcases the user's email when it is set/validated (`User.new_from_params` stores it verbatim). So an entry for `spam@bad.com` will not block a signup using `Spam@Bad.com` or `spam@BAD.com`, and imported/manually-entered records in mixed case won't match either \u2014 trivially bypassing the blocklist. Normalize on both sides: downcase/`Email.downcase` the value in `should_block?` (and ideally normalize the stored `email` in a `before_validation`/`before_save` so the unique index also behaves case-insensitively)."
+  },
+  {
+   "index": 3,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 9,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "New validator spec does not cover the ported domain restrictions or the real lookup",
+   "body": "The only new validator specs stub `BlockedEmail.should_block?`, so they neither exercise the actual database lookup/scoping nor verify the end-to-end behavior (`user.valid?` returning false for a blocked email). More importantly, this PR moves the `email_domains_whitelist`/`email_domains_blacklist` logic out of `User#email_validator` into `EmailValidator`, but no spec covers that moved logic (whitelist pass/fail, blacklist pass/fail). A regression in the relocated domain-restriction behavior would go undetected. Add specs covering the whitelist and blacklist branches (and ideally one integration spec that a blocked email makes a `User` invalid), plus a test for the new `errors`/`values` fields returned by `UsersController#create`."
+  }
+ ],
+ "finding_count": 4
+}

@@ -1,0 +1,151 @@
+{
+ "run_id": "qwen3.8-max__low__cal.com__7232__r1",
+ "model_id": "qwen3.8-max",
+ "family": "alibaba",
+ "route": "openrouter",
+ "provider_model": "qwen/qwen3.8-max-0902",
+ "provider_pin": {
+  "order": [
+   "alibaba"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:22:28Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 86695,
+    "output": 4881,
+    "reasoning": 3921,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.202676,
+   "latency_ms": 103717,
+   "finish_reason": "stop",
+   "served_model": "qwen/qwen3.8-max-0902",
+   "provider_served": "Alibaba",
+   "http_attempts": 1,
+   "text_chars": 4458,
+   "raw_usage": {
+    "completion_tokens": 4881,
+    "prompt_tokens": 86695,
+    "total_tokens": 91576,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 3921,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.202676,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.202676,
+     "upstream_inference_prompt_cost": 0.17339,
+     "upstream_inference_completions_cost": 0.029286
+    }
+   },
+   "started_at": "2026-10-17T11:22:28Z",
+   "first_chunk_ms": 7825,
+   "first_text_ms": 83793,
+   "response_id": "gen-1792236150-3ymXIibMbg0lWeEJDFO3",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 86695,
+  "output": 4881,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 3921
+ },
+ "cost_reported": 0.202676,
+ "latency_ms": 103717,
+ "served_model": "qwen/qwen3.8-max-0902",
+ "provider_served": "Alibaba",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\":[{\"file\":\"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\",\"line\":213,\"severity\":\"high\",\"category\":\"data\",\"title\":\"`immediateDelete` path cancels SendGrid email but never deletes the DB record\",\"body\":\"When `immediateDelete` is true and `referenceId` is not null, the function calls SendGrid to cancel the scheduled email and then returns without deleting the `workflowReminder` row from the database. In the reschedule flow (`handleNewBooking.ts` line 968), the old booking is not deleted\u2014only its status changes to CANCELLED\u2014so these reminder rows are never cascade-deleted. They remain orphaned indefinitely (with `cancelled` still null), accumulating over time. The old code deleted these rows; the new code should either delete the row after the SendGrid call or set `cancelled: true` so the CRON job can clean it up.\"},{\"file\":\"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\"line\":56,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"A single SendGrid failure in the cancellation loop aborts all remaining cancellations and skips DB deletes\",\"body\":\"The `for` loop iterates over `remindersToCancel`, calling SendGrid and collecting Prisma delete promises. If any single `client.request` call throws (e.g., network timeout, rate limit), the `catch` block is entered, `Promise.all(workflowRemindersToDelete)` is never reached, and none of the DB records are deleted\u2014even for reminders whose SendGrid cancellation already succeeded. On the next CRON run those already-cancelled reminders will be re-processed, potentially causing duplicate cancellation attempts. Consider wrapping each iteration in its own try-catch or performing the DB deletes for successfully-cancelled reminders before continuing.\"},{\"file\":\"packages/features/bookings/lib/handleNewBooking.ts\",\"line\":966,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Async `deleteScheduledEmailReminder` / `deleteScheduledSMSReminder` are not awaited inside `forEach`\",\"body\":\"The calls to `deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are asynchronous but are invoked inside a `forEach` without `await`. The surrounding `try/catch` (line 963) will never catch errors thrown by these promises because `forEach` does not propagate rejections. If the process exits or the request completes before the promises settle, the SendGrid cancellation or DB update may not finish. Use `for...of` with `await` or `Promise.all` with `.map()` to ensure completion and proper error handling.\"},{\"file\":\"packages/features/bookings/lib/handleCancelBooking.ts\",\"line\":486,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Async reminder cancellation calls are fire-and-forget in cancel booking handler\",\"body\":\"`deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are async functions called inside `forEach` without `await`. The handler may return a success response to the client before the `cancelled: true` flag is actually persisted to the database. If the server process is recycled or the request times out, reminders will not be marked as cancelled and the CRON job will not cancel the corresponding SendGrid emails, causing the original bug to persist for those bookings.\"},{\"file\":\"packages/trpc/server/routers/viewer/workflows.tsx\",\"line\":212,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Workflow deletion does not await async reminder cancellation before cascade delete\",\"body\":\"In the `delete` mutation, `deleteScheduledEmailReminder` (with `immediateDelete=true`) and `deleteScheduledSMSReminder` are called inside `forEach` without `await`. Immediately after, `ctx.prisma.workflow.deleteMany` is awaited, which cascade-deletes the `WorkflowReminder` rows. The SendGrid cancellation requests are still in flight and may fail silently. While the DB records are cleaned up by the cascade, if the SendGrid call fails the scheduled email will still be delivered to the user despite the workflow being deleted.\"},{\"file\":\"packages/trpc/server/routers/viewer/workflows.tsx\",\"line\":376,\"severity\":\"low\",\"category\":\"bug\",\"title\":\"Reminder cancellation for disabled event types is not awaited\",\"body\":\"`deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are called inside a `forEach` without `await` at line 376. The mutation continues and may complete before the `cancelled: true` flag is written. If the request finishes and the connection is released before the DB update commits, reminders will not be marked as cancelled.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "high",
+   "category": "data",
+   "title": "`immediateDelete` path cancels SendGrid email but never deletes the DB record",
+   "body": "When `immediateDelete` is true and `referenceId` is not null, the function calls SendGrid to cancel the scheduled email and then returns without deleting the `workflowReminder` row from the database. In the reschedule flow (`handleNewBooking.ts` line 968), the old booking is not deleted\u2014only its status changes to CANCELLED\u2014so these reminder rows are never cascade-deleted. They remain orphaned indefinitely (with `cancelled` still null), accumulating over time. The old code deleted these rows; the new code should either delete the row after the SendGrid call or set `cancelled: true` so the CRON job can clean it up."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 56,
+   "severity": "medium",
+   "category": "bug",
+   "title": "A single SendGrid failure in the cancellation loop aborts all remaining cancellations and skips DB deletes",
+   "body": "The `for` loop iterates over `remindersToCancel`, calling SendGrid and collecting Prisma delete promises. If any single `client.request` call throws (e.g., network timeout, rate limit), the `catch` block is entered, `Promise.all(workflowRemindersToDelete)` is never reached, and none of the DB records are deleted\u2014even for reminders whose SendGrid cancellation already succeeded. On the next CRON run those already-cancelled reminders will be re-processed, potentially causing duplicate cancellation attempts. Consider wrapping each iteration in its own try-catch or performing the DB deletes for successfully-cancelled reminders before continuing."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 966,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Async `deleteScheduledEmailReminder` / `deleteScheduledSMSReminder` are not awaited inside `forEach`",
+   "body": "The calls to `deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are asynchronous but are invoked inside a `forEach` without `await`. The surrounding `try/catch` (line 963) will never catch errors thrown by these promises because `forEach` does not propagate rejections. If the process exits or the request completes before the promises settle, the SendGrid cancellation or DB update may not finish. Use `for...of` with `await` or `Promise.all` with `.map()` to ensure completion and proper error handling."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 486,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Async reminder cancellation calls are fire-and-forget in cancel booking handler",
+   "body": "`deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are async functions called inside `forEach` without `await`. The handler may return a success response to the client before the `cancelled: true` flag is actually persisted to the database. If the server process is recycled or the request times out, reminders will not be marked as cancelled and the CRON job will not cancel the corresponding SendGrid emails, causing the original bug to persist for those bookings."
+  },
+  {
+   "index": 4,
+   "file": "packages/trpc/server/routers/viewer/workflows.tsx",
+   "line": 212,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Workflow deletion does not await async reminder cancellation before cascade delete",
+   "body": "In the `delete` mutation, `deleteScheduledEmailReminder` (with `immediateDelete=true`) and `deleteScheduledSMSReminder` are called inside `forEach` without `await`. Immediately after, `ctx.prisma.workflow.deleteMany` is awaited, which cascade-deletes the `WorkflowReminder` rows. The SendGrid cancellation requests are still in flight and may fail silently. While the DB records are cleaned up by the cascade, if the SendGrid call fails the scheduled email will still be delivered to the user despite the workflow being deleted."
+  },
+  {
+   "index": 5,
+   "file": "packages/trpc/server/routers/viewer/workflows.tsx",
+   "line": 376,
+   "severity": "low",
+   "category": "bug",
+   "title": "Reminder cancellation for disabled event types is not awaited",
+   "body": "`deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are called inside a `forEach` without `await` at line 376. The mutation continues and may complete before the `cancelled: true` flag is written. If the request finishes and the connection is released before the DB update commits, reminders will not be marked as cancelled."
+  }
+ ],
+ "finding_count": 6
+}

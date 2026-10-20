@@ -1,0 +1,129 @@
+{
+ "run_id": "minimax-m3__default__sentry__93824__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:28:37Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25363,
+    "output": 28376,
+    "reasoning": 27187,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04166778,
+   "latency_ms": 131626,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4937,
+   "raw_usage": {
+    "completion_tokens": 28376,
+    "prompt_tokens": 25491,
+    "total_tokens": 53867,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 27187,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04166778,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04166778,
+     "upstream_inference_prompt_cost": 0.00761658,
+     "upstream_inference_completions_cost": 0.0340512
+    }
+   },
+   "started_at": "2026-10-18T12:28:37Z",
+   "first_chunk_ms": 1535,
+   "first_text_ms": 124838,
+   "response_id": "gen-1792326517-Uc3wGnQ1tHfuP2g5KHmn",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25363,
+  "output": 28376,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 27187
+ },
+ "cost_reported": 0.04166778,
+ "latency_ms": 131626,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to evaluate each file for real issues.\n\nLet me analyze the changes:\n\n1. **`src/sentry/spans/consumers/process/flusher.py`**: Major refactor from single thread to multi-process\n2. **`src/sentry/spans/consumers/process/factory.py`**: Pass-through of `flusher_processes`\n3. **`src/sentry/consumers/__init__.py`**: New CLI option with default 1\n4. **`tests/sentry/spans/consumers/process/test_consumer.py`**: New test + sleep addition\n\nKey observations after careful review:\n\n- `_create_process_for_shard` is defined but has no caller anywhere in the codebase\n- The `if not process: continue` check is on an object that is always truthy (Process/Thread instance)\n- Default inconsistency: CLI option defaults to 1, but the factory parameter defaults to `None` which becomes `len(buffer.assigned_shards)`\n- In `test_basic`, the new `time.sleep(0.1)` is rendered a no-op by the earlier `monkeypatch.setattr(\"time.sleep\", lambda _: None)`, so the comment about giving the flusher time to work is misleading\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 127,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Dead method `_create_process_for_shard` is never invoked\",\n      \"body\": \"The new `_create_process_for_shard(self, shard: int)` method (lines 127-132) is defined to find the process that owns a given shard and restart it, but it has no caller anywhere in the codebase. The actual per-process restart logic lives in `_ensure_processes_alive`, which iterates over `self.processes.items()` directly. This method appears to be leftover from refactoring and should be removed; leaving it in is confusing because it implies a per-shard restart capability that doesn't exist and would race with the per-process restart logic if it were ever wired up.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 222,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Dead `if not process: continue` guard\",\n      \"body\": \"Inside `_ensure_processes_alive`, the loop `for process_index, process in self.processes.items():` is immediately followed by `if not process: continue`. `process` is always a `multiprocessing.context.SpawnProcess` or `threading.Thread` instance assigned by `_create_process_for_shards`; both are always truthy, so the guard can never trigger. The check is dead code carried over from the previous single-process implementation and should be removed for clarity.\"\n    },\n    {\n      \"file\": \"src/sentry/consumers/__init__.py\",\n      \"line\": 433,\n      \"severity\": \"medium\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Inconsistent default for flusher_processes between CLI and factory\",\n      \"body\": \"The CLI option `--flusher-processes` is registered with `default=1`, but the underlying `ProcessSpansStrategyFactory.__init__` declares `flusher_processes: int | None = None`, which `SpanFlusher` then resolves to `max_processes or len(buffer.assigned_shards)` (one process per shard). Consequence: production CLI runs with 1 flusher process, while any test or programmatic caller that omits `flusher_processes` silently gets N processes (e.g., the new `test_flusher_processes_limit` test deliberately passes `flusher_processes=2` precisely because the factory default would otherwise spawn 4). This divergence makes the help text (`Defaults to 1.`) and the Python signature disagree, which is a footgun for callers and obscures whether the new \\\"process per shard\\\" behavior is actually enabled in default deployments. Either the factory default should also be 1, or the CLI default should be None and the help text should match.\"\n    },\n    {\n      \"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\",\n      \"line\": 62,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"Added `time.sleep(0.1)` is a no-op due to earlier monkeypatch\",\n      \"body\": \"`test_basic` sets `monkeypatch.setattr(\\\"time.sleep\\\", lambda _: None)` at line 15, which replaces the `time.sleep` attribute on the imported `time` module. The newly added `time.sleep(0.1)` on line 62 therefore resolves to the patched no-op lambda and waits for nothing. The accompanying comment (\\\"Give flusher threads time to process after drift change\\\") is misleading: the sleep does not give the thread any time. The test currently only passes because the flusher's own `time.sleep(1)` is also monkey-patched to a no-op, so the thread spins very fast and usually catches up before `step.join()` flips `stopped.value` to True; on a slow CI machine the thread can still be mid-iteration with the old drift when `stopped` is flipped, and the assertion `(msg,) = messages` will fail. The new code should either poll on `messages`, use a sleep that bypasses the monkeypatch (e.g., `time.monotonic()` busy wait), or drop the misleading line entirely.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "bug",
+   "title": "Dead method `_create_process_for_shard` is never invoked",
+   "body": "The new `_create_process_for_shard(self, shard: int)` method (lines 127-132) is defined to find the process that owns a given shard and restart it, but it has no caller anywhere in the codebase. The actual per-process restart logic lives in `_ensure_processes_alive`, which iterates over `self.processes.items()` directly. This method appears to be leftover from refactoring and should be removed; leaving it in is confusing because it implies a per-shard restart capability that doesn't exist and would race with the per-process restart logic if it were ever wired up."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 222,
+   "severity": "low",
+   "category": "bug",
+   "title": "Dead `if not process: continue` guard",
+   "body": "Inside `_ensure_processes_alive`, the loop `for process_index, process in self.processes.items():` is immediately followed by `if not process: continue`. `process` is always a `multiprocessing.context.SpawnProcess` or `threading.Thread` instance assigned by `_create_process_for_shards`; both are always truthy, so the guard can never trigger. The check is dead code carried over from the previous single-process implementation and should be removed for clarity."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/consumers/__init__.py",
+   "line": 433,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "Inconsistent default for flusher_processes between CLI and factory",
+   "body": "The CLI option `--flusher-processes` is registered with `default=1`, but the underlying `ProcessSpansStrategyFactory.__init__` declares `flusher_processes: int | None = None`, which `SpanFlusher` then resolves to `max_processes or len(buffer.assigned_shards)` (one process per shard). Consequence: production CLI runs with 1 flusher process, while any test or programmatic caller that omits `flusher_processes` silently gets N processes (e.g., the new `test_flusher_processes_limit` test deliberately passes `flusher_processes=2` precisely because the factory default would otherwise spawn 4). This divergence makes the help text (`Defaults to 1.`) and the Python signature disagree, which is a footgun for callers and obscures whether the new \"process per shard\" behavior is actually enabled in default deployments. Either the factory default should also be 1, or the CLI default should be None and the help text should match."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Added `time.sleep(0.1)` is a no-op due to earlier monkeypatch",
+   "body": "`test_basic` sets `monkeypatch.setattr(\"time.sleep\", lambda _: None)` at line 15, which replaces the `time.sleep` attribute on the imported `time` module. The newly added `time.sleep(0.1)` on line 62 therefore resolves to the patched no-op lambda and waits for nothing. The accompanying comment (\"Give flusher threads time to process after drift change\") is misleading: the sleep does not give the thread any time. The test currently only passes because the flusher's own `time.sleep(1)` is also monkey-patched to a no-op, so the thread spins very fast and usually catches up before `step.join()` flips `stopped.value` to True; on a slow CI machine the thread can still be mid-iteration with the old drift when `stopped` is flipped, and the assertion `(msg,) = messages` will fail. The new code should either poll on `messages`, use a sleep that bypasses the monkeypatch (e.g., `time.monotonic()` busy wait), or drop the misleading line entirely."
+  }
+ ],
+ "finding_count": 4
+}

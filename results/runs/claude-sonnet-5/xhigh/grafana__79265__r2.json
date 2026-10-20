@@ -1,0 +1,140 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__grafana__79265__r2",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 2,
+ "started_at": "2026-10-18T22:18:19Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 53031,
+    "output": 34415,
+    "reasoning": 32545,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 351931,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5321,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 53031,
+    "output_tokens": 34415,
+    "output_tokens_details": {
+     "thinking_tokens": 32545
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:18:19Z",
+   "first_chunk_ms": 2313,
+   "first_text_ms": 336256,
+   "response_id": "msg_bdrk_3dqu4rt5ixzo25qe4dvdd76cii22gcvddpbgac4ecsq6v7syadbq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 53031,
+  "output": 34415,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 32545
+ },
+ "cost_reported": null,
+ "latency_ms": 351931,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 119, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Device limit is trivially bypassable by omitting the device-id header\", \"body\": \"In TagDevice, if the client does not send the `X-Grafana-Device-Id` header, the function immediately returns nil without ever calling CreateOrUpdateDevice/CountDevices: `deviceID := httpReq.Header.Get(deviceIDHeader); if deviceID == \\\"\\\" { return nil }`. Since the new device-limit enforcement lives entirely inside CreateOrUpdateDevice, any client that omits this client-supplied, unauthenticated header (or sends a fresh random value each request) never triggers the limit check and is never denied. This means the newly added `AnonymousDeviceLimit` feature can be completely circumvented by non-browser clients or by simply not sending/rotating this header, defeating the purpose of capping anonymous devices.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 109, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TOCTOU race condition lets device count exceed the configured limit\", \"body\": \"CreateOrUpdateDevice first runs CountDevices to check if the limit has been reached, and only if `count >= s.deviceLimit` falls back to update-only mode; otherwise it proceeds to INSERT a new device row. This check-then-act sequence is not wrapped in a transaction or any locking mechanism. Under concurrent anonymous requests (which is exactly the scenario the device limit is meant to guard against, e.g. traffic spikes or multiple server instances in HA), multiple goroutines/requests can all read a count below the limit simultaneously and then all insert new devices, allowing the actual number of active devices to exceed `deviceLimit`. This undermines the correctness guarantee the feature is supposed to provide.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Tagging call made synchronous in the authentication hot path, removing prior async/timeout/panic protections\", \"body\": \"Previously, TagDevice was invoked from a separate goroutine with its own timeout context and panic recovery, so a slow or failing DB write never blocked or crashed the Authenticate() call. This change removes that wrapper and awaits TagDevice directly on the request context. Now every anonymous authentication request whose local device cache entry is cold (new device or every ~29 minutes per returning device) blocks on a synchronous DB write (plus, when the limit feature is enabled, an extra COUNT query) before the auth flow can complete. It also removes the recover() that previously guarded against panics inside the tagging logic, so an unexpected panic there can now propagate up through the authentication path instead of being safely contained.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 45, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test exercises Authenticate() denying access when the device limit is reached\", \"body\": \"The new `errors.Is(err, anonstore.ErrDeviceLimitReached)` branch in Authenticate() causes anonymous authentication to fail entirely once the device limit is hit, which is the primary user-facing behavior of this feature. Only the low-level anonstore.CreateOrUpdateDevice function is covered by a test (TestIntegrationBeyondDeviceLimit in anonstore/database_test.go); there is no test validating that the Anonymous client's Authenticate() method actually returns an error (and thus denies anonymous access) once the configured limit is exceeded, nor any test for the new ProvideAnonymousDeviceService wiring with a non-zero AnonymousDeviceLimit.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"medium\", \"category\": \"doc_defect\", \"title\": \"New auth.anonymous.device_limit setting is undocumented\", \"body\": \"A new configuration key `device_limit` under `[auth.anonymous]` (mapped to `Cfg.AnonymousDeviceLimit`) is introduced here, but no accompanying documentation was added: there is no update to the sample/defaults ini files or to the configuration reference docs describing the setting, its default (0 = unlimited), or its effect. Administrators have no way to discover or understand this new setting, and the Cfg struct field itself has no doc comment explaining the 0-means-unlimited semantics implemented in anonstore.go.\"}, {\"file\": \"pkg/api/dtos/frontend_settings.go\", \"line\": 195, \"severity\": \"low\", \"category\": \"api\", \"title\": \"AnonymousDeviceLimit type/semantics mismatch between backend DTO and frontend type\", \"body\": \"The Go DTO field `AnonymousDeviceLimit int64` has no `omitempty` and is always serialized (defaulting to 0 when unset), whereas the corresponding TypeScript declarations (`packages/grafana-data/src/types/config.ts` and `packages/grafana-runtime/src/config.ts`) type it as `number | undefined` and default the client-side value to `undefined`. In practice the frontend will always receive a concrete number (0 when not configured) rather than `undefined`, so any frontend code that checks for `undefined` to detect the \\\"no limit configured\\\" state will never see that condition and must instead treat 0 specially \u2014 a subtle mismatch between the documented type and actual runtime contract.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 119,
+   "severity": "high",
+   "category": "security",
+   "title": "Device limit is trivially bypassable by omitting the device-id header",
+   "body": "In TagDevice, if the client does not send the `X-Grafana-Device-Id` header, the function immediately returns nil without ever calling CreateOrUpdateDevice/CountDevices: `deviceID := httpReq.Header.Get(deviceIDHeader); if deviceID == \"\" { return nil }`. Since the new device-limit enforcement lives entirely inside CreateOrUpdateDevice, any client that omits this client-supplied, unauthenticated header (or sends a fresh random value each request) never triggers the limit check and is never denied. This means the newly added `AnonymousDeviceLimit` feature can be completely circumvented by non-browser clients or by simply not sending/rotating this header, defeating the purpose of capping anonymous devices."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TOCTOU race condition lets device count exceed the configured limit",
+   "body": "CreateOrUpdateDevice first runs CountDevices to check if the limit has been reached, and only if `count >= s.deviceLimit` falls back to update-only mode; otherwise it proceeds to INSERT a new device row. This check-then-act sequence is not wrapped in a transaction or any locking mechanism. Under concurrent anonymous requests (which is exactly the scenario the device limit is meant to guard against, e.g. traffic spikes or multiple server instances in HA), multiple goroutines/requests can all read a count below the limit simultaneously and then all insert new devices, allowing the actual number of active devices to exceed `deviceLimit`. This undermines the correctness guarantee the feature is supposed to provide."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Tagging call made synchronous in the authentication hot path, removing prior async/timeout/panic protections",
+   "body": "Previously, TagDevice was invoked from a separate goroutine with its own timeout context and panic recovery, so a slow or failing DB write never blocked or crashed the Authenticate() call. This change removes that wrapper and awaits TagDevice directly on the request context. Now every anonymous authentication request whose local device cache entry is cold (new device or every ~29 minutes per returning device) blocks on a synchronous DB write (plus, when the limit feature is enabled, an extra COUNT query) before the auth flow can complete. It also removes the recover() that previously guarded against panics inside the tagging logic, so an unexpected panic there can now propagate up through the authentication path instead of being safely contained."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 45,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test exercises Authenticate() denying access when the device limit is reached",
+   "body": "The new `errors.Is(err, anonstore.ErrDeviceLimitReached)` branch in Authenticate() causes anonymous authentication to fail entirely once the device limit is hit, which is the primary user-facing behavior of this feature. Only the low-level anonstore.CreateOrUpdateDevice function is covered by a test (TestIntegrationBeyondDeviceLimit in anonstore/database_test.go); there is no test validating that the Anonymous client's Authenticate() method actually returns an error (and thus denies anonymous access) once the configured limit is exceeded, nor any test for the new ProvideAnonymousDeviceService wiring with a non-zero AnonymousDeviceLimit."
+  },
+  {
+   "index": 4,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "New auth.anonymous.device_limit setting is undocumented",
+   "body": "A new configuration key `device_limit` under `[auth.anonymous]` (mapped to `Cfg.AnonymousDeviceLimit`) is introduced here, but no accompanying documentation was added: there is no update to the sample/defaults ini files or to the configuration reference docs describing the setting, its default (0 = unlimited), or its effect. Administrators have no way to discover or understand this new setting, and the Cfg struct field itself has no doc comment explaining the 0-means-unlimited semantics implemented in anonstore.go."
+  },
+  {
+   "index": 5,
+   "file": "pkg/api/dtos/frontend_settings.go",
+   "line": 195,
+   "severity": "low",
+   "category": "api",
+   "title": "AnonymousDeviceLimit type/semantics mismatch between backend DTO and frontend type",
+   "body": "The Go DTO field `AnonymousDeviceLimit int64` has no `omitempty` and is always serialized (defaulting to 0 when unset), whereas the corresponding TypeScript declarations (`packages/grafana-data/src/types/config.ts` and `packages/grafana-runtime/src/config.ts`) type it as `number | undefined` and default the client-side value to `undefined`. In practice the frontend will always receive a concrete number (0 when not configured) rather than `undefined`, so any frontend code that checks for `undefined` to detect the \"no limit configured\" state will never see that condition and must instead treat 0 specially \u2014 a subtle mismatch between the documented type and actual runtime contract."
+  }
+ ],
+ "finding_count": 6
+}

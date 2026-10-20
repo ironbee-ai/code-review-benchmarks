@@ -1,0 +1,158 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__keycloak__37038__r3",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "keycloak__37038",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/37038",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:58:08Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 304183,
+  "sha": "27305572236283fe",
+  "patch_only": [
+   "server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 124036,
+    "output": 18524,
+    "reasoning": 15511,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 174975,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 8056,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 124036,
+    "output_tokens": 18524,
+    "output_tokens_details": {
+     "thinking_tokens": 15511
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:58:08Z",
+   "first_chunk_ms": 12967,
+   "first_text_ms": 150619,
+   "response_id": "msg_bdrk_23efyyl3d2v2ut2etithzteyjt4f6bdkheejkpzfvfbu6o5sfeba",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 124036,
+  "output": 18524,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 15511
+ },
+ "cost_reported": null,
+ "latency_ms": 174975,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 70, \"severity\": \"high\", \"category\": \"security\", \"title\": \"canManage() is granted by the VIEW scope on all groups\", \"body\": \"`GroupPermissionsV2.canManage()` returns `hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE)`. This looks copied from `canView()`. The effect is that an admin with only a read-only \\\"view all groups\\\" permission passes `requireManage()`.\\n\\n`GroupsResource.addTopLevelGroup` uses `requireManage()`, so such an admin can create top-level groups and move existing groups to the top level. This is a privilege escalation.\\n\\nThe interface Javadoc for `GroupPermissionEvaluator.canManage()` (\\\"V2 only: Also if it has permission to VIEW or MANAGE groups\\\") documents the same wrong behavior and should also be fixed. Only `MANAGE` should be checked.\\n\\nNo test covers this: `testManageAllGroups` only grants MANAGE. There is no test that VIEW alone does not allow creating groups.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 122, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"getGroupIdsWithViewPermission returns resource IDs and looks up resources by the wrong key\", \"body\": \"The callback passes `groupResource.getId()` (the authz resource UUID) to `hasPermission`. That method calls `resourceStore.findByName(server, groupId)`, so a resource ID is used as a name and never matches. Evaluation always falls back to the all-groups resource.\\n\\nThe callback then adds `groupResource.getId()` to the result. Callers treat the result as group IDs: `UsersResource`/`BruteForceUsersResource` put it in the `UserModel.GROUPS` session attribute, and `getUsersCount(realm, groupIds)` uses it.\\n\\nIn addition, `AdminPermissionsSchema.getOrCreateResource` never calls `setType`, so `findByType(server, \\\"Groups\\\")` only returns the all-groups resource named \\\"Groups\\\". Per-group resources are never iterated.\\n\\nConsequences:\\n- With an all-groups VIEW_MEMBERS permission, the set contains the \\\"Groups\\\" resource UUID. The user query is restricted to a non-existent group and returns no users.\\n- With only per-group permissions, the set is empty. The DB query is unfiltered and users are filtered in memory after pagination, so pages come back short or incomplete.\\n- `/users/count` returns wrong counts in both cases.\\n\\nThe method should iterate per-group resources and return `resource.getName()` (the group id). The all-groups case needs its own handling.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 147, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"NPE when the all-groups \\\"Groups\\\" resource does not exist\", \"body\": \"`AdminPermissionsSchema.getResourceTypeResource(...)` can return null. This happens when the schema is not supported for the current context, or when the \\\"Groups\\\" resource was never created. The result is passed straight into `policyStore.findByResource(server, resource)` and later `resource.getScopes()` with no null check.\\n\\n`AdminPermissionsSchema.init` returns early if the admin-permissions client already exists. Realms that enabled admin permissions before this change therefore have no \\\"Groups\\\" resource and none of the new `manage-members`/`view-members`/`manage-membership` scopes.\\n\\nFor such realms, any admin without the `view-users`/`manage-users` roles who lists or reads groups goes through `canView(group)` and hits this path, which fails with a 500. Creating group permissions there also fails with \\\"No scopes found\\\".\\n\\nAdd a null guard here, and either add a migration or create the missing schema resources and scopes for existing admin-permissions clients.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 141, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Any per-group permission hides all-groups grants for other scopes on that group\", \"body\": \"`hasPermission` falls back to the all-groups resource only when no per-group resource exists. Once any permission references a group (for example VIEW_MEMBERS on `topGroup`), that group's resource exists and only it is evaluated.\\n\\nPer-group resources are created without a type, so the \\\"Groups\\\"-typed all-groups permissions are not included in that evaluation. As a result, an admin with \\\"manage all groups\\\" who is also given \\\"view-members on topGroup\\\" can no longer manage, view, or map roles on `topGroup`.\\n\\nThis also makes `canView()`/`canManage()` (all-groups) and `canView(group)`/`canManage(group)` disagree for the same group. The evaluation should combine the per-group result with the all-groups resource for scopes the per-group permissions do not decide.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java\", \"line\": 133, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"requireManageMembers Javadoc references the wrong method\", \"body\": \"The Javadoc for `requireManageMembers(GroupModel)` says it throws ForbiddenException if `canManageMembership(GroupModel)` returns false. The implementations actually check `canManageMembers(GroupModel)`, which is a different scope (MANAGE_MEMBERS vs MANAGE_MEMBERSHIP). It looks copy-pasted from `requireManageMembership` and will mislead callers.\\n\\nSeparately, `getGroupIdsWithViewPermission` documents its return as a \\\"Stream\\\" while it returns a Set.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java\", \"line\": 147, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Public evaluator interface methods renamed/removed without deprecation\", \"body\": \"`GroupPermissionEvaluator.getGroupsWithViewPermission()` is renamed to `getGroupIdsWithViewPermission()`, and `getGroupsWithViewPermission(GroupModel)` is removed. `ModelToRepresentation.searchGroupModelsByAttributes` is also removed.\\n\\n`GroupPermissionEvaluator` is reachable from `AdminPermissionEvaluator`, which custom admin REST extensions (`AdminRealmResourceProvider`) receive. Those extensions will fail to compile or link after upgrade.\\n\\nConsider keeping the old method as a deprecated default that delegates to the new one.\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\", \"line\": 331, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Groups resource type not handled in getResourceName\", \"body\": \"The new GROUPS resource type is added, but `getResourceName` still only maps USERS resources to human-readable names (\\\"All users\\\" or the username).\\n\\nPer-group resources are created by `getOrCreateResource` with the group id as name and no display name. The \\\"Groups\\\" type resource also has no display name. For group permissions this method therefore returns `resource.getDisplayName()`, which is null.\\n\\nResource names shown for group permissions in the admin API/UI will be null or meaningless instead of \\\"All groups\\\" or the group name/path.\"}, {\"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/GroupResourceTypeEvaluationTest.java\", \"line\": 298, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"testManageGroupMembership does not verify that the group-level permission is required\", \"body\": \"The test grants all-users MANAGE_GROUP_MEMBERSHIP and per-group MANAGE_MEMBERSHIP together, then only asserts that the join succeeds.\\n\\nThe initial negative check uses the non-existent group \\\"no-such\\\", so it only exercises the user-level check. Nothing asserts that the join to `topGroup` is forbidden when the group's MANAGE_MEMBERSHIP permission is absent, so a regression in `GroupPermissionsV2.canManageMembership` would go unnoticed.\\n\\nThe suite also has no case for all-groups VIEW_MEMBERS/MANAGE_MEMBERS on user listing or count, which would expose the `getGroupIdsWithViewPermission` bug.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 70,
+   "severity": "high",
+   "category": "security",
+   "title": "canManage() is granted by the VIEW scope on all groups",
+   "body": "`GroupPermissionsV2.canManage()` returns `hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE)`. This looks copied from `canView()`. The effect is that an admin with only a read-only \"view all groups\" permission passes `requireManage()`.\n\n`GroupsResource.addTopLevelGroup` uses `requireManage()`, so such an admin can create top-level groups and move existing groups to the top level. This is a privilege escalation.\n\nThe interface Javadoc for `GroupPermissionEvaluator.canManage()` (\"V2 only: Also if it has permission to VIEW or MANAGE groups\") documents the same wrong behavior and should also be fixed. Only `MANAGE` should be checked.\n\nNo test covers this: `testManageAllGroups` only grants MANAGE. There is no test that VIEW alone does not allow creating groups."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 122,
+   "severity": "high",
+   "category": "bug",
+   "title": "getGroupIdsWithViewPermission returns resource IDs and looks up resources by the wrong key",
+   "body": "The callback passes `groupResource.getId()` (the authz resource UUID) to `hasPermission`. That method calls `resourceStore.findByName(server, groupId)`, so a resource ID is used as a name and never matches. Evaluation always falls back to the all-groups resource.\n\nThe callback then adds `groupResource.getId()` to the result. Callers treat the result as group IDs: `UsersResource`/`BruteForceUsersResource` put it in the `UserModel.GROUPS` session attribute, and `getUsersCount(realm, groupIds)` uses it.\n\nIn addition, `AdminPermissionsSchema.getOrCreateResource` never calls `setType`, so `findByType(server, \"Groups\")` only returns the all-groups resource named \"Groups\". Per-group resources are never iterated.\n\nConsequences:\n- With an all-groups VIEW_MEMBERS permission, the set contains the \"Groups\" resource UUID. The user query is restricted to a non-existent group and returns no users.\n- With only per-group permissions, the set is empty. The DB query is unfiltered and users are filtered in memory after pagination, so pages come back short or incomplete.\n- `/users/count` returns wrong counts in both cases.\n\nThe method should iterate per-group resources and return `resource.getName()` (the group id). The all-groups case needs its own handling."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 147,
+   "severity": "medium",
+   "category": "bug",
+   "title": "NPE when the all-groups \"Groups\" resource does not exist",
+   "body": "`AdminPermissionsSchema.getResourceTypeResource(...)` can return null. This happens when the schema is not supported for the current context, or when the \"Groups\" resource was never created. The result is passed straight into `policyStore.findByResource(server, resource)` and later `resource.getScopes()` with no null check.\n\n`AdminPermissionsSchema.init` returns early if the admin-permissions client already exists. Realms that enabled admin permissions before this change therefore have no \"Groups\" resource and none of the new `manage-members`/`view-members`/`manage-membership` scopes.\n\nFor such realms, any admin without the `view-users`/`manage-users` roles who lists or reads groups goes through `canView(group)` and hits this path, which fails with a 500. Creating group permissions there also fails with \"No scopes found\".\n\nAdd a null guard here, and either add a migration or create the missing schema resources and scopes for existing admin-permissions clients."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 141,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Any per-group permission hides all-groups grants for other scopes on that group",
+   "body": "`hasPermission` falls back to the all-groups resource only when no per-group resource exists. Once any permission references a group (for example VIEW_MEMBERS on `topGroup`), that group's resource exists and only it is evaluated.\n\nPer-group resources are created without a type, so the \"Groups\"-typed all-groups permissions are not included in that evaluation. As a result, an admin with \"manage all groups\" who is also given \"view-members on topGroup\" can no longer manage, view, or map roles on `topGroup`.\n\nThis also makes `canView()`/`canManage()` (all-groups) and `canView(group)`/`canManage(group)` disagree for the same group. The evaluation should combine the per-group result with the all-groups resource for scopes the per-group permissions do not decide."
+  },
+  {
+   "index": 4,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java",
+   "line": 133,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "requireManageMembers Javadoc references the wrong method",
+   "body": "The Javadoc for `requireManageMembers(GroupModel)` says it throws ForbiddenException if `canManageMembership(GroupModel)` returns false. The implementations actually check `canManageMembers(GroupModel)`, which is a different scope (MANAGE_MEMBERS vs MANAGE_MEMBERSHIP). It looks copy-pasted from `requireManageMembership` and will mislead callers.\n\nSeparately, `getGroupIdsWithViewPermission` documents its return as a \"Stream\" while it returns a Set."
+  },
+  {
+   "index": 5,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java",
+   "line": 147,
+   "severity": "low",
+   "category": "api",
+   "title": "Public evaluator interface methods renamed/removed without deprecation",
+   "body": "`GroupPermissionEvaluator.getGroupsWithViewPermission()` is renamed to `getGroupIdsWithViewPermission()`, and `getGroupsWithViewPermission(GroupModel)` is removed. `ModelToRepresentation.searchGroupModelsByAttributes` is also removed.\n\n`GroupPermissionEvaluator` is reachable from `AdminPermissionEvaluator`, which custom admin REST extensions (`AdminRealmResourceProvider`) receive. Those extensions will fail to compile or link after upgrade.\n\nConsider keeping the old method as a deprecated default that delegates to the new one."
+  },
+  {
+   "index": 6,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 331,
+   "severity": "low",
+   "category": "bug",
+   "title": "Groups resource type not handled in getResourceName",
+   "body": "The new GROUPS resource type is added, but `getResourceName` still only maps USERS resources to human-readable names (\"All users\" or the username).\n\nPer-group resources are created by `getOrCreateResource` with the group id as name and no display name. The \"Groups\" type resource also has no display name. For group permissions this method therefore returns `resource.getDisplayName()`, which is null.\n\nResource names shown for group permissions in the admin API/UI will be null or meaningless instead of \"All groups\" or the group name/path."
+  },
+  {
+   "index": 7,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/GroupResourceTypeEvaluationTest.java",
+   "line": 298,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "testManageGroupMembership does not verify that the group-level permission is required",
+   "body": "The test grants all-users MANAGE_GROUP_MEMBERSHIP and per-group MANAGE_MEMBERSHIP together, then only asserts that the join succeeds.\n\nThe initial negative check uses the non-existent group \"no-such\", so it only exercises the user-level check. Nothing asserts that the join to `topGroup` is forbidden when the group's MANAGE_MEMBERSHIP permission is absent, so a regression in `GroupPermissionsV2.canManageMembership` would go unnoticed.\n\nThe suite also has no case for all-groups VIEW_MEMBERS/MANAGE_MEMBERS on user listing or count, which would expose the `getGroupIdsWithViewPermission` bug."
+  }
+ ],
+ "finding_count": 8
+}

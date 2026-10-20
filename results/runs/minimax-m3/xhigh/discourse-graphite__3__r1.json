@@ -1,0 +1,153 @@
+{
+ "run_id": "minimax-m3__xhigh__discourse-graphite__3__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-17T12:17:58Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 17782,
+    "output": 12233,
+    "reasoning": 10946,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02004186,
+   "latency_ms": 67081,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5544,
+   "raw_usage": {
+    "completion_tokens": 12233,
+    "prompt_tokens": 18243,
+    "total_tokens": 30476,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 10946,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.02004186,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02004186,
+     "upstream_inference_prompt_cost": 0.00536226,
+     "upstream_inference_completions_cost": 0.0146796
+    }
+   },
+   "started_at": "2026-10-17T12:17:58Z",
+   "first_chunk_ms": 2041,
+   "first_text_ms": 61683,
+   "response_id": "gen-1792239479-nfZrP2udgJNzTCGrmVro",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 17782,
+  "output": 12233,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 10946
+ },
+ "cost_reported": 0.02004186,
+ "latency_ms": 67081,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Blocked-email lookup is case-sensitive; case variants bypass the block\", \"body\": \"`BlockedEmail.where(email: email).first` performs a case-sensitive equality match, and the migration adds a case-sensitive unique index on the same column. User#email is not downcased on assignment, so a user registering as `Bad@Spam.com` will not match a blocked record stored as `bad@spam.com`, and admins can even create duplicate block rows with different casings. The whole purpose of the feature (stop spammers with known addresses) is defeated by trivial case mutation. Normalize on both sides: store the blocked email in a canonical (lower) form via a `before_validation` callback and add a unique index that ignores case (e.g., a functional index on `lower(email)` or a citext column), and compare with `where('lower(email) = ?', email.to_s.downcase)`.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Non-atomic read-then-update of match_count loses concurrent increments\", \"body\": \"`should_block?` reads the record, increments match_count in memory, and saves it. Two concurrent signup attempts against the same blocked email both load the row (e.g., match_count=5), each compute match_count=6, and each save; the database ends up at 6 instead of 7. The statistic the feature exists to track is silently corrupted under any concurrent load. Replace the in-memory increment with an atomic SQL update, e.g. `BlockedEmail.where(id: record.id).update_all('match_count = match_count + 1, last_match_at = ?', Time.zone.now)`, or `record.increment!(:match_count)` followed by `record.update_column(:last_match_at, Time.zone.now)`. Using `update_all` also avoids re-running BlockedEmail's own validations on every match.\"}, {\"file\": \"lib/validators/email_validator.rb\", \"line\": 13, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"match_count and last_match_at are written twice per signup because validation runs twice\", \"body\": \"EmailValidator.validate_each delegates to `BlockedEmail.should_block?`, which mutates the database (match_count, last_match_at). UsersController#create does `user.valid? && ... if user.save ...`, so the full validation suite \u2014 including this validator \u2014 runs once for the explicit `valid?` call and again when `save` re-runs validations. Each invocation of `should_block?` increments match_count by 1, so a single signup attempt with a blocked email inflates the counter by 2 (and any retry, double-click, or page-refresh multiplies it further). Make the validator purely read-only and push the statistics into an `after_validation` callback on User (gated by `email_changed?`), or detect a single increment via `update_all` and short-circuit the second call with an instance flag. Keeping validators free of side effects is the standard Rails contract.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 69, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"rejectedEmails.contains compares strictly, so the user can bypass with a case change\", \"body\": \"In `emailValidation`, `this.get('rejectedEmails').contains(email)` is a strict equality check. The list is populated from `result.values.email`, which is whatever the server stored (case preserved). If the server previously rejected `Bad@Spam.com`, the user simply retypes `bad@spam.com` and the client-side check passes, even though the backend has the same case-sensitivity bug as `BlockedEmail.should_block?`. Lowercase both the stored and compared values (e.g., store `result.values.email.toLowerCase()` and compare `email.toLowerCase()` against the list) so client-side rejection matches the address the user is currently typing.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 3, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"EmailValidator spec only exercises the BlockedEmail branch; whitelist and blacklist are untested\", \"body\": \"EmailValidator#validate_each has three independent branches (whitelist, blacklist, BlockedEmail) but the spec only stubs `BlockedEmail.should_block?` and asserts on the blocked-email path. There is no test that an email matching `email_domains_whitelist` passes, an email outside the whitelist fails with `user.email.not_allowed`, an email matching `email_domains_blacklist` fails, that the two settings do not interact unexpectedly when both are set, or that a nil/blank value is tolerated. Regressions in any of those branches \u2014 including the `elsif` ordering that means a non-empty whitelist silently disables the blacklist \u2014 will go undetected.\"}, {\"file\": \"spec/models/blocked_email_spec.rb\", \"line\": 27, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Spec asserts a single increment that production does not produce\", \"body\": \"The shared example `when a BlockedEmail record matches` calls `subject` once (which calls `should_block?` once) and asserts `match_count` changes by exactly 1. In production `should_block?` is invoked from `User#valid?` and again from `User#save`, so the same signup attempt actually increments by 2. The test passes because it bypasses the validator and exercises the model method directly, masking the doubled-write bug. Add a test that mirrors the controller path (build a User with a blocked email, call `valid?` then `save`, and assert the resulting `match_count`) so the inflated-count issue is caught at the spec level.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "high",
+   "category": "bug",
+   "title": "Blocked-email lookup is case-sensitive; case variants bypass the block",
+   "body": "`BlockedEmail.where(email: email).first` performs a case-sensitive equality match, and the migration adds a case-sensitive unique index on the same column. User#email is not downcased on assignment, so a user registering as `Bad@Spam.com` will not match a blocked record stored as `bad@spam.com`, and admins can even create duplicate block rows with different casings. The whole purpose of the feature (stop spammers with known addresses) is defeated by trivial case mutation. Normalize on both sides: store the blocked email in a canonical (lower) form via a `before_validation` callback and add a unique index that ignores case (e.g., a functional index on `lower(email)` or a citext column), and compare with `where('lower(email) = ?', email.to_s.downcase)`."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Non-atomic read-then-update of match_count loses concurrent increments",
+   "body": "`should_block?` reads the record, increments match_count in memory, and saves it. Two concurrent signup attempts against the same blocked email both load the row (e.g., match_count=5), each compute match_count=6, and each save; the database ends up at 6 instead of 7. The statistic the feature exists to track is silently corrupted under any concurrent load. Replace the in-memory increment with an atomic SQL update, e.g. `BlockedEmail.where(id: record.id).update_all('match_count = match_count + 1, last_match_at = ?', Time.zone.now)`, or `record.increment!(:match_count)` followed by `record.update_column(:last_match_at, Time.zone.now)`. Using `update_all` also avoids re-running BlockedEmail's own validations on every match."
+  },
+  {
+   "index": 2,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "medium",
+   "category": "data",
+   "title": "match_count and last_match_at are written twice per signup because validation runs twice",
+   "body": "EmailValidator.validate_each delegates to `BlockedEmail.should_block?`, which mutates the database (match_count, last_match_at). UsersController#create does `user.valid? && ... if user.save ...`, so the full validation suite \u2014 including this validator \u2014 runs once for the explicit `valid?` call and again when `save` re-runs validations. Each invocation of `should_block?` increments match_count by 1, so a single signup attempt with a blocked email inflates the counter by 2 (and any retry, double-click, or page-refresh multiplies it further). Make the validator purely read-only and push the statistics into an `after_validation` callback on User (gated by `email_changed?`), or detect a single increment via `update_all` and short-circuit the second call with an instance flag. Keeping validators free of side effects is the standard Rails contract."
+  },
+  {
+   "index": 3,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 69,
+   "severity": "medium",
+   "category": "bug",
+   "title": "rejectedEmails.contains compares strictly, so the user can bypass with a case change",
+   "body": "In `emailValidation`, `this.get('rejectedEmails').contains(email)` is a strict equality check. The list is populated from `result.values.email`, which is whatever the server stored (case preserved). If the server previously rejected `Bad@Spam.com`, the user simply retypes `bad@spam.com` and the client-side check passes, even though the backend has the same case-sensitivity bug as `BlockedEmail.should_block?`. Lowercase both the stored and compared values (e.g., store `result.values.email.toLowerCase()` and compare `email.toLowerCase()` against the list) so client-side rejection matches the address the user is currently typing."
+  },
+  {
+   "index": 4,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 3,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "EmailValidator spec only exercises the BlockedEmail branch; whitelist and blacklist are untested",
+   "body": "EmailValidator#validate_each has three independent branches (whitelist, blacklist, BlockedEmail) but the spec only stubs `BlockedEmail.should_block?` and asserts on the blocked-email path. There is no test that an email matching `email_domains_whitelist` passes, an email outside the whitelist fails with `user.email.not_allowed`, an email matching `email_domains_blacklist` fails, that the two settings do not interact unexpectedly when both are set, or that a nil/blank value is tolerated. Regressions in any of those branches \u2014 including the `elsif` ordering that means a non-empty whitelist silently disables the blacklist \u2014 will go undetected."
+  },
+  {
+   "index": 5,
+   "file": "spec/models/blocked_email_spec.rb",
+   "line": 27,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Spec asserts a single increment that production does not produce",
+   "body": "The shared example `when a BlockedEmail record matches` calls `subject` once (which calls `should_block?` once) and asserts `match_count` changes by exactly 1. In production `should_block?` is invoked from `User#valid?` and again from `User#save`, so the same signup attempt actually increments by 2. The test passes because it bypasses the validator and exercises the model method directly, masking the doubled-write bug. Add a test that mirrors the controller path (build a User with a blocked email, call `valid?` then `save`, and assert the resulting `match_count`) so the inflated-count issue is caught at the spec level."
+  }
+ ],
+ "finding_count": 6
+}

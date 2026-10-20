@@ -1,0 +1,142 @@
+{
+ "run_id": "minimax-m3__low__cal.com__14943__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:28:06Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18491,
+    "output": 9867,
+    "reasoning": 8755,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01739538,
+   "latency_ms": 49260,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4890,
+   "raw_usage": {
+    "completion_tokens": 9867,
+    "prompt_tokens": 18619,
+    "total_tokens": 28486,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 8755,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01739538,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01739538,
+     "upstream_inference_prompt_cost": 0.00555498,
+     "upstream_inference_completions_cost": 0.0118404
+    }
+   },
+   "started_at": "2026-10-17T20:28:06Z",
+   "first_chunk_ms": 1368,
+   "first_text_ms": 43881,
+   "response_id": "gen-1792268886-LwvZ0GCJ8vr3lI2di7sN",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18491,
+  "output": 9867,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 8755
+ },
+ "cost_reported": 0.01739538,
+ "latency_ms": 49260,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"deleteMany retryCount branch lacks method filter, can delete non-SMS reminders\", \"body\": \"The new OR clause in the cleanup deleteMany only filters by `retryCount: { gt: 1 }` on the second branch, with no `method` constraint. The first branch correctly restricts to `method: WorkflowMethods.SMS`, but the retryCount branch will match WorkflowReminder rows of any method (EMAIL, WHATSAPP) if their retryCount ever exceeds 1. While this PR only increments retryCount for SMS, this is a latent bug: any future code path (or out-of-band DB change) that pushes an EMAIL/WHATSAPP reminder's retryCount above 1 will cause it to be silently deleted by this SMS handler. The retry branch should be `{ method: WorkflowMethods.SMS, retryCount: { gt: 1 } }` to keep the cleanup semantically consistent with the rest of the handler, which only processes SMS.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 67, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"No guard against concurrent cron execution; duplicate SMS and lost retryCount increments possible\", \"body\": \"The handler reads `unscheduledReminders`, calls the external `twilio.scheduleSMS`, and then updates `workflowReminder` in separate non-transactional steps. There is no lock, advisory mutex, or single-runner coordination. If two cron instances overlap (e.g., the previous run is still in flight when a new one starts, or this cron is invoked manually while a scheduled run is active), both will fetch the same unscheduled rows, both will call `twilio.scheduleSMS` (producing duplicate SMS messages for end users), and both will perform `update` based on the same `retryCount` snapshot so one increment is effectively a no-op. The newly added retry logic amplifies this: if retryCount increments are lost due to the race, a reminder may need more than 2 actual failures before being cleaned up, or conversely may be deleted after only one observed failure. At minimum, the handler should use an advisory lock keyed on the workflow step or use an idempotent update (`update where retryCount = <stale value>`) to make the increment safe.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests cover the new retry-count / cleanup behavior\", \"body\": \"The change introduces new persistence logic (a new column, conditional increment in two branches, and a new cleanup predicate) but no test files were added or updated. There is no coverage verifying: (a) `retryCount` is incremented when `twilio.scheduleSMS` returns falsy, (b) `retryCount` is incremented in the catch branch, (c) reminders with `retryCount > 1` are deleted regardless of scheduledDate, (d) past-dated SMS reminders without retries are still deleted, or (e) the off-by-one threshold (2 failures -> delete) matches the PR description. Without tests, regressions in the retry threshold or in the OR-clause semantics (e.g., the missing method filter noted above) can ship undetected.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 198, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Error log does not identify which reminder failed\", \"body\": \"The catch block logs only `Error scheduling SMS with error ${error}`. It does not include the reminder id, booking uid, workflowStepId, scheduledDate, sendTo, or the prior retryCount value. When the new retry-and-delete flow drops a reminder (after retryCount > 1) there is no operator-visible trail of which reminder was deleted or why it was abandoned, which makes production debugging and audit of dropped SMS reminders very difficult. At minimum the log line should include the reminder id and the new retryCount.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 29, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Cleanup deletes reminders based on retryCount even when scheduledDate is still in the future\", \"body\": \"The new OR clause causes any WorkflowReminder with retryCount > 1 to be deleted regardless of its scheduledDate. So if SMS scheduling fails twice for a reminder that is still scheduled to fire hours or days in the future, the reminder is permanently dropped even though the event has not happened yet. This matches the PR description but is worth flagging: there is no alerting or metric when a future reminder is given up on, and no way to distinguish \\\"transient Twilio failure\\\" from \\\"permanent bad phone number\\\". Consider also classifying errors so permanent failures (e.g., invalid phone number from Twilio) are dropped immediately while transient ones use more retries, or at least log when a future-dated reminder is being dropped.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "medium",
+   "category": "bug",
+   "title": "deleteMany retryCount branch lacks method filter, can delete non-SMS reminders",
+   "body": "The new OR clause in the cleanup deleteMany only filters by `retryCount: { gt: 1 }` on the second branch, with no `method` constraint. The first branch correctly restricts to `method: WorkflowMethods.SMS`, but the retryCount branch will match WorkflowReminder rows of any method (EMAIL, WHATSAPP) if their retryCount ever exceeds 1. While this PR only increments retryCount for SMS, this is a latent bug: any future code path (or out-of-band DB change) that pushes an EMAIL/WHATSAPP reminder's retryCount above 1 will cause it to be silently deleted by this SMS handler. The retry branch should be `{ method: WorkflowMethods.SMS, retryCount: { gt: 1 } }` to keep the cleanup semantically consistent with the rest of the handler, which only processes SMS."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 67,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "No guard against concurrent cron execution; duplicate SMS and lost retryCount increments possible",
+   "body": "The handler reads `unscheduledReminders`, calls the external `twilio.scheduleSMS`, and then updates `workflowReminder` in separate non-transactional steps. There is no lock, advisory mutex, or single-runner coordination. If two cron instances overlap (e.g., the previous run is still in flight when a new one starts, or this cron is invoked manually while a scheduled run is active), both will fetch the same unscheduled rows, both will call `twilio.scheduleSMS` (producing duplicate SMS messages for end users), and both will perform `update` based on the same `retryCount` snapshot so one increment is effectively a no-op. The newly added retry logic amplifies this: if retryCount increments are lost due to the race, a reminder may need more than 2 actual failures before being cleaned up, or conversely may be deleted after only one observed failure. At minimum, the handler should use an advisory lock keyed on the workflow step or use an idempotent update (`update where retryCount = <stale value>`) to make the increment safe."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests cover the new retry-count / cleanup behavior",
+   "body": "The change introduces new persistence logic (a new column, conditional increment in two branches, and a new cleanup predicate) but no test files were added or updated. There is no coverage verifying: (a) `retryCount` is incremented when `twilio.scheduleSMS` returns falsy, (b) `retryCount` is incremented in the catch branch, (c) reminders with `retryCount > 1` are deleted regardless of scheduledDate, (d) past-dated SMS reminders without retries are still deleted, or (e) the off-by-one threshold (2 failures -> delete) matches the PR description. Without tests, regressions in the retry threshold or in the OR-clause semantics (e.g., the missing method filter noted above) can ship undetected."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 198,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Error log does not identify which reminder failed",
+   "body": "The catch block logs only `Error scheduling SMS with error ${error}`. It does not include the reminder id, booking uid, workflowStepId, scheduledDate, sendTo, or the prior retryCount value. When the new retry-and-delete flow drops a reminder (after retryCount > 1) there is no operator-visible trail of which reminder was deleted or why it was abandoned, which makes production debugging and audit of dropped SMS reminders very difficult. At minimum the log line should include the reminder id and the new retryCount."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 29,
+   "severity": "low",
+   "category": "data",
+   "title": "Cleanup deletes reminders based on retryCount even when scheduledDate is still in the future",
+   "body": "The new OR clause causes any WorkflowReminder with retryCount > 1 to be deleted regardless of its scheduledDate. So if SMS scheduling fails twice for a reminder that is still scheduled to fire hours or days in the future, the reminder is permanently dropped even though the event has not happened yet. This matches the PR description but is worth flagging: there is no alerting or metric when a future reminder is given up on, and no way to distinguish \"transient Twilio failure\" from \"permanent bad phone number\". Consider also classifying errors so permanent failures (e.g., invalid phone number from Twilio) are dropped immediately while transient ones use more retries, or at least log when a future-dated reminder is being dropped."
+  }
+ ],
+ "finding_count": 5
+}

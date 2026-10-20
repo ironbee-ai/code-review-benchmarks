@@ -1,0 +1,153 @@
+{
+ "run_id": "grok-4.7__low__sentry__95633__r3",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:00:16Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 35077,
+    "output": 9575,
+    "reasoning": 8496,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.12818,
+   "latency_ms": 163873,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4802,
+   "raw_usage": {
+    "completion_tokens": 9575,
+    "prompt_tokens": 36229,
+    "total_tokens": 45804,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 8496,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.12818,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.12818,
+     "upstream_inference_prompt_cost": 0.07073,
+     "upstream_inference_completions_cost": 0.05745
+    }
+   },
+   "started_at": "2026-10-18T12:00:16Z",
+   "first_chunk_ms": 3531,
+   "first_text_ms": 151195,
+   "response_id": "gen-1792324816-OsqqNRXN52Bha7JATy86",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 35077,
+  "output": 9575,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 8496
+ },
+ "cost_reported": 0.12818,
+ "latency_ms": 163873,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 317, \"severity\": \"critical\", \"category\": \"data\", \"title\": \"Rebalance shuts down the shared pool, then failed submits are committed\", \"body\": \"FixedQueuePool is created once on ResultsStrategyFactory and reused by every SimpleQueueProcessingStrategy from create_with_partitions. Strategy.close/terminate (and factory.shutdown) call queue_pool.shutdown(), which shuts the queues and joins the workers. On the next assignment Arroyo builds a new strategy against that same dead pool. submit() then fails on Queue.put (queue.ShutDown), and the except Exception handler add_offset+complete_offset's the message. The new strategy's commit thread treats that as committable and commits offset+1. Those results are acknowledged and never processed, so uptime checks are dropped after the first revoke/rebalance or any close().\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Queues are unbounded, so submit never applies backpressure\", \"body\": \"Each work queue is queue.Queue() with no maxsize, and FixedQueuePool.submit always put()s without blocking. The class docstring claims natural backpressure when queues fill, but the Arroyo consumer thread can keep polling and enqueueing forever while workers lag. A slow subscription (the case this mode is meant to isolate) or a dead worker grows memory without bound and can OOM the process. submit() needs a bounded queue and must block (or otherwise stall the consumer) when that queue is full.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 287, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Offsets are committed from a background thread\", \"body\": \"_commit_loop runs on a daemon thread started in SimpleQueueProcessingStrategy and calls the Arroyo commit callback directly. That callback commits through the Kafka consumer, which the processor is also using on the main thread for poll, assignment, and close. librdkafka consumers are not thread-safe; concurrent commit and poll/close can crash the consumer or corrupt the group offset. Commits need to be handed back to the processing thread (for example recorded in poll() and committed there).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 242, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Shutdown joins every worker for 5s and join() drops the timeout\", \"body\": \"FixedQueuePool.shutdown sets worker.shutdown then queue.shutdown, then joins each worker with timeout=5.0 in series. A worker blocked in result_processor (DB/HTTP) does not notice shutdown until the current item finishes, so N queues can block shutdown for about N*5 seconds (100s at the default 20). SimpleQueueProcessingStrategy.join ignores the timeout Arroyo passes and always calls close(), which also joins the commit thread for another 5s before shutting the pool. A revoke or process shutdown can therefore exceed the Kafka session/max.poll interval and trigger another rebalance while workers are still running. join() must honor its timeout, and worker joins need a single shared deadline.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 233, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Graceful shutdown does not drain queued work before stopping commits\", \"body\": \"OrderedQueueWorker.run checks self.shutdown at the top of the loop, and FixedQueuePool.shutdown sets that flag before waking the workers. A worker that finishes the current item, or that is unblocked from get() with items still queued, exits without processing the rest of the queue. close() also stops and joins the commit thread before pool.shutdown(), so anything completed after the last commit iteration is never committed by this strategy, and anything still queued is abandoned. Arroyo's join contract is that submitted messages are finished or the timeout fires; here in-flight uptime results are dropped on the floor until a later replay, and a replay will not happen for any offset the commit thread already advanced past.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 200, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Queue stats test can pass or fail depending on worker timing\", \"body\": \"test_stats_reporting submits 10 items and immediately asserts get_stats()['total_items'] > 0. Workers are already running, so a fast result_processor can drain every queue before that assertion. The same file's test_different_groups_distributed asserts that 20 hashed keys always land on all 3 queues, which hash() does not guarantee. Both tests will flake under load or a different PYTHONHASHSEED.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 317,
+   "severity": "critical",
+   "category": "data",
+   "title": "Rebalance shuts down the shared pool, then failed submits are committed",
+   "body": "FixedQueuePool is created once on ResultsStrategyFactory and reused by every SimpleQueueProcessingStrategy from create_with_partitions. Strategy.close/terminate (and factory.shutdown) call queue_pool.shutdown(), which shuts the queues and joins the workers. On the next assignment Arroyo builds a new strategy against that same dead pool. submit() then fails on Queue.put (queue.ShutDown), and the except Exception handler add_offset+complete_offset's the message. The new strategy's commit thread treats that as committable and commits offset+1. Those results are acknowledged and never processed, so uptime checks are dropped after the first revoke/rebalance or any close()."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "perf",
+   "title": "Queues are unbounded, so submit never applies backpressure",
+   "body": "Each work queue is queue.Queue() with no maxsize, and FixedQueuePool.submit always put()s without blocking. The class docstring claims natural backpressure when queues fill, but the Arroyo consumer thread can keep polling and enqueueing forever while workers lag. A slow subscription (the case this mode is meant to isolate) or a dead worker grows memory without bound and can OOM the process. submit() needs a bounded queue and must block (or otherwise stall the consumer) when that queue is full."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 287,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Offsets are committed from a background thread",
+   "body": "_commit_loop runs on a daemon thread started in SimpleQueueProcessingStrategy and calls the Arroyo commit callback directly. That callback commits through the Kafka consumer, which the processor is also using on the main thread for poll, assignment, and close. librdkafka consumers are not thread-safe; concurrent commit and poll/close can crash the consumer or corrupt the group offset. Commits need to be handed back to the processing thread (for example recorded in poll() and committed there)."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 242,
+   "severity": "high",
+   "category": "bug",
+   "title": "Shutdown joins every worker for 5s and join() drops the timeout",
+   "body": "FixedQueuePool.shutdown sets worker.shutdown then queue.shutdown, then joins each worker with timeout=5.0 in series. A worker blocked in result_processor (DB/HTTP) does not notice shutdown until the current item finishes, so N queues can block shutdown for about N*5 seconds (100s at the default 20). SimpleQueueProcessingStrategy.join ignores the timeout Arroyo passes and always calls close(), which also joins the commit thread for another 5s before shutting the pool. A revoke or process shutdown can therefore exceed the Kafka session/max.poll interval and trigger another rebalance while workers are still running. join() must honor its timeout, and worker joins need a single shared deadline."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 233,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Graceful shutdown does not drain queued work before stopping commits",
+   "body": "OrderedQueueWorker.run checks self.shutdown at the top of the loop, and FixedQueuePool.shutdown sets that flag before waking the workers. A worker that finishes the current item, or that is unblocked from get() with items still queued, exits without processing the rest of the queue. close() also stops and joins the commit thread before pool.shutdown(), so anything completed after the last commit iteration is never committed by this strategy, and anything still queued is abandoned. Arroyo's join contract is that submitted messages are finished or the timeout fires; here in-flight uptime results are dropped on the floor until a later replay, and a replay will not happen for any offset the commit thread already advanced past."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 200,
+   "severity": "low",
+   "category": "bug",
+   "title": "Queue stats test can pass or fail depending on worker timing",
+   "body": "test_stats_reporting submits 10 items and immediately asserts get_stats()['total_items'] > 0. Workers are already running, so a fast result_processor can drain every queue before that assertion. The same file's test_different_groups_distributed asserts that 20 hashed keys always land on all 3 queues, which hash() does not guarantee. Both tests will flake under load or a different PYTHONHASHSEED."
+  }
+ ],
+ "finding_count": 6
+}

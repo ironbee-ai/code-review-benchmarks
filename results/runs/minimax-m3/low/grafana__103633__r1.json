@@ -1,0 +1,142 @@
+{
+ "run_id": "minimax-m3__low__grafana__103633__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__103633",
+ "golden_url": "https://github.com/grafana/grafana/pull/103633",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:29:29Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109532,
+  "sha": "e2fe98b0f2909fbf",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 34092,
+    "output": 26415,
+    "reasoning": 24909,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04193328,
+   "latency_ms": 118121,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6348,
+   "raw_usage": {
+    "completion_tokens": 26415,
+    "prompt_tokens": 34220,
+    "total_tokens": 60635,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 24909,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04193328,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04193328,
+     "upstream_inference_prompt_cost": 0.01023528,
+     "upstream_inference_completions_cost": 0.031698
+    }
+   },
+   "started_at": "2026-10-17T11:29:29Z",
+   "first_chunk_ms": 1748,
+   "first_text_ms": 111434,
+   "response_id": "gen-1792236569-R8XEZhZCI8vBJYSFzRs2",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 34092,
+  "output": 26415,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 24909
+ },
+ "cost_reported": 0.04193328,
+ "latency_ms": 118121,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR, I'll review the changes to the AuthZService caching behavior carefully.\n\nKey observations:\n- The PR adds a denial cache to short-circuit denied checks\n- Adds cache lookup before falling through to DB in `Check` and `List`\n- Removes cache check inside `getUserPermissions`/`getAnonymousPermissions` (now done externally)\n- Removes client-side cache when running authZ in-proc\n\nLet me verify the cache key consistency between `permDenialCache` and `permCache`:\n\n```go\n// In Check:\npermDenialKey := userPermDenialCacheKey(checkReq.Namespace.Value, checkReq.UserUID, ...)\n\n// In getCachedIdentityPermissions (for users):\nuserIdentifiers, err := s.GetUserIdentifiers(ctx, ns, userID)\nuserPermKey := userPermCacheKey(ns.Value, userIdentifiers.UID, action)\n```\n\n`checkReq.UserUID` is from `types.ParseTypeID(subject)` (raw input), while `userIdentifiers.UID` is the resolved UID via `GetUserIdentifiers` (which converts numeric IDs to actual UIDs). These can differ for numeric IDs.\n\n```go\n{\"findings\": [\n  {\n    \"file\": \"pkg/services/authz/rbac/service.go\",\n    \"line\": 116,\n    \"severity\": \"high\",\n    \"category\": \"bug\",\n    \"title\": \"Denial cache key uses raw subject UID while permission cache key uses resolved UID\",\n    \"body\": \"In Check, the denial cache key is built with `userPermDenialCacheKey(checkReq.Namespace.Value, checkReq.UserUID, ...)`, where `checkReq.UserUID` is the raw value parsed from `req.GetSubject()` (e.g., \\\"123\\\" for subject `user:123`). However, `getCachedIdentityPermissions` (called shortly after) resolves the same user through `GetUserIdentifiers`, which can translate a numeric ID into the actual UID (e.g., \\\"abc123\\\") and then uses that for `userPermCacheKey`. The two caches therefore live under different namespaces for the same user: denial entries are stored under the raw input string, permission entries under the resolved UID. Consequences: (1) the denial cache will store duplicate entries for the same user depending on how the caller formats the subject, wasting memory; (2) more importantly, denial behavior becomes inconsistent \u2014 a denial cached for `user:123` will not be hit when the same user is checked via `user:<actualUID>`, so a user could be allowed on one path and denied on another for the same resource. The denial key should be derived from `userIdentifiers.UID` (after the lookup) the same way the permission cache key is.\"\n  },\n  {\n    \"file\": \"pkg/services/authz/rbac/service.go\",\n    \"line\": 154,\n    \"severity\": \"medium\",\n    \"category\": \"data\",\n    \"title\": \"Denial cache TTL will keep returning false for up to 30 s after a permission grant\",\n    \"body\": \"`permDenialCache` is set with `shortCacheTTL = 30 * time.Second` and is consulted before any other source of truth. Once a denial is recorded for a (user, action, name, parent) tuple, the service will continue returning `Allowed: false` for that tuple for up to 30 seconds with no way to invalidate it on permission grant. The PR explicitly targets scenarios where a user gains a new permission (e.g. they just created a dashboard/folder) and immediately needs access; in the unhappy path where the same (name, parent) was previously checked and denied, the new grant will be invisible until the denial entry expires. There is no invalidation hook tied to permission changes and no `Delete` call on `permDenialCache` anywhere in the file. At minimum the key should be tied to a shorter TTL than the permission grant path, or the service should be invalidated whenever roles/permissions are mutated.\"\n  },\n  {\n    \"file\": \"pkg/services/authz/rbac/service.go\",\n    \"line\": 153,\n    \"severity\": \"medium\",\n    \"category\": \"test_gap\",\n    \"title\": \"No test verifies the denial cache is populated when Check returns false\",\n    \"body\": \"The new branch `if !allowed { s.permDenialCache.Set(ctx, permDenialKey, true) }` is the only place where `permDenialCache` is ever written to (other than the test's manual `Set` in `Should deny on explicit cache deny entry`). The existing `TestService_Check` \\\"should deny user without permission\\\" case asserts `resp.Allowed == false` but does not check `s.permDenialCache.Get(...)` afterwards. As a result, if a future change accidentally removes or breaks the `Set` call, the denial cache would silently stop being populated and no CI signal would fire. The test should explicitly read `s.permDenialCache` (e.g. via `userPermDenialCacheKey`) and assert the entry was written.\"\n  },\n  {\n    \"file\": \"pkg/services/authz/rbac/service_test.go\",\n    \"line\": 982,\n    \"severity\": \"low\",\n    \"category\": \"test_gap\",\n    \"title\": \"Denial-cache precedence test setup does not actually prove precedence\",\n    \"body\": \"In `Should deny on explicit cache deny entry`, the perm cache is set with `map[string]bool{\\\"dashboards:uid:dash1\\\": false}`. Because `checkPermission` only inspects the boolean via `if scopeMap[t.scope(req.Name)]`, a value of `false` is indistinguishable from a missing key \u2014 the check would return `false` even without the denial cache entry. To actually demonstrate that `permDenialCache` is consulted first and short-circuits a would-be allow, the perm cache should be set to `true` for `dashboards:uid:dash1` (matching folder inheritance), so that removing the denial entry would change the response from `false` to `true`.\"\n  },\n  {\n    \"file\": \"pkg/services/authz/rbac/service.go\",\n    \"line\": 180,\n    \"severity\": \"medium\",\n    \"category\": \"data\",\n    \"title\": \"List still serves stale permission cache, so newly created dashboards/folders can be invisible\",\n    \"body\": \"The PR's stated goal is that \\\"dash/folder creator can access the dashboard/folder that they've just created\\\". The `Check` path now falls through to the DB when the cached permission map does not contain the requested resource. `List`, however, was only changed to use `getCachedIdentityPermissions` first; it still returns whatever the cache holds when there is a hit, with no equivalent \\\"cache hit but resource not present -> requery\\\" step. For a user whose cached permission scope map predates the new dashboard/folder, `List` will silently omit the newly created item until the cache expires (`shortCacheTTL`, 30 s). The same `cachedPerms` -> DB fallback used in `Check` needs to apply when the List is asked about a name/folder that is not present in the cached scope map.\"\n  }\n]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 116,
+   "severity": "high",
+   "category": "bug",
+   "title": "Denial cache key uses raw subject UID while permission cache key uses resolved UID",
+   "body": "In Check, the denial cache key is built with `userPermDenialCacheKey(checkReq.Namespace.Value, checkReq.UserUID, ...)`, where `checkReq.UserUID` is the raw value parsed from `req.GetSubject()` (e.g., \"123\" for subject `user:123`). However, `getCachedIdentityPermissions` (called shortly after) resolves the same user through `GetUserIdentifiers`, which can translate a numeric ID into the actual UID (e.g., \"abc123\") and then uses that for `userPermCacheKey`. The two caches therefore live under different namespaces for the same user: denial entries are stored under the raw input string, permission entries under the resolved UID. Consequences: (1) the denial cache will store duplicate entries for the same user depending on how the caller formats the subject, wasting memory; (2) more importantly, denial behavior becomes inconsistent \u2014 a denial cached for `user:123` will not be hit when the same user is checked via `user:<actualUID>`, so a user could be allowed on one path and denied on another for the same resource. The denial key should be derived from `userIdentifiers.UID` (after the lookup) the same way the permission cache key is."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 154,
+   "severity": "medium",
+   "category": "data",
+   "title": "Denial cache TTL will keep returning false for up to 30 s after a permission grant",
+   "body": "`permDenialCache` is set with `shortCacheTTL = 30 * time.Second` and is consulted before any other source of truth. Once a denial is recorded for a (user, action, name, parent) tuple, the service will continue returning `Allowed: false` for that tuple for up to 30 seconds with no way to invalidate it on permission grant. The PR explicitly targets scenarios where a user gains a new permission (e.g. they just created a dashboard/folder) and immediately needs access; in the unhappy path where the same (name, parent) was previously checked and denied, the new grant will be invisible until the denial entry expires. There is no invalidation hook tied to permission changes and no `Delete` call on `permDenialCache` anywhere in the file. At minimum the key should be tied to a shorter TTL than the permission grant path, or the service should be invalidated whenever roles/permissions are mutated."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 153,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test verifies the denial cache is populated when Check returns false",
+   "body": "The new branch `if !allowed { s.permDenialCache.Set(ctx, permDenialKey, true) }` is the only place where `permDenialCache` is ever written to (other than the test's manual `Set` in `Should deny on explicit cache deny entry`). The existing `TestService_Check` \"should deny user without permission\" case asserts `resp.Allowed == false` but does not check `s.permDenialCache.Get(...)` afterwards. As a result, if a future change accidentally removes or breaks the `Set` call, the denial cache would silently stop being populated and no CI signal would fire. The test should explicitly read `s.permDenialCache` (e.g. via `userPermDenialCacheKey`) and assert the entry was written."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/authz/rbac/service_test.go",
+   "line": 982,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Denial-cache precedence test setup does not actually prove precedence",
+   "body": "In `Should deny on explicit cache deny entry`, the perm cache is set with `map[string]bool{\"dashboards:uid:dash1\": false}`. Because `checkPermission` only inspects the boolean via `if scopeMap[t.scope(req.Name)]`, a value of `false` is indistinguishable from a missing key \u2014 the check would return `false` even without the denial cache entry. To actually demonstrate that `permDenialCache` is consulted first and short-circuits a would-be allow, the perm cache should be set to `true` for `dashboards:uid:dash1` (matching folder inheritance), so that removing the denial entry would change the response from `false` to `true`."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 180,
+   "severity": "medium",
+   "category": "data",
+   "title": "List still serves stale permission cache, so newly created dashboards/folders can be invisible",
+   "body": "The PR's stated goal is that \"dash/folder creator can access the dashboard/folder that they've just created\". The `Check` path now falls through to the DB when the cached permission map does not contain the requested resource. `List`, however, was only changed to use `getCachedIdentityPermissions` first; it still returns whatever the cache holds when there is a hit, with no equivalent \"cache hit but resource not present -> requery\" step. For a user whose cached permission scope map predates the new dashboard/folder, `List` will silently omit the newly created item until the cache expires (`shortCacheTTL`, 30 s). The same `cachedPerms` -> DB fallback used in `Check` needs to apply when the List is asked about a name/folder that is not present in the cached scope map."
+  }
+ ],
+ "finding_count": 5
+}

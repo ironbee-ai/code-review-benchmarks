@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-haiku-5.5__xhigh__cal.com__14943__r1",
+ "model_id": "claude-haiku-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-haiku-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:30:25Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 28654,
+    "output": 11691,
+    "reasoning": 9989,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 55427,
+   "finish_reason": "end_turn",
+   "served_model": "claude-haiku-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4772,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 28654,
+    "output_tokens": 11691,
+    "output_tokens_details": {
+     "thinking_tokens": 9989
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T11:30:25Z",
+   "first_chunk_ms": 1635,
+   "first_text_ms": 48231,
+   "response_id": "msg_bdrk_262do5eauulnniplqfaawsciswlffcdjbee2h3gwdudadoythqxa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 28654,
+  "output": 11691,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9989
+ },
+ "cost_reported": null,
+ "latency_ms": 55427,
+ "served_model": "claude-haiku-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unguarded DB update in catch can abort the whole batch\", \"body\": \"The new `prisma.workflowReminder.update` in the catch block is not wrapped in its own try/catch. Before this PR the catch only logged, so nothing could escape the `for` loop. Now, if this update throws (for example a Prisma P2025 because the reminder was deleted between the fetch and the update, such as by a booking cancellation, or a transient DB error), the exception propagates out of the loop. Every remaining unscheduled reminder in the batch is skipped for this run and the handler fails instead of finishing. The success-path updates at lines 169 and 179 can throw into this same catch, so the risk is not limited to the new code path.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"retryCount is incremented with a non-atomic read-modify-write\", \"body\": \"`retryCount: reminder.retryCount + 1` uses the value read at the start of the run. If two cron invocations overlap (each SMS scheduling call is a network round trip, so a run can exceed the schedule interval), both read 0 and both write 1, losing an increment. Reminders then get more attempts than intended before the give-up delete triggers. Prisma's atomic `retryCount: { increment: 1 }` avoids this. The same pattern is repeated at line 195.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Give-up delete clause is not scoped to SMS or unscheduled reminders\", \"body\": \"The `retryCount: { gt: 1 }` branch of the deleteMany OR has no `method` or `scheduled` filter, so it deletes any WorkflowReminder with retryCount > 1, including EMAIL and WHATSAPP rows and rows that are already scheduled. Today only the SMS path increments retryCount, so this is latent, but the intent described in the PR is SMS-only give-up. Scoping the branch with `method: WorkflowMethods.SMS` and `scheduled: false` would make the delete match that intent and not depend on an invariant elsewhere in the codebase.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 31, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"OR with an unindexed retryCount predicate forces a full table scan each run\", \"body\": \"The deleteMany now runs `OR [method/scheduledDate condition, retryCount > 1]`. The schema has no index on retryCount, and Postgres cannot use the existing (method, scheduled, scheduledDate) index for an OR when one branch is unindexed, so every cron invocation scans the whole WorkflowReminder table. That table grows with every booking step, and this runs on a frequent cron. Either add an index on retryCount or issue the two conditions as separate deletes.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Reminders with no message or no sendTo are never counted as failures\", \"body\": \"If `message` is empty or `sendTo` is missing, neither the success branch nor the new else/catch increments retryCount runs. Those reminders stay unscheduled and are re-fetched and skipped on every cron run until scheduledDate passes, never reaching the give-up threshold. The `continue` at lines 68-70 for a missing workflowStep or booking has the same effect. This is a failure to send that the PR's retry-then-delete logic is meant to cover but does not.\"}, {\"file\": \"packages/prisma/schema.prisma\", \"line\": 1000, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the retry and give-up behavior\", \"body\": \"The PR changes the cron's retry semantics (increment on failure, increment on catch, delete when retryCount > 1) but adds no test. Nothing verifies that a failed Twilio schedule increments the counter, that a second failure leads to deletion on the next run, or that the catch path behaves correctly. The regression described in the catch-block finding would also go unnoticed without a test.\"}, {\"file\": \"packages/prisma/schema.prisma\", \"line\": 1000, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Generated kysely and zod artifacts were not regenerated (if committed)\", \"body\": \"The schema declares generators for prisma-kysely (output `../kysely`) and zod-prisma (output `./zod`). Adding a column to WorkflowReminder normally requires regenerating those artifacts. The PR does not touch them. If they are checked into the repo, their WorkflowReminder types will lack retryCount and will drift from the database. Please confirm whether these are committed and regenerate them if so.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unguarded DB update in catch can abort the whole batch",
+   "body": "The new `prisma.workflowReminder.update` in the catch block is not wrapped in its own try/catch. Before this PR the catch only logged, so nothing could escape the `for` loop. Now, if this update throws (for example a Prisma P2025 because the reminder was deleted between the fetch and the update, such as by a booking cancellation, or a transient DB error), the exception propagates out of the loop. Every remaining unscheduled reminder in the batch is skipped for this run and the handler fails instead of finishing. The success-path updates at lines 169 and 179 can throw into this same catch, so the risk is not limited to the new code path."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "retryCount is incremented with a non-atomic read-modify-write",
+   "body": "`retryCount: reminder.retryCount + 1` uses the value read at the start of the run. If two cron invocations overlap (each SMS scheduling call is a network round trip, so a run can exceed the schedule interval), both read 0 and both write 1, losing an increment. Reminders then get more attempts than intended before the give-up delete triggers. Prisma's atomic `retryCount: { increment: 1 }` avoids this. The same pattern is repeated at line 195."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "low",
+   "category": "data",
+   "title": "Give-up delete clause is not scoped to SMS or unscheduled reminders",
+   "body": "The `retryCount: { gt: 1 }` branch of the deleteMany OR has no `method` or `scheduled` filter, so it deletes any WorkflowReminder with retryCount > 1, including EMAIL and WHATSAPP rows and rows that are already scheduled. Today only the SMS path increments retryCount, so this is latent, but the intent described in the PR is SMS-only give-up. Scoping the branch with `method: WorkflowMethods.SMS` and `scheduled: false` would make the delete match that intent and not depend on an invariant elsewhere in the codebase."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 31,
+   "severity": "low",
+   "category": "perf",
+   "title": "OR with an unindexed retryCount predicate forces a full table scan each run",
+   "body": "The deleteMany now runs `OR [method/scheduledDate condition, retryCount > 1]`. The schema has no index on retryCount, and Postgres cannot use the existing (method, scheduled, scheduledDate) index for an OR when one branch is unindexed, so every cron invocation scans the whole WorkflowReminder table. That table grows with every booking step, and this runs on a frequent cron. Either add an index on retryCount or issue the two conditions as separate deletes."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "low",
+   "category": "bug",
+   "title": "Reminders with no message or no sendTo are never counted as failures",
+   "body": "If `message` is empty or `sendTo` is missing, neither the success branch nor the new else/catch increments retryCount runs. Those reminders stay unscheduled and are re-fetched and skipped on every cron run until scheduledDate passes, never reaching the give-up threshold. The `continue` at lines 68-70 for a missing workflowStep or booking has the same effect. This is a failure to send that the PR's retry-then-delete logic is meant to cover but does not."
+  },
+  {
+   "index": 5,
+   "file": "packages/prisma/schema.prisma",
+   "line": 1000,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the retry and give-up behavior",
+   "body": "The PR changes the cron's retry semantics (increment on failure, increment on catch, delete when retryCount > 1) but adds no test. Nothing verifies that a failed Twilio schedule increments the counter, that a second failure leads to deletion on the next run, or that the catch path behaves correctly. The regression described in the catch-block finding would also go unnoticed without a test."
+  },
+  {
+   "index": 6,
+   "file": "packages/prisma/schema.prisma",
+   "line": 1000,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Generated kysely and zod artifacts were not regenerated (if committed)",
+   "body": "The schema declares generators for prisma-kysely (output `../kysely`) and zod-prisma (output `./zod`). Adding a column to WorkflowReminder normally requires regenerating those artifacts. The PR does not touch them. If they are checked into the repo, their WorkflowReminder types will lack retryCount and will drift from the database. Please confirm whether these are committed and regenerate them if so."
+  }
+ ],
+ "finding_count": 7
+}

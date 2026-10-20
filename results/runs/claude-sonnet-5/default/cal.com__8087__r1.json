@@ -1,0 +1,156 @@
+{
+ "run_id": "claude-sonnet-5__default__cal.com__8087__r1",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 1,
+ "started_at": "2026-10-18T20:38:17Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 63582,
+    "output": 12284,
+    "reasoning": 9967,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 124416,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6746,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 63582,
+    "output_tokens": 12284,
+    "output_tokens_details": {
+     "thinking_tokens": 9967
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T20:38:17Z",
+   "first_chunk_ms": 2584,
+   "first_text_ms": 102818,
+   "response_id": "msg_bdrk_7e7ny7ol3wmevbsaw7yyll5qwhxmrak644gbxykg6ntuviikvbga",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 63582,
+  "output": 12284,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9967
+ },
+ "cost_reported": null,
+ "latency_ms": 124416,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/app-store/index.ts\", \"line\": 3, \"severity\": \"high\", \"title\": \"Dynamic imports are invoked eagerly, defeating the purpose of async/lazy loading\", \"body\": \"Each app module is loaded with `import(\\\"./appname\\\")` directly inside the object literal (e.g. `applecalendar: import(\\\"./applecalendar\\\")`). These `import()` calls execute immediately when the `appStore` module is evaluated, not lazily when a given app key is actually accessed. This means all app chunks begin loading as soon as anyone imports `appStore`, exactly like the previous static-import approach, except now every consumer must `await` the property access. The PR title/description implies on-demand/code-split loading of apps, but this implementation provides no such benefit while adding overhead (every lookup becomes async) to every call site across the codebase (getCalendar, videoClient, payment helpers, etc.).\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"high\", \"title\": \"getCalendarCredentials not updated for async getCalendar, silently changes contract\", \"body\": \"`getCalendar` was changed to be async and return `Promise<Calendar | null>`, but `getCalendarCredentials` (line 28) still calls it without `await`: `const calendar = getCalendar(credential);`. The returned `calendar` field in each credential entry is now a `Promise` instead of a resolved `Calendar` instance. Only the call site inside this same file (`getConnectedCalendars`) was updated to `await item.calendar`. Any other consumer of `getCalendarCredentials` elsewhere in the codebase that expects a synchronously-resolved `Calendar` object (not shown in this diff) will silently receive an unresolved Promise and break at runtime, since this is a breaking API/contract change that was not fully propagated.\"}, {\"file\": \"packages/core/videoClient.ts\", \"line\": 21, \"severity\": \"medium\", \"title\": \"getVideoAdapters resolves credentials sequentially instead of in parallel\", \"body\": \"The rewritten `getVideoAdapters` uses a `for...of` loop with `await appStore[appName]` inside, resolving each credential's app module one at a time. Previously this was a synchronous `reduce`. With multiple credentials (e.g. several video integrations configured for a booking), each dynamic import lookup is awaited sequentially rather than concurrently (e.g. via `Promise.all`), unnecessarily serializing what could be parallel async work and adding latency to booking creation/cancellation/update flows that call this function.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 458, \"severity\": \"high\", \"title\": \"Async forEach callback races with downstream Promise.all, dropping calendar deletions for recurring bookings\", \"body\": \"In the recurring-event branch, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => {...})` pushes results into `apiDeletes` inside an async callback that `forEach` does not wait for. Later in the function, `await Promise.all(prismaPromises.concat(apiDeletes))` is executed, but because the async forEach callbacks (which now also `await getCalendar(credential)`) may not have completed and pushed into `apiDeletes` by that point, some calendar deletion promises can be missing from the awaited list. This can result in calendar events for recurring bookings not being reliably deleted, and the function may return success ('Booking successfully cancelled.') before (or without ever) actually deleting those calendar entries. Note the sibling branch just below (lines ~475-484) was correctly rewritten using a `for...of` loop with `await`, but this branch was left using the broken `.forEach(async...)` pattern.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 124, \"severity\": \"medium\", \"title\": \"try/catch around forEach(async) cannot catch errors from the awaited getCalendar call\", \"body\": \"The code wraps `bookingRefsFiltered.forEach(async (bookingRef) => {...})` in a `try { } catch (error) { logger.error(...) }` block. Since `forEach` does not await its async callback, and the callback now does `await getCalendar(...)` (previously synchronous), any rejection thrown inside the callback (e.g. a rejected getCalendar promise or a failing deleteEvent/deleteMeeting call) becomes an unhandled promise rejection instead of being caught by the surrounding try/catch. This silently swallows/loses errors that the code intends to log, and can also leave the process with unhandled rejections.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 124, \"severity\": \"medium\", \"title\": \"Same try/catch-around-forEach(async) issue as in vital/lib/reschedule.ts\", \"body\": \"Identical pattern: `bookingRefsFiltered.forEach(async (bookingRef) => {...})` inside a try/catch that cannot catch rejections thrown inside the async callback. Making `getCalendar` async and awaiting it inside this unawaited forEach callback means calendar/video deletion errors during reschedule are not actually caught or logged as the surrounding try/catch intends, risking silent failures and unhandled promise rejections.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"medium\", \"title\": \"requestReschedule mutation does not wait for calendar/video cancellation before resolving\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => {...})` is not awaited by the surrounding `requestReschedule` mutation handler. The mutation proceeds (sending webhooks, returning to the client) without waiting for the calendar/video event deletions inside this now-async callback to complete. Since `getCalendar` is now async, each iteration performs an additional await before deleting the event, further increasing the window during which the mutation can complete and respond to the client before cancellation of the old calendar/video events has actually finished, which can cause rescheduled bookings to temporarily (or permanently, if an error occurs) leave stale calendar entries.\"}, {\"file\": \"packages/app-store/index.ts\", \"line\": 1, \"severity\": \"low\", \"title\": \"No tests added for the behavioral change to async app lookups\", \"body\": \"This PR changes `appStore` lookups from synchronous to asynchronous across many critical flows (calendar CRUD, video meeting creation, payment processing, booking cancellation/reschedule). No new or updated tests accompany these changes to verify that awaiting resolves correctly, that errors from unresolved/missing app keys are still handled the same way, or that the various forEach/async patterns behave as expected. Given the breadth of files touched (12 files across core booking/payment/calendar logic), this is a meaningful test gap for a change with this level of risk.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/index.ts",
+   "line": 3,
+   "severity": "high",
+   "category": null,
+   "title": "Dynamic imports are invoked eagerly, defeating the purpose of async/lazy loading",
+   "body": "Each app module is loaded with `import(\"./appname\")` directly inside the object literal (e.g. `applecalendar: import(\"./applecalendar\")`). These `import()` calls execute immediately when the `appStore` module is evaluated, not lazily when a given app key is actually accessed. This means all app chunks begin loading as soon as anyone imports `appStore`, exactly like the previous static-import approach, except now every consumer must `await` the property access. The PR title/description implies on-demand/code-split loading of apps, but this implementation provides no such benefit while adding overhead (every lookup becomes async) to every call site across the codebase (getCalendar, videoClient, payment helpers, etc.)."
+  },
+  {
+   "index": 1,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "high",
+   "category": null,
+   "title": "getCalendarCredentials not updated for async getCalendar, silently changes contract",
+   "body": "`getCalendar` was changed to be async and return `Promise<Calendar | null>`, but `getCalendarCredentials` (line 28) still calls it without `await`: `const calendar = getCalendar(credential);`. The returned `calendar` field in each credential entry is now a `Promise` instead of a resolved `Calendar` instance. Only the call site inside this same file (`getConnectedCalendars`) was updated to `await item.calendar`. Any other consumer of `getCalendarCredentials` elsewhere in the codebase that expects a synchronously-resolved `Calendar` object (not shown in this diff) will silently receive an unresolved Promise and break at runtime, since this is a breaking API/contract change that was not fully propagated."
+  },
+  {
+   "index": 2,
+   "file": "packages/core/videoClient.ts",
+   "line": 21,
+   "severity": "medium",
+   "category": null,
+   "title": "getVideoAdapters resolves credentials sequentially instead of in parallel",
+   "body": "The rewritten `getVideoAdapters` uses a `for...of` loop with `await appStore[appName]` inside, resolving each credential's app module one at a time. Previously this was a synchronous `reduce`. With multiple credentials (e.g. several video integrations configured for a booking), each dynamic import lookup is awaited sequentially rather than concurrently (e.g. via `Promise.all`), unnecessarily serializing what could be parallel async work and adding latency to booking creation/cancellation/update flows that call this function."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 458,
+   "severity": "high",
+   "category": null,
+   "title": "Async forEach callback races with downstream Promise.all, dropping calendar deletions for recurring bookings",
+   "body": "In the recurring-event branch, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => {...})` pushes results into `apiDeletes` inside an async callback that `forEach` does not wait for. Later in the function, `await Promise.all(prismaPromises.concat(apiDeletes))` is executed, but because the async forEach callbacks (which now also `await getCalendar(credential)`) may not have completed and pushed into `apiDeletes` by that point, some calendar deletion promises can be missing from the awaited list. This can result in calendar events for recurring bookings not being reliably deleted, and the function may return success ('Booking successfully cancelled.') before (or without ever) actually deleting those calendar entries. Note the sibling branch just below (lines ~475-484) was correctly rewritten using a `for...of` loop with `await`, but this branch was left using the broken `.forEach(async...)` pattern."
+  },
+  {
+   "index": 4,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 124,
+   "severity": "medium",
+   "category": null,
+   "title": "try/catch around forEach(async) cannot catch errors from the awaited getCalendar call",
+   "body": "The code wraps `bookingRefsFiltered.forEach(async (bookingRef) => {...})` in a `try { } catch (error) { logger.error(...) }` block. Since `forEach` does not await its async callback, and the callback now does `await getCalendar(...)` (previously synchronous), any rejection thrown inside the callback (e.g. a rejected getCalendar promise or a failing deleteEvent/deleteMeeting call) becomes an unhandled promise rejection instead of being caught by the surrounding try/catch. This silently swallows/loses errors that the code intends to log, and can also leave the process with unhandled rejections."
+  },
+  {
+   "index": 5,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 124,
+   "severity": "medium",
+   "category": null,
+   "title": "Same try/catch-around-forEach(async) issue as in vital/lib/reschedule.ts",
+   "body": "Identical pattern: `bookingRefsFiltered.forEach(async (bookingRef) => {...})` inside a try/catch that cannot catch rejections thrown inside the async callback. Making `getCalendar` async and awaiting it inside this unawaited forEach callback means calendar/video deletion errors during reschedule are not actually caught or logged as the surrounding try/catch intends, risking silent failures and unhandled promise rejections."
+  },
+  {
+   "index": 6,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "medium",
+   "category": null,
+   "title": "requestReschedule mutation does not wait for calendar/video cancellation before resolving",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => {...})` is not awaited by the surrounding `requestReschedule` mutation handler. The mutation proceeds (sending webhooks, returning to the client) without waiting for the calendar/video event deletions inside this now-async callback to complete. Since `getCalendar` is now async, each iteration performs an additional await before deleting the event, further increasing the window during which the mutation can complete and respond to the client before cancellation of the old calendar/video events has actually finished, which can cause rescheduled bookings to temporarily (or permanently, if an error occurs) leave stale calendar entries."
+  },
+  {
+   "index": 7,
+   "file": "packages/app-store/index.ts",
+   "line": 1,
+   "severity": "low",
+   "category": null,
+   "title": "No tests added for the behavioral change to async app lookups",
+   "body": "This PR changes `appStore` lookups from synchronous to asynchronous across many critical flows (calendar CRUD, video meeting creation, payment processing, booking cancellation/reschedule). No new or updated tests accompany these changes to verify that awaiting resolves correctly, that errors from unresolved/missing app keys are still handled the same way, or that the various forEach/async patterns behave as expected. Given the breadth of files touched (12 files across core booking/payment/calendar logic), this is a meaningful test gap for a change with this level of risk."
+  }
+ ],
+ "finding_count": 8
+}

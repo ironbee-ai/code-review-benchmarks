@@ -1,0 +1,140 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__discourse-graphite__3__r2",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 2,
+ "started_at": "2026-10-18T21:54:12Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 27681,
+    "output": 24294,
+    "reasoning": 22174,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 249703,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6229,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 27681,
+    "output_tokens": 24294,
+    "output_tokens_details": {
+     "thinking_tokens": 22174
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:54:12Z",
+   "first_chunk_ms": 1994,
+   "first_text_ms": 232493,
+   "response_id": "msg_bdrk_l7y3oiq66ifo3h5h6ag7q2islctyzyehjwwdrneeq7tiquzura3q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 27681,
+  "output": 24294,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 22174
+ },
+ "cost_reported": null,
+ "latency_ms": 249703,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 11, \"severity\": \"high\", \"category\": \"data\", \"title\": \"should_block? mutates and persists match stats as a side effect of validation, causing double counting\", \"body\": \"`BlockedEmail.should_block?` increments `match_count`, sets `last_match_at`, and saves the record every time it is called. It is invoked from `EmailValidator#validate_each` (lib/validators/email_validator.rb:13), which runs as part of `User` validations. `UsersController#create` (app/controllers/users_controller.rb:168) explicitly calls `user.valid?` before calling `user.save` (line 172), and `save` internally re-runs validations. Because `email_changed?` is true for a brand-new unsaved user both times, validations (and therefore the BlockedEmail side effect) run twice for every single sign-up attempt against a blocked address, so `match_count` is incremented twice (and `last_match_at` recomputed twice) per attempt, corrupting the very statistics this feature is meant to track. The side effect is also persisted outside of the `User` save/transaction (validations run before the AR save transaction begins), so the counters are updated even if the `User` save subsequently fails, or if `valid?` is called anywhere else (forms, specs, console) without ever creating a user.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Non-atomic match_count increment risks lost updates under concurrent requests\", \"body\": \"`record.match_count += 1; record.last_match_at = Time.zone.now; record.save` reads the counter into memory and writes it back without any locking or atomic SQL update. If two sign-up attempts for the same blocked email happen concurrently (a realistic scenario for exactly the kind of repeated spam/bot signups this feature targets), both requests can read the same starting value and each save overwrites the other's increment, silently losing hits/undercounting match_count. This should use an atomic update such as `update_counters`, `increment!`, or a raw SQL `match_count = match_count + 1`.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Blocked email lookup and uniqueness are case-sensitive, allowing the block to be bypassed by case variation\", \"body\": \"`BlockedEmail.where(email: email).first` and the `validates :email, presence: true, uniqueness: true` on line 5 do no case normalization. Elsewhere in the app, email comparisons are explicitly case-normalized (e.g. `UsersController#change_email` uses `Email.downcase`), but `BlockedEmail` does not. As a result, an admin who blocks \\\"Spammer@EXAMPLE.com\\\" will fail to block a sign-up using \\\"spammer@example.com\\\" (or any other casing variant), defeating the purpose of the feature. It also permits multiple rows for the same logical address differing only in case, since the uniqueness check is case-sensitive by default.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 17, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"rejectedEmails default array literal is shared across controller instances and never reset\", \"body\": \"`rejectedEmails: Em.A([])` assigns a single array object as the default value directly on the controller definition instead of creating a fresh array per instance (e.g. via `init`). In Ember, object/array literals used as defaults this way are shared by reference across every instance created from the same class/mixin definition rather than instantiated per object \u2014 a well known Ember pitfall. Because the array is also never cleared anywhere (no reset on modal open/close or `init`), once an email is pushed into `rejectedEmails` it stays rejected for the lifetime of that shared array object. If the \\\"Create Account\\\" controller is ever recreated (e.g. the modal reopened, or in a shared/kiosk browser session), a previously rejected email \u2014 even from an unrelated earlier attempt, or one that the server would no longer reject (e.g. an admin unblocked it) \u2014 will continue to be permanently flagged invalid client-side with no way to retry short of a full page reload.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 3, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Domain whitelist/blacklist validation behavior has no test coverage after being moved into EmailValidator\", \"body\": \"The domain-restriction logic (`email_in_restriction_setting?` plus the whitelist/blacklist branches) was moved out of `User` (previously `email_validator`/`email_in_restriction_setting?`, deleted from app/models/user.rb in this PR) into `lib/validators/email_validator.rb`. The new spec file only covers the new \\\"blocked email\\\" branch via `BlockedEmail.should_block?` and adds no example for `SiteSetting.email_domains_whitelist`/`email_domains_blacklist` behavior, so this pre-existing, non-trivial logic is left untested after the refactor. Additionally, any prior spec that exercised the now-removed `User#email_validator`/`User#email_in_restriction_setting?` methods directly would fail since those methods no longer exist on `User`.\"}, {\"file\": \"db/migrate/20130724201552_create_blocked_emails.rb\", \"line\": 5, \"severity\": \"low\", \"category\": \"data\", \"title\": \"action_type column has no DB default or range validation, relying only on an app-level callback\", \"body\": \"The `action_type` column is declared `null: false` with no database default, and the only place a default is applied is the `before_validation :set_defaults` callback in app/models/blocked_email.rb (lines 21-23), which only runs through ActiveRecord's validation path. There is also no validation constraining `action_type` to the two defined enum values (`actions[:block]`/`actions[:do_nothing]`). The spec file's own comment (\\\"If we manually load the table with some emails...\\\") suggests bulk/manual loading is an expected use case; such inserts bypassing ActiveRecord callbacks would violate the NOT NULL constraint unless `action_type` is explicitly supplied, and any out-of-range value stored would silently be treated as \\\"do nothing\\\" by `should_block?`'s equality check rather than raising an error.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 11,
+   "severity": "high",
+   "category": "data",
+   "title": "should_block? mutates and persists match stats as a side effect of validation, causing double counting",
+   "body": "`BlockedEmail.should_block?` increments `match_count`, sets `last_match_at`, and saves the record every time it is called. It is invoked from `EmailValidator#validate_each` (lib/validators/email_validator.rb:13), which runs as part of `User` validations. `UsersController#create` (app/controllers/users_controller.rb:168) explicitly calls `user.valid?` before calling `user.save` (line 172), and `save` internally re-runs validations. Because `email_changed?` is true for a brand-new unsaved user both times, validations (and therefore the BlockedEmail side effect) run twice for every single sign-up attempt against a blocked address, so `match_count` is incremented twice (and `last_match_at` recomputed twice) per attempt, corrupting the very statistics this feature is meant to track. The side effect is also persisted outside of the `User` save/transaction (validations run before the AR save transaction begins), so the counters are updated even if the `User` save subsequently fails, or if `valid?` is called anywhere else (forms, specs, console) without ever creating a user."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Non-atomic match_count increment risks lost updates under concurrent requests",
+   "body": "`record.match_count += 1; record.last_match_at = Time.zone.now; record.save` reads the counter into memory and writes it back without any locking or atomic SQL update. If two sign-up attempts for the same blocked email happen concurrently (a realistic scenario for exactly the kind of repeated spam/bot signups this feature targets), both requests can read the same starting value and each save overwrites the other's increment, silently losing hits/undercounting match_count. This should use an atomic update such as `update_counters`, `increment!`, or a raw SQL `match_count = match_count + 1`."
+  },
+  {
+   "index": 2,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "medium",
+   "category": "data",
+   "title": "Blocked email lookup and uniqueness are case-sensitive, allowing the block to be bypassed by case variation",
+   "body": "`BlockedEmail.where(email: email).first` and the `validates :email, presence: true, uniqueness: true` on line 5 do no case normalization. Elsewhere in the app, email comparisons are explicitly case-normalized (e.g. `UsersController#change_email` uses `Email.downcase`), but `BlockedEmail` does not. As a result, an admin who blocks \"Spammer@EXAMPLE.com\" will fail to block a sign-up using \"spammer@example.com\" (or any other casing variant), defeating the purpose of the feature. It also permits multiple rows for the same logical address differing only in case, since the uniqueness check is case-sensitive by default."
+  },
+  {
+   "index": 3,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 17,
+   "severity": "medium",
+   "category": "bug",
+   "title": "rejectedEmails default array literal is shared across controller instances and never reset",
+   "body": "`rejectedEmails: Em.A([])` assigns a single array object as the default value directly on the controller definition instead of creating a fresh array per instance (e.g. via `init`). In Ember, object/array literals used as defaults this way are shared by reference across every instance created from the same class/mixin definition rather than instantiated per object \u2014 a well known Ember pitfall. Because the array is also never cleared anywhere (no reset on modal open/close or `init`), once an email is pushed into `rejectedEmails` it stays rejected for the lifetime of that shared array object. If the \"Create Account\" controller is ever recreated (e.g. the modal reopened, or in a shared/kiosk browser session), a previously rejected email \u2014 even from an unrelated earlier attempt, or one that the server would no longer reject (e.g. an admin unblocked it) \u2014 will continue to be permanently flagged invalid client-side with no way to retry short of a full page reload."
+  },
+  {
+   "index": 4,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 3,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Domain whitelist/blacklist validation behavior has no test coverage after being moved into EmailValidator",
+   "body": "The domain-restriction logic (`email_in_restriction_setting?` plus the whitelist/blacklist branches) was moved out of `User` (previously `email_validator`/`email_in_restriction_setting?`, deleted from app/models/user.rb in this PR) into `lib/validators/email_validator.rb`. The new spec file only covers the new \"blocked email\" branch via `BlockedEmail.should_block?` and adds no example for `SiteSetting.email_domains_whitelist`/`email_domains_blacklist` behavior, so this pre-existing, non-trivial logic is left untested after the refactor. Additionally, any prior spec that exercised the now-removed `User#email_validator`/`User#email_in_restriction_setting?` methods directly would fail since those methods no longer exist on `User`."
+  },
+  {
+   "index": 5,
+   "file": "db/migrate/20130724201552_create_blocked_emails.rb",
+   "line": 5,
+   "severity": "low",
+   "category": "data",
+   "title": "action_type column has no DB default or range validation, relying only on an app-level callback",
+   "body": "The `action_type` column is declared `null: false` with no database default, and the only place a default is applied is the `before_validation :set_defaults` callback in app/models/blocked_email.rb (lines 21-23), which only runs through ActiveRecord's validation path. There is also no validation constraining `action_type` to the two defined enum values (`actions[:block]`/`actions[:do_nothing]`). The spec file's own comment (\"If we manually load the table with some emails...\") suggests bulk/manual loading is an expected use case; such inserts bypassing ActiveRecord callbacks would violate the NOT NULL constraint unless `action_type` is explicitly supplied, and any out-of-range value stored would silently be treated as \"do nothing\" by `should_block?`'s equality check rather than raising an error."
+  }
+ ],
+ "finding_count": 6
+}

@@ -1,0 +1,133 @@
+{
+ "run_id": "minimax-m3__low__keycloak-greptile__1__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:42:05Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 146325,
+  "sha": "30fcfd5722e5e8a2",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 32449,
+    "output": 23844,
+    "reasoning": 22772,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03837516,
+   "latency_ms": 81951,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4799,
+   "raw_usage": {
+    "completion_tokens": 23844,
+    "prompt_tokens": 32910,
+    "total_tokens": 56754,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 22772,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.03837516,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03837516,
+     "upstream_inference_prompt_cost": 0.00976236,
+     "upstream_inference_completions_cost": 0.0286128
+    }
+   },
+   "started_at": "2026-10-17T20:42:05Z",
+   "first_chunk_ms": 2273,
+   "first_text_ms": 78382,
+   "response_id": "gen-1792269725-YZ9oFjJRT7GpaMEyh9cc",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 32449,
+  "output": 23844,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 22772
+ },
+ "cost_reported": 0.03837516,
+ "latency_ms": 81951,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR, I need to carefully analyze the changes to understand the impact on authentication flows.\n\nKey observations:\n1. `UsernameForm.java` calls `isConditionalPasskeysEnabled()` with no arguments\n2. `UsernamePasswordForm.java` defines `isConditionalPasskeysEnabled(UserModel user)` with a required parameter\n3. The `isConditionalPasskeysEnabled(UserModel user)` method requires `user != null`\n4. The original code rendered webauthn form on fresh login (user null); the new code only does so when user is not null\n5. Several existing/new tests rely on webauthn form being rendered on fresh login for conditional UI\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java\",\n      \"line\": 47,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"Compile error: isConditionalPasskeysEnabled() called without required argument\",\n      \"body\": \"UsernameForm.authenticate() invokes isConditionalPasskeysEnabled() with no arguments, but the only definition in the parent class UsernamePasswordForm (line 160-162) requires a UserModel parameter. There is no no-arg overload in UsernameForm, UsernamePasswordForm, or AbstractUsernameFormAuthenticator. The change in UsernameForm.java is `if (context.getUser() != null && !isConditionalPasskeysEnabled())` \u2014 this will not compile. The fix is either to add a no-arg isConditionalPasskeysEnabled() to UsernamePasswordForm (returning the realm passkeys-enabled state without requiring a user) or to pass context.getUser() into the existing method.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java\",\n      \"line\": 115,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Regression: webauthn conditional UI form no longer rendered on fresh login\",\n      \"body\": \"The new helper isConditionalPasskeysEnabled(UserModel user) requires user != null (line 161). In authenticate() it is now called unconditionally with context.getUser(), so when the user has not yet been identified (the fresh-login branch where context.getUser() == null), webauthnAuth.fillContextForm(context) is never invoked. The previous code invoked fillContextForm inside the else branch when user was null and passkeys were enabled. As a result the conditional-UI challenge/RP ID/timeout/uv attributes are not populated on the initial login form, breaking discoverable-credential login and the existing tests PasskeysUsernamePasswordFormTest.passwordLoginWithNonDiscoverableKey (asserts webauth form is present on fresh login) and webauthnLoginWithDiscoverableKey (expects automatic login via discoverable key). The test webauthnLoginWithDiscoverableKey_reauthentication added in this PR also fails because its initial-login prerequisite depends on the same conditional UI.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java\",\n      \"line\": 137,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Regression: webauthn form no longer rendered on error when user is null\",\n      \"body\": \"The overridden challenge(AuthenticationFlowContext, String error, String field) now guards fillContextForm behind isConditionalPasskeysEnabled(context.getUser()), which is false when context.getUser() is null. Previously the guard was `context.getUser() == null && webauthnAuth != null && webauthnAuth.isPasskeysEnabled()` \u2014 i.e. fillContextForm ran on the user-not-found path. After the change, a USER_NOT_FOUND error during a fresh login no longer repopulates the webauthn form, so the conditional UI is broken on the error retry. This is a behavior reversal of the prior intent, not a fix.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java\",\n      \"line\": 161,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"isConditionalPasskeysEnabled parameter is dead \u2014 user != null check defeats the call sites\",\n      \"body\": \"isConditionalPasskeysEnabled(UserModel user) is defined as `webauthnAuth != null && webauthnAuth.isPasskeysEnabled() && user != null`. The `user != null` clause makes the parameter useless (the result does not depend on any user attribute \u2014 isPasskeysEnabled() is realm-level). All three callers (authenticate, error-challenge, and the broken UsernameForm call) would be more correct as a no-arg method that simply returns the realm passkeys state. The redundant `user != null` term is what causes the two regressions above. Either drop the parameter and the null check, or remove the `user != null` term so user=null still yields true when passkeys are realm-enabled.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java",
+   "line": 47,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Compile error: isConditionalPasskeysEnabled() called without required argument",
+   "body": "UsernameForm.authenticate() invokes isConditionalPasskeysEnabled() with no arguments, but the only definition in the parent class UsernamePasswordForm (line 160-162) requires a UserModel parameter. There is no no-arg overload in UsernameForm, UsernamePasswordForm, or AbstractUsernameFormAuthenticator. The change in UsernameForm.java is `if (context.getUser() != null && !isConditionalPasskeysEnabled())` \u2014 this will not compile. The fix is either to add a no-arg isConditionalPasskeysEnabled() to UsernamePasswordForm (returning the realm passkeys-enabled state without requiring a user) or to pass context.getUser() into the existing method."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+   "line": 115,
+   "severity": "high",
+   "category": "bug",
+   "title": "Regression: webauthn conditional UI form no longer rendered on fresh login",
+   "body": "The new helper isConditionalPasskeysEnabled(UserModel user) requires user != null (line 161). In authenticate() it is now called unconditionally with context.getUser(), so when the user has not yet been identified (the fresh-login branch where context.getUser() == null), webauthnAuth.fillContextForm(context) is never invoked. The previous code invoked fillContextForm inside the else branch when user was null and passkeys were enabled. As a result the conditional-UI challenge/RP ID/timeout/uv attributes are not populated on the initial login form, breaking discoverable-credential login and the existing tests PasskeysUsernamePasswordFormTest.passwordLoginWithNonDiscoverableKey (asserts webauth form is present on fresh login) and webauthnLoginWithDiscoverableKey (expects automatic login via discoverable key). The test webauthnLoginWithDiscoverableKey_reauthentication added in this PR also fails because its initial-login prerequisite depends on the same conditional UI."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+   "line": 137,
+   "severity": "high",
+   "category": "bug",
+   "title": "Regression: webauthn form no longer rendered on error when user is null",
+   "body": "The overridden challenge(AuthenticationFlowContext, String error, String field) now guards fillContextForm behind isConditionalPasskeysEnabled(context.getUser()), which is false when context.getUser() is null. Previously the guard was `context.getUser() == null && webauthnAuth != null && webauthnAuth.isPasskeysEnabled()` \u2014 i.e. fillContextForm ran on the user-not-found path. After the change, a USER_NOT_FOUND error during a fresh login no longer repopulates the webauthn form, so the conditional UI is broken on the error retry. This is a behavior reversal of the prior intent, not a fix."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+   "line": 161,
+   "severity": "medium",
+   "category": "bug",
+   "title": "isConditionalPasskeysEnabled parameter is dead \u2014 user != null check defeats the call sites",
+   "body": "isConditionalPasskeysEnabled(UserModel user) is defined as `webauthnAuth != null && webauthnAuth.isPasskeysEnabled() && user != null`. The `user != null` clause makes the parameter useless (the result does not depend on any user attribute \u2014 isPasskeysEnabled() is realm-level). All three callers (authenticate, error-challenge, and the broken UsernameForm call) would be more correct as a no-arg method that simply returns the realm passkeys state. The redundant `user != null` term is what causes the two regressions above. Either drop the parameter and the null check, or remove the `user != null` term so user=null still yields true when passkeys are realm-enabled."
+  }
+ ],
+ "finding_count": 4
+}

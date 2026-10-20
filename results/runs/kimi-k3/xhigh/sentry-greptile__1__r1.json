@@ -1,0 +1,137 @@
+{
+ "run_id": "kimi-k3__xhigh__sentry-greptile__1__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+ "repeat": 1,
+ "started_at": "2026-10-17T14:49:23Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63599,
+  "sha": "5fcc8e73e0133429",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 15512,
+    "output": 3961,
+    "reasoning": 2695,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 150900,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5715,
+   "raw_usage": {
+    "completion_tokens": 3961,
+    "prompt_tokens": 15512,
+    "total_tokens": 19473,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2695,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T14:49:23Z",
+   "first_chunk_ms": 2403,
+   "first_text_ms": 116406,
+   "response_id": "chatcmpl-3hi7wu7v3bpadagu3lsa5d6d4tni7coasongnqv77d3lm2tmaxxa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 15512,
+  "output": 3961,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2695
+ },
+ "cost_reported": null,
+ "latency_ms": 150900,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/paginator.py\", \"line\": 840, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"OptimizedCursorPaginator crashes with TypeError when used with a datetime order_by key\", \"body\": \"The audit log endpoint instantiates OptimizedCursorPaginator with order_by=\\\"-datetime\\\", but OptimizedCursorPaginator.get_item_key does `int(math.floor(value) if ... else math.ceil(value))` on `getattr(item, self.key)`. For the audit logs endpoint that value is a `datetime` object, and `math.floor`/`math.ceil` on a datetime raises `TypeError: must be real number, not datetime.datetime`. This is called from build_cursor on the very first page of results (to compute the next cursor), so every request using `optimized_pagination=true` will 500 as soon as there is at least one audit log row. The code needed the DateTimePaginator-style conversion (`value.strftime(\\\"%s.%f\\\") * multiplier`) or should have subclassed DateTimePaginator. There is also a secondary issue: even if get_item_key were fixed to return an int, `value_from_cursor` returns the raw integer cursor value and `build_queryset` would then compare the datetime column against an integer (`datetime <= %s` with an int param), which the database will reject.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 877, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Negative-offset branch passes a negative index to a Django QuerySet slice, which raises AssertionError\", \"body\": \"In OptimizedCursorPaginator.get_result, when `enable_advanced_features` is true and `cursor.offset < 0`, the code does `queryset[cursor.offset : cursor.offset + limit + extra]`. Django QuerySets do not support negative indexing \u2014 slicing with a negative start raises `AssertionError: Negative indexing is not supported`. The inline comment claiming 'the underlying Django ORM properly handles negative slicing automatically' is false. Since cursor offsets are user-controlled (the `cursor` query string is parsed by Cursor.from_string with `int(bits[1])`, which accepts negatives), any privileged caller can supply e.g. `cursor=0:-5:0` with `optimized_pagination=true` and get a 500 AssertionError on every request. This is a reliable crash/DoS of the endpoint rather than a performance feature, and no boundary handling exists.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 71, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"enable_advanced is computed unconditionally and dereferences organization_context.member, crashing for member-less auth\", \"body\": \"`enable_advanced = request.user.is_superuser or organization_context.member.has_global_access` is evaluated on every GET, even when the `optimized_pagination` query param is absent. `organization_context.member` is None for requests authenticated without an organization member (e.g., org API keys / auth tokens with the org:read scope that legitimately pass OrganizationAuditPermission). For such requests `request.user.is_superuser` is False, so the right-hand side evaluates `None.has_global_access` and raises AttributeError, returning a 500. This regresses the previously working default pagination path for those auth types. The expression should be computed lazily inside the `use_optimized` branch and guard against `member is None`.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 891, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Trim check compares against the raw negative offset instead of the slice actually fetched\", \"body\": \"In OptimizedCursorPaginator.get_result, the `elif len(results) == offset + limit + extra:` check uses the original `offset` variable, which in the negative-offset branch is negative. Since `queryset[negative:...]` raises before this is reached in Django, this is currently masked, but if the slicing ever 'worked' (e.g., on a list-backed queryset), the comparison would never match and the extra boundary row would not be trimmed, leaking an extra row into the page and producing wrong cursors. It should compare against the actual fetch size (`stop - start_offset` or `limit + extra`).\"}, {\"file\": \"src/sentry/utils/cursors.py\", \"line\": 27, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Comment claims negative offsets are a supported performance optimization, but no paginator actually supports them\", \"body\": \"The added comment in Cursor.__init__ states negative offsets are allowed for 'advanced pagination scenarios' and enable 'efficient reverse pagination'. No paginator actually handles negative offsets correctly \u2014 BasePaginator clamps non-prev offsets with max(0, offset), OffsetPaginator/MergingOffsetPaginator/ChainPaginator explicitly raise BadPaginationError on negative offsets, and OptimizedCursorPaginator's negative-offset path crashes on Django's 'Negative indexing is not supported' assertion. The comment documents a capability that does not exist and is misleading to future maintainers.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 821, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for OptimizedCursorPaginator or the new audit-logs pagination branch\", \"body\": \"The PR adds ~100 lines of new pagination logic (OptimizedCursorPaginator) plus a new conditional branch in OrganizationAuditLogsEndpoint gated by the `optimized_pagination` query param and superuser/global-access checks, but adds no tests. Tests would have immediately caught the two crash bugs (datetime math.floor TypeError and negative-slice AssertionError). At minimum there should be tests covering: optimized_pagination=true for a superuser with audit log rows present, a prev/next cursor round-trip, a negative-offset cursor, and a non-member token request (to cover the member-None path).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/paginator.py",
+   "line": 840,
+   "severity": "high",
+   "category": "bug",
+   "title": "OptimizedCursorPaginator crashes with TypeError when used with a datetime order_by key",
+   "body": "The audit log endpoint instantiates OptimizedCursorPaginator with order_by=\"-datetime\", but OptimizedCursorPaginator.get_item_key does `int(math.floor(value) if ... else math.ceil(value))` on `getattr(item, self.key)`. For the audit logs endpoint that value is a `datetime` object, and `math.floor`/`math.ceil` on a datetime raises `TypeError: must be real number, not datetime.datetime`. This is called from build_cursor on the very first page of results (to compute the next cursor), so every request using `optimized_pagination=true` will 500 as soon as there is at least one audit log row. The code needed the DateTimePaginator-style conversion (`value.strftime(\"%s.%f\") * multiplier`) or should have subclassed DateTimePaginator. There is also a secondary issue: even if get_item_key were fixed to return an int, `value_from_cursor` returns the raw integer cursor value and `build_queryset` would then compare the datetime column against an integer (`datetime <= %s` with an int param), which the database will reject."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 877,
+   "severity": "high",
+   "category": "bug",
+   "title": "Negative-offset branch passes a negative index to a Django QuerySet slice, which raises AssertionError",
+   "body": "In OptimizedCursorPaginator.get_result, when `enable_advanced_features` is true and `cursor.offset < 0`, the code does `queryset[cursor.offset : cursor.offset + limit + extra]`. Django QuerySets do not support negative indexing \u2014 slicing with a negative start raises `AssertionError: Negative indexing is not supported`. The inline comment claiming 'the underlying Django ORM properly handles negative slicing automatically' is false. Since cursor offsets are user-controlled (the `cursor` query string is parsed by Cursor.from_string with `int(bits[1])`, which accepts negatives), any privileged caller can supply e.g. `cursor=0:-5:0` with `optimized_pagination=true` and get a 500 AssertionError on every request. This is a reliable crash/DoS of the endpoint rather than a performance feature, and no boundary handling exists."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 71,
+   "severity": "high",
+   "category": "bug",
+   "title": "enable_advanced is computed unconditionally and dereferences organization_context.member, crashing for member-less auth",
+   "body": "`enable_advanced = request.user.is_superuser or organization_context.member.has_global_access` is evaluated on every GET, even when the `optimized_pagination` query param is absent. `organization_context.member` is None for requests authenticated without an organization member (e.g., org API keys / auth tokens with the org:read scope that legitimately pass OrganizationAuditPermission). For such requests `request.user.is_superuser` is False, so the right-hand side evaluates `None.has_global_access` and raises AttributeError, returning a 500. This regresses the previously working default pagination path for those auth types. The expression should be computed lazily inside the `use_optimized` branch and guard against `member is None`."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/paginator.py",
+   "line": 891,
+   "severity": "low",
+   "category": "bug",
+   "title": "Trim check compares against the raw negative offset instead of the slice actually fetched",
+   "body": "In OptimizedCursorPaginator.get_result, the `elif len(results) == offset + limit + extra:` check uses the original `offset` variable, which in the negative-offset branch is negative. Since `queryset[negative:...]` raises before this is reached in Django, this is currently masked, but if the slicing ever 'worked' (e.g., on a list-backed queryset), the comparison would never match and the extra boundary row would not be trimmed, leaking an extra row into the page and producing wrong cursors. It should compare against the actual fetch size (`stop - start_offset` or `limit + extra`)."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/utils/cursors.py",
+   "line": 27,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Comment claims negative offsets are a supported performance optimization, but no paginator actually supports them",
+   "body": "The added comment in Cursor.__init__ states negative offsets are allowed for 'advanced pagination scenarios' and enable 'efficient reverse pagination'. No paginator actually handles negative offsets correctly \u2014 BasePaginator clamps non-prev offsets with max(0, offset), OffsetPaginator/MergingOffsetPaginator/ChainPaginator explicitly raise BadPaginationError on negative offsets, and OptimizedCursorPaginator's negative-offset path crashes on Django's 'Negative indexing is not supported' assertion. The comment documents a capability that does not exist and is misleading to future maintainers."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/api/paginator.py",
+   "line": 821,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for OptimizedCursorPaginator or the new audit-logs pagination branch",
+   "body": "The PR adds ~100 lines of new pagination logic (OptimizedCursorPaginator) plus a new conditional branch in OrganizationAuditLogsEndpoint gated by the `optimized_pagination` query param and superuser/global-access checks, but adds no tests. Tests would have immediately caught the two crash bugs (datetime math.floor TypeError and negative-slice AssertionError). At minimum there should be tests covering: optimized_pagination=true for a superuser with audit log rows present, a prev/next cursor round-trip, a negative-offset cursor, and a non-member token request (to cover the member-None path)."
+  }
+ ],
+ "finding_count": 6
+}

@@ -1,0 +1,228 @@
+{
+ "run_id": "minimax-m3__default__cal.com__11059__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__11059",
+ "golden_url": "https://github.com/calcom/cal.com/pull/11059",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:47:17Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 281003,
+  "sha": "92f29a4b7281004a",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 73779,
+    "output": 15146,
+    "reasoning": 12222,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04031658,
+   "latency_ms": 75807,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 12374,
+   "raw_usage": {
+    "completion_tokens": 15146,
+    "prompt_tokens": 73907,
+    "total_tokens": 89053,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 12222,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04031658,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04031658,
+     "upstream_inference_prompt_cost": 0.02214138,
+     "upstream_inference_completions_cost": 0.0181752
+    }
+   },
+   "started_at": "2026-10-17T11:47:17Z",
+   "first_chunk_ms": 2575,
+   "first_text_ms": 62726,
+   "response_id": "gen-1792237637-2ATyePvAdHcPvv68uTja",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 73779,
+  "output": 15146,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 12222
+ },
+ "cost_reported": 0.04031658,
+ "latency_ms": 75807,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I see several real issues spanning bugs, security, and API contract concerns. Let me document each one.\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/app-store/salesforce/lib/CalendarService.ts\",\n      \"line\": 96,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"Missing `prisma` import causes ReferenceError at runtime\",\n      \"body\": \"The new refresh logic in `getClient` calls `prisma.credential.update({ where: { id: credential.id }, data: { key: ... } })`, but the file's import block (lines 1-20) does not import `prisma`. There is no `import prisma from \\\"@calcom/prisma\\\"`. The function will throw `ReferenceError: prisma is not defined` the first time `getClient` is invoked, breaking all Salesforce calendar/video operations in the new code path.\"\n    },\n    {\n      \"file\": \"packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts\",\n      \"line\": 5,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"`minimumTokenResponseSchema` is malformed and rejects expected fields\",\n      \"body\": \"The schema uses computed property names `[z.string().toString()]`. Both expressions evaluate to the same string representation of the ZodString instance (e.g. `\\\"ZodString\\\"`), so the object literal has two duplicate keys and JavaScript silently drops the first. The resulting schema is effectively `{ access_token: z.string(), \\\"<schema name>\\\": z.unknown().optional() }` and does not actually declare the intended catchall/number/expiry rules. Any non-`access_token` field (`expires_in`, `refresh_token`, `scope`, `expiry_date`, etc.) is stripped by ZodObject's default stripping behavior. With sharing enabled, every caller ends up with an `access_token` only, breaking the downstream code that depends on those fields (e.g. `googleCredentials.expiry_date`, `hubspotRefreshToken.expiresIn`, salesforce fields).\"\n    },\n    {\n      \"file\": \"packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts\",\n      \"line\": 26,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"Missing refresh_token is replaced with the literal string \\\"refresh_token\\\"\",\n      \"body\": \"When `refreshTokenResponse.data.refresh_token` is falsy, the code assigns the literal string `\\\"refresh_token\\\"` to the field and then saves it to the credential key in the DB. On the next token refresh the OAuth provider is sent `refresh_token=\\\"refresh_token\\\"`, which it will reject (typically with `invalid_grant`), causing the credential to be marked invalid and the integration to break. The intent appears to have been to set a sentinel, but the value is being persisted and used as a real refresh token.\"\n    },\n    {\n      \"file\": \"packages/app-store/googlecalendar/lib/CalendarService.ts\",\n      \"line\": 97,\n      \"severity\": \"critical\",\n      \"category\": \"bug\",\n      \"title\": \"Stores the full SafeParseResult instead of `.data`\",\n      \"body\": \"`parseRefreshTokenResponse` returns the raw `SafeParseReturnType` object (`{ success, data }`). The Google Calendar code assigns this directly: `const key = parseRefreshTokenResponse(googleCredentials, googleCredentialSchema);` and then passes `key` to `prisma.credential.update({ data: { key } })`. The stored value will be `{ success: true, data: { ...googleCredentials } }` rather than the credentials object itself. On the next read, `googleCredentialSchema.parse(credential.key)` will fail because the top-level shape is wrong, marking the credential invalid. Other call sites (`office365calendar`, `salesforce`, `zoomvideo`) correctly use `.data`; this one does not.\"\n    },\n    {\n      \"file\": \"apps/web/pages/api/webhook/app-credential.ts\",\n      \"line\": 24,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Webhook secret compared with `!==` (timing attack)\",\n      \"body\": \"The header value is compared to `process.env.CALCOM_WEBHOOK_SECRET` using `!==`, which short-circuits on the first mismatching byte and leaks timing information that can be used to brute-force the secret. Use a constant-time comparison such as `crypto.timingSafeEqual` over equal-length buffers (after a length check) instead. The endpoint is unauthenticated by any other mechanism (no rate limit, no IP allowlist, no replay protection), so the secret is the only barrier.\"\n    },\n    {\n      \"file\": \"packages/app-store/_utils/oauth/refreshOAuthTokens.ts\",\n      \"line\": 8,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Outbound call to credential sync endpoint has no authentication\",\n      \"body\": \"`fetch(process.env.CALCOM_CREDENTIAL_SYNC_ENDPOINT, ...)` only sends `calcomUserId` and `appSlug` in the form body, with no shared secret, signature, or HMAC. Anyone able to reach this endpoint (or to observe/intercept traffic to it) can trigger token-refresh lookups for arbitrary users. At a minimum, send the same `CALCOM_WEBHOOK_SECRET` (or a dedicated HMAC) as a header so the operator's app store can authenticate the caller.\"\n    },\n    {\n      \"file\": \"packages/app-store/_utils/oauth/refreshOAuthTokens.ts\",\n      \"line\": 15,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Inconsistent response shape breaks callers when sharing is enabled\",\n      \"body\": \"When sharing is OFF, `refreshFunction` returns whatever the app's native refresh returns (a Google `GaxiosResponse` for googlecalendar, an Axios response for hubspot/zoho-bigin/zohocrm, a raw `fetch` `Response` for larkcalendar/office365calendar/office365video/webex/zoomvideo). When sharing is ON, the function instead returns a raw `fetch` `Response` from the sync endpoint. The code after the call expects the native shape \u2014 e.g. googlecalendar uses `res?.data`, hubspot uses `hubspotRefreshToken.accessToken`/`expiresIn`, zoho-bigin/zohocrm use `tokenInfo.data.error` \u2014 which are absent on a `Response`. With sharing enabled, every one of these integrations will fail on token refresh (silently for hubspot because the result is just `undefined`; loudly for the rest because they try to read properties of `undefined`). The function should either return a normalized token object in both modes or document/enforce a single shape.\"\n    },\n    {\n      \"file\": \"apps/web/pages/api/webhook/app-credential.ts\",\n      \"line\": 62,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"findFirst + create/update race can produce duplicate credentials\",\n      \"body\": \"The handler does `findFirst({ userId, appId })` then either `update` or `create` based on whether one was found. Two concurrent webhook deliveries for the same (userId, appSlug) can both find nothing and both `create`, producing duplicate `Credential` rows. The code's own comment notes that upsert can't be used because the credential id is unknown, but a `UNIQUE` constraint on `(userId, appId, type)` plus catching the unique-violation and falling back to update, or wrapping the find+create in a serializable transaction, would prevent duplicates that later cause inconsistent OAuth behavior.\"\n    },\n    {\n      \"file\": \"packages/app-store/salesforce/lib/CalendarService.ts\",\n      \"line\": 96,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Manually refreshed Salesforce token is never given to the returned Connection\",\n      \"body\": \"`getClient` performs a manual refresh, persists the new access token, and then constructs `new jsforce.Connection({ ..., accessToken: credentialKey.access_token, refreshToken: credentialKey.refresh_token })` using the OLD `credentialKey` values that were captured before the refresh. The freshly obtained `accessToken`/`instance_url` from the refresh response is written to the DB but never used by the jsforce client, so the Connection immediately operates with a stale token and jsforce will re-refresh on first use \u2014 duplicating and racing with the manual refresh.\"\n    },\n    {\n      \"file\": \"packages/app-store/salesforce/lib/CalendarService.ts\",\n      \"line\": 86,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Refresh triggers on any non-OK statusText, fragile to HTTP/2\",\n      \"body\": \"`if (response.statusText !== \\\"OK\\\") throw new HttpError({ statusCode: 400, message: response.statusText })` relies on the HTTP/1.x statusText being exactly `\\\"OK\\\"`. Under HTTP/2 status reason phrases are not transmitted (and many proxies/clients return lowercase or empty), so a successful Salesforce response can throw here. Use `response.ok` (or `response.status >= 200 && response.status < 300`) instead.\"\n    },\n    {\n      \"file\": \"packages/lib/constants.ts\",\n      \"line\": 103,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"`APP_CREDENTIAL_SHARING_ENABLED` does not reflect the actual sync endpoint\",\n      \"body\": \"The constant is defined as `process.env.CALCOM_WEBHOOK_SECRET && process.env.CALCOM_APP_CREDENTIAL_ENCRYPTION_KEY`. Both `parseRefreshTokenResponse` and `refreshOAuthTokens` additionally require `process.env.CALCOM_CREDENTIAL_SYNC_ENDPOINT` to take the sharing branch. With only the first two variables set, the webhook will accept and store credentials but every token refresh silently falls back to the local OAuth path, which will not yield the shared token. Either include `CALCOM_CREDENTIAL_SYNC_ENDPOINT` in the constant or split it into two flags with clear semantics so operators see a consistent state.\"\n    },\n    {\n      \"file\": \"apps/web/pages/api/webhook/app-credential.ts\",\n      \"line\": 25,\n      \"severity\": \"medium\",\n      \"category\": \"security\",\n      \"title\": \"Webhook header name is taken from env without normalization\",\n      \"body\": \"`req.headers[process.env.CALCOM_WEBHOOK_HEADER_NAME || \\\"calcom-webhook-secret\\\"]` uses the env var as an object key into `req.headers` directly. HTTP header lookup is normally case-insensitive and Node lowercases incoming headers; if the operator sets `CALCOM_WEBHOOK_HEADER_NAME` in mixed/upper case the lookup silently misses and the endpoint falls through to `403` for legitimate calls (or, if unset, hardcoded). Lowercase the value before use and validate it against `/^[a-z0-9-]+$/` so it cannot be used to probe internal headers or cause lookup confusion.\"\n    },\n    {\n      \"file\": \"apps/web/pages/api/webhook/app-credential.ts\",\n      \"line\": 17,\n      \"severity\": \"medium\",\n      \"category\": \"security\",\n      \"title\": \"No replay protection, rate limit, or audit trail on credential upsert\",\n      \"body\": \"Anyone holding the webhook secret can repeatedly overwrite or create credentials for any `userId` in the request body. There is no timestamp/nonce check to block replays, no per-IP rate limit, no per-user limit, and no record of which credentials were written or by whom. Combined with the timing-vulnerable comparison and the unencrypted `userId` in the body, a leak or brute-force of the secret lets an attacker plant OAuth tokens for arbitrary users. Consider adding a signed timestamp window, request signing, and structured logging of (userId, appSlug, request IP) for each upsert.\"\n    },\n    {\n      \"file\": \"packages/app-store/zoho-bigin/lib/CalendarService.ts\",\n      \"line\": 96,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Returns refreshed token even when the response carries an error\",\n      \"body\": \"`if (!tokenInfo.data.error) { ... } else { this.log.error(tokenInfo.data); }` logs the error but then falls through to `return tokenInfo.data as BiginToken`. If the refresh response contains `{ error: \\\"invalid_grant\\\" }` (and `refreshOAuthTokens` returns the sync endpoint's raw `Response`, which lacks `.data.error`), the caller gets a fake/empty token and downstream calls fail opaquely. Reject on `error` or any non-2xx status instead of returning the payload.\"\n    },\n    {\n      \"file\": \"apps/web/pages/api/webhook/app-credential.ts\",\n      \"line\": 50,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"Credential `appId` is taken from `appStoreMetadata` instead of the validated DB slug\",\n      \"body\": \"The handler validates `reqBody.appSlug` against the `App` table but then looks the slug up in `appStoreMetadata` and stores `appId: appMetadata.slug`. If those two ever diverge, the credential row is keyed by a slug that doesn't exist in the `App` table, breaking downstream queries that join on `appId`. Use the validated `app.slug` for the stored `appId`.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/salesforce/lib/CalendarService.ts",
+   "line": 96,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Missing `prisma` import causes ReferenceError at runtime",
+   "body": "The new refresh logic in `getClient` calls `prisma.credential.update({ where: { id: credential.id }, data: { key: ... } })`, but the file's import block (lines 1-20) does not import `prisma`. There is no `import prisma from \"@calcom/prisma\"`. The function will throw `ReferenceError: prisma is not defined` the first time `getClient` is invoked, breaking all Salesforce calendar/video operations in the new code path."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+   "line": 5,
+   "severity": "critical",
+   "category": "bug",
+   "title": "`minimumTokenResponseSchema` is malformed and rejects expected fields",
+   "body": "The schema uses computed property names `[z.string().toString()]`. Both expressions evaluate to the same string representation of the ZodString instance (e.g. `\"ZodString\"`), so the object literal has two duplicate keys and JavaScript silently drops the first. The resulting schema is effectively `{ access_token: z.string(), \"<schema name>\": z.unknown().optional() }` and does not actually declare the intended catchall/number/expiry rules. Any non-`access_token` field (`expires_in`, `refresh_token`, `scope`, `expiry_date`, etc.) is stripped by ZodObject's default stripping behavior. With sharing enabled, every caller ends up with an `access_token` only, breaking the downstream code that depends on those fields (e.g. `googleCredentials.expiry_date`, `hubspotRefreshToken.expiresIn`, salesforce fields)."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+   "line": 26,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Missing refresh_token is replaced with the literal string \"refresh_token\"",
+   "body": "When `refreshTokenResponse.data.refresh_token` is falsy, the code assigns the literal string `\"refresh_token\"` to the field and then saves it to the credential key in the DB. On the next token refresh the OAuth provider is sent `refresh_token=\"refresh_token\"`, which it will reject (typically with `invalid_grant`), causing the credential to be marked invalid and the integration to break. The intent appears to have been to set a sentinel, but the value is being persisted and used as a real refresh token."
+  },
+  {
+   "index": 3,
+   "file": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+   "line": 97,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Stores the full SafeParseResult instead of `.data`",
+   "body": "`parseRefreshTokenResponse` returns the raw `SafeParseReturnType` object (`{ success, data }`). The Google Calendar code assigns this directly: `const key = parseRefreshTokenResponse(googleCredentials, googleCredentialSchema);` and then passes `key` to `prisma.credential.update({ data: { key } })`. The stored value will be `{ success: true, data: { ...googleCredentials } }` rather than the credentials object itself. On the next read, `googleCredentialSchema.parse(credential.key)` will fail because the top-level shape is wrong, marking the credential invalid. Other call sites (`office365calendar`, `salesforce`, `zoomvideo`) correctly use `.data`; this one does not."
+  },
+  {
+   "index": 4,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 24,
+   "severity": "high",
+   "category": "security",
+   "title": "Webhook secret compared with `!==` (timing attack)",
+   "body": "The header value is compared to `process.env.CALCOM_WEBHOOK_SECRET` using `!==`, which short-circuits on the first mismatching byte and leaks timing information that can be used to brute-force the secret. Use a constant-time comparison such as `crypto.timingSafeEqual` over equal-length buffers (after a length check) instead. The endpoint is unauthenticated by any other mechanism (no rate limit, no IP allowlist, no replay protection), so the secret is the only barrier."
+  },
+  {
+   "index": 5,
+   "file": "packages/app-store/_utils/oauth/refreshOAuthTokens.ts",
+   "line": 8,
+   "severity": "high",
+   "category": "security",
+   "title": "Outbound call to credential sync endpoint has no authentication",
+   "body": "`fetch(process.env.CALCOM_CREDENTIAL_SYNC_ENDPOINT, ...)` only sends `calcomUserId` and `appSlug` in the form body, with no shared secret, signature, or HMAC. Anyone able to reach this endpoint (or to observe/intercept traffic to it) can trigger token-refresh lookups for arbitrary users. At a minimum, send the same `CALCOM_WEBHOOK_SECRET` (or a dedicated HMAC) as a header so the operator's app store can authenticate the caller."
+  },
+  {
+   "index": 6,
+   "file": "packages/app-store/_utils/oauth/refreshOAuthTokens.ts",
+   "line": 15,
+   "severity": "high",
+   "category": "bug",
+   "title": "Inconsistent response shape breaks callers when sharing is enabled",
+   "body": "When sharing is OFF, `refreshFunction` returns whatever the app's native refresh returns (a Google `GaxiosResponse` for googlecalendar, an Axios response for hubspot/zoho-bigin/zohocrm, a raw `fetch` `Response` for larkcalendar/office365calendar/office365video/webex/zoomvideo). When sharing is ON, the function instead returns a raw `fetch` `Response` from the sync endpoint. The code after the call expects the native shape \u2014 e.g. googlecalendar uses `res?.data`, hubspot uses `hubspotRefreshToken.accessToken`/`expiresIn`, zoho-bigin/zohocrm use `tokenInfo.data.error` \u2014 which are absent on a `Response`. With sharing enabled, every one of these integrations will fail on token refresh (silently for hubspot because the result is just `undefined`; loudly for the rest because they try to read properties of `undefined`). The function should either return a normalized token object in both modes or document/enforce a single shape."
+  },
+  {
+   "index": 7,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 62,
+   "severity": "high",
+   "category": "data",
+   "title": "findFirst + create/update race can produce duplicate credentials",
+   "body": "The handler does `findFirst({ userId, appId })` then either `update` or `create` based on whether one was found. Two concurrent webhook deliveries for the same (userId, appSlug) can both find nothing and both `create`, producing duplicate `Credential` rows. The code's own comment notes that upsert can't be used because the credential id is unknown, but a `UNIQUE` constraint on `(userId, appId, type)` plus catching the unique-violation and falling back to update, or wrapping the find+create in a serializable transaction, would prevent duplicates that later cause inconsistent OAuth behavior."
+  },
+  {
+   "index": 8,
+   "file": "packages/app-store/salesforce/lib/CalendarService.ts",
+   "line": 96,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Manually refreshed Salesforce token is never given to the returned Connection",
+   "body": "`getClient` performs a manual refresh, persists the new access token, and then constructs `new jsforce.Connection({ ..., accessToken: credentialKey.access_token, refreshToken: credentialKey.refresh_token })` using the OLD `credentialKey` values that were captured before the refresh. The freshly obtained `accessToken`/`instance_url` from the refresh response is written to the DB but never used by the jsforce client, so the Connection immediately operates with a stale token and jsforce will re-refresh on first use \u2014 duplicating and racing with the manual refresh."
+  },
+  {
+   "index": 9,
+   "file": "packages/app-store/salesforce/lib/CalendarService.ts",
+   "line": 86,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Refresh triggers on any non-OK statusText, fragile to HTTP/2",
+   "body": "`if (response.statusText !== \"OK\") throw new HttpError({ statusCode: 400, message: response.statusText })` relies on the HTTP/1.x statusText being exactly `\"OK\"`. Under HTTP/2 status reason phrases are not transmitted (and many proxies/clients return lowercase or empty), so a successful Salesforce response can throw here. Use `response.ok` (or `response.status >= 200 && response.status < 300`) instead."
+  },
+  {
+   "index": 10,
+   "file": "packages/lib/constants.ts",
+   "line": 103,
+   "severity": "medium",
+   "category": "api",
+   "title": "`APP_CREDENTIAL_SHARING_ENABLED` does not reflect the actual sync endpoint",
+   "body": "The constant is defined as `process.env.CALCOM_WEBHOOK_SECRET && process.env.CALCOM_APP_CREDENTIAL_ENCRYPTION_KEY`. Both `parseRefreshTokenResponse` and `refreshOAuthTokens` additionally require `process.env.CALCOM_CREDENTIAL_SYNC_ENDPOINT` to take the sharing branch. With only the first two variables set, the webhook will accept and store credentials but every token refresh silently falls back to the local OAuth path, which will not yield the shared token. Either include `CALCOM_CREDENTIAL_SYNC_ENDPOINT` in the constant or split it into two flags with clear semantics so operators see a consistent state."
+  },
+  {
+   "index": 11,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 25,
+   "severity": "medium",
+   "category": "security",
+   "title": "Webhook header name is taken from env without normalization",
+   "body": "`req.headers[process.env.CALCOM_WEBHOOK_HEADER_NAME || \"calcom-webhook-secret\"]` uses the env var as an object key into `req.headers` directly. HTTP header lookup is normally case-insensitive and Node lowercases incoming headers; if the operator sets `CALCOM_WEBHOOK_HEADER_NAME` in mixed/upper case the lookup silently misses and the endpoint falls through to `403` for legitimate calls (or, if unset, hardcoded). Lowercase the value before use and validate it against `/^[a-z0-9-]+$/` so it cannot be used to probe internal headers or cause lookup confusion."
+  },
+  {
+   "index": 12,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 17,
+   "severity": "medium",
+   "category": "security",
+   "title": "No replay protection, rate limit, or audit trail on credential upsert",
+   "body": "Anyone holding the webhook secret can repeatedly overwrite or create credentials for any `userId` in the request body. There is no timestamp/nonce check to block replays, no per-IP rate limit, no per-user limit, and no record of which credentials were written or by whom. Combined with the timing-vulnerable comparison and the unencrypted `userId` in the body, a leak or brute-force of the secret lets an attacker plant OAuth tokens for arbitrary users. Consider adding a signed timestamp window, request signing, and structured logging of (userId, appSlug, request IP) for each upsert."
+  },
+  {
+   "index": 13,
+   "file": "packages/app-store/zoho-bigin/lib/CalendarService.ts",
+   "line": 96,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Returns refreshed token even when the response carries an error",
+   "body": "`if (!tokenInfo.data.error) { ... } else { this.log.error(tokenInfo.data); }` logs the error but then falls through to `return tokenInfo.data as BiginToken`. If the refresh response contains `{ error: \"invalid_grant\" }` (and `refreshOAuthTokens` returns the sync endpoint's raw `Response`, which lacks `.data.error`), the caller gets a fake/empty token and downstream calls fail opaquely. Reject on `error` or any non-2xx status instead of returning the payload."
+  },
+  {
+   "index": 14,
+   "file": "apps/web/pages/api/webhook/app-credential.ts",
+   "line": 50,
+   "severity": "low",
+   "category": "data",
+   "title": "Credential `appId` is taken from `appStoreMetadata` instead of the validated DB slug",
+   "body": "The handler validates `reqBody.appSlug` against the `App` table but then looks the slug up in `appStoreMetadata` and stores `appId: appMetadata.slug`. If those two ever diverge, the credential row is keyed by a slug that doesn't exist in the `App` table, breaking downstream queries that join on `appId`. Use the validated `app.slug` for the stored `appId`."
+  }
+ ],
+ "finding_count": 15
+}

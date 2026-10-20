@@ -1,0 +1,128 @@
+{
+ "run_id": "muse-wonder__low__keycloak__38446__r3",
+ "model_id": "muse-wonder",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-wonder",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak__38446",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/38446",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:32:03Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 108849,
+  "sha": "9cbbde40d2baa4e9",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 24528,
+    "output": 3638,
+    "reasoning": 2579,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.170872,
+   "latency_ms": 34297,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-wonder",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 4720,
+   "raw_usage": {
+    "completion_tokens": 3638,
+    "prompt_tokens": 24528,
+    "total_tokens": 28166,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 2579,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.170872,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.170872,
+     "upstream_inference_prompt_cost": 0.098112,
+     "upstream_inference_completions_cost": 0.07276
+    }
+   },
+   "started_at": "2026-10-18T21:32:03Z",
+   "first_chunk_ms": 3699,
+   "first_text_ms": 28053,
+   "response_id": "gen-1792359123-2P1z3yn9lcVpfmuRNRtn",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 24528,
+  "output": 3638,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2579
+ },
+ "cost_reported": 0.170872,
+ "latency_ms": 34297,
+ "served_model": "meta/muse-wonder",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java\", \"line\": 123, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Raw recovery codes are handed to and persisted by user storage in plaintext\", \"body\": \"createRecoveryCodesCredential serializes the generatedCodes list (the raw, human-usable recovery codes) as JSON and passes it as the UserCredentialModel challenge response to user.credentialManager().updateCredential(). Unlike the local path, which stores RecoveryAuthnCodesCredentialModel data containing hashes of the codes, a user-storage provider that persists this input verbatim (as the PR's own BackwardsCompatibilityUserStorage does at updateCredential/getCredentials) ends up storing all unused recovery codes in plaintext at rest. Anyone with read access to the external store then obtains valid second-factor bypass codes for the user. The codes should be hashed before leaving Keycloak, or the storage contract must require and document hashing, so federated persistence is not weaker than local persistence.\"}, {\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java\", \"line\": 85, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Federated recovery codes are never consumed or removed after successful use\", \"body\": \"After credentialManager().isValid() succeeds, the code only checks recoveryCodeCredentialModel.allCodesUsed() on the model returned by RecoveryAuthnCodesUtils.getCredential() and calls removeStoredCredentialById() when exhausted. For a federated credential this does not work: consumption/marking-used is performed by the local RecoveryAuthnCodes credential provider when it updates its stored credential, whereas a user-storage validator (such as the PR's BackwardsCompatibilityUserStorage.isValid(), which only compares the input against the stored list) does not mutate the stored codes, so allCodesUsed() stays false and the same code remains replayable indefinitely. Additionally removeStoredCredentialById() removes local DB credentials by id and cannot delete a credential held in user storage (federated credentials must be disabled/updated via the storage provider), so even an exhausted federated credential is not removed and the CONFIGURE_RECOVERY_AUTHN_CODES regeneration path can be bypassed. Single-use semantics for recovery codes are therefore broken for federated users.\"}, {\"file\": \"server-spi/src/main/java/org/keycloak/models/utils/RecoveryAuthnCodesUtils.java\", \"line\": 56, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"getCredential prefers federated over local without aligning with validation, risking wrong code state when both exist\", \"body\": \"getCredential() returns the first federated recovery-codes credential if any exists and only falls back to the locally stored credential otherwise. This helper now drives both the login form's next-code number (RecoveryAuthnCodeInputLoginBean) and the post-login allCodesUsed()/removal decision (RecoveryAuthnCodesFormAuthenticator), but credential validation through credentialManager().isValid() can be satisfied by the local credential provider. For a user who has both a stale local credential and a federated one (e.g. codes created locally before the storage started supporting the type, and then re-created in storage via the new fallback logic in CredentialHelper), the UI will prompt for the code number from the federated set and exhaustion will be evaluated against the federated set, while validation/consumption may act on the local set. The result is a wrong requested code index and failure to regenerate/remove the credential that was actually consumed. Lookup precedence must match the validator's precedence, or dual credentials must be prevented/deduplicated.\"}, {\"file\": \"testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java\", \"line\": 235, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"getCredentials dereferences MyUser without the null check used by sibling methods\", \"body\": \"The new getCredentials() does var myUser = getMyUser(user); and immediately accesses myUser.recoveryCodes (line 235) and myUser.otp (line 247). getMyUser() returns users.get(...), which is null for a username not present in the map, and sibling methods such as isConfiguredFor() and getDisableableCredentialTypesStream() explicitly guard against that. If credential listing is invoked for a user not in this storage's map, the provider throws NullPointerException instead of returning an empty credential stream, breaking credential listing/account flows for such users.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java",
+   "line": 123,
+   "severity": "high",
+   "category": "security",
+   "title": "Raw recovery codes are handed to and persisted by user storage in plaintext",
+   "body": "createRecoveryCodesCredential serializes the generatedCodes list (the raw, human-usable recovery codes) as JSON and passes it as the UserCredentialModel challenge response to user.credentialManager().updateCredential(). Unlike the local path, which stores RecoveryAuthnCodesCredentialModel data containing hashes of the codes, a user-storage provider that persists this input verbatim (as the PR's own BackwardsCompatibilityUserStorage does at updateCredential/getCredentials) ends up storing all unused recovery codes in plaintext at rest. Anyone with read access to the external store then obtains valid second-factor bypass codes for the user. The codes should be hashed before leaving Keycloak, or the storage contract must require and document hashing, so federated persistence is not weaker than local persistence."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java",
+   "line": 85,
+   "severity": "high",
+   "category": "bug",
+   "title": "Federated recovery codes are never consumed or removed after successful use",
+   "body": "After credentialManager().isValid() succeeds, the code only checks recoveryCodeCredentialModel.allCodesUsed() on the model returned by RecoveryAuthnCodesUtils.getCredential() and calls removeStoredCredentialById() when exhausted. For a federated credential this does not work: consumption/marking-used is performed by the local RecoveryAuthnCodes credential provider when it updates its stored credential, whereas a user-storage validator (such as the PR's BackwardsCompatibilityUserStorage.isValid(), which only compares the input against the stored list) does not mutate the stored codes, so allCodesUsed() stays false and the same code remains replayable indefinitely. Additionally removeStoredCredentialById() removes local DB credentials by id and cannot delete a credential held in user storage (federated credentials must be disabled/updated via the storage provider), so even an exhausted federated credential is not removed and the CONFIGURE_RECOVERY_AUTHN_CODES regeneration path can be bypassed. Single-use semantics for recovery codes are therefore broken for federated users."
+  },
+  {
+   "index": 2,
+   "file": "server-spi/src/main/java/org/keycloak/models/utils/RecoveryAuthnCodesUtils.java",
+   "line": 56,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getCredential prefers federated over local without aligning with validation, risking wrong code state when both exist",
+   "body": "getCredential() returns the first federated recovery-codes credential if any exists and only falls back to the locally stored credential otherwise. This helper now drives both the login form's next-code number (RecoveryAuthnCodeInputLoginBean) and the post-login allCodesUsed()/removal decision (RecoveryAuthnCodesFormAuthenticator), but credential validation through credentialManager().isValid() can be satisfied by the local credential provider. For a user who has both a stale local credential and a federated one (e.g. codes created locally before the storage started supporting the type, and then re-created in storage via the new fallback logic in CredentialHelper), the UI will prompt for the code number from the federated set and exhaustion will be evaluated against the federated set, while validation/consumption may act on the local set. The result is a wrong requested code index and failure to regenerate/remove the credential that was actually consumed. Lookup precedence must match the validator's precedence, or dual credentials must be prevented/deduplicated."
+  },
+  {
+   "index": 3,
+   "file": "testsuite/integration-arquillian/servers/auth-server/services/testsuite-providers/src/main/java/org/keycloak/testsuite/federation/BackwardsCompatibilityUserStorage.java",
+   "line": 235,
+   "severity": "low",
+   "category": "bug",
+   "title": "getCredentials dereferences MyUser without the null check used by sibling methods",
+   "body": "The new getCredentials() does var myUser = getMyUser(user); and immediately accesses myUser.recoveryCodes (line 235) and myUser.otp (line 247). getMyUser() returns users.get(...), which is null for a username not present in the map, and sibling methods such as isConfiguredFor() and getDisableableCredentialTypesStream() explicitly guard against that. If credential listing is invoked for a user not in this storage's map, the provider throws NullPointerException instead of returning an empty credential stream, breaking credential listing/account flows for such users."
+  }
+ ],
+ "finding_count": 4
+}

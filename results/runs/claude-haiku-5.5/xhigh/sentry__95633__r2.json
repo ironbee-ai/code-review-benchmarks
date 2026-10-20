@@ -1,0 +1,185 @@
+{
+ "run_id": "claude-haiku-5.5__xhigh__sentry__95633__r2",
+ "model_id": "claude-haiku-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-haiku-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:04:37Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51300,
+    "output": 52043,
+    "reasoning": 48808,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 216235,
+   "finish_reason": "end_turn",
+   "served_model": "claude-haiku-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 9592,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51300,
+    "output_tokens": 52043,
+    "output_tokens_details": {
+     "thinking_tokens": 48808
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T21:04:37Z",
+   "first_chunk_ms": 1663,
+   "first_text_ms": 204637,
+   "response_id": "msg_bdrk_zrc664zsk3zfsoxmbcxhzobuwzqe246syvhftkqvppy67invkzvq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51300,
+  "output": 52043,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 48808
+ },
+ "cost_reported": null,
+ "latency_ms": 216235,
+ "served_model": "claude-haiku-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"critical\", \"category\": \"data\", \"title\": \"close() shuts down the factory-owned queue pool, so messages are silently dropped after the first rebalance\", \"body\": \"SimpleQueueProcessingStrategy.close() calls self.queue_pool.shutdown(), but the FixedQueuePool is created once in ResultsStrategyFactory.__init__ and passed to every strategy that create_with_partitions() builds. Arroyo closes the current strategy on partition revocation and creates a new one on assignment, so after the first rebalance the pool's queues are already shut down and its workers have exited. The new strategy's submit() calls FixedQueuePool.submit -> queue.put(), which raises queue.ShutDown. The except branch in SimpleQueueProcessingStrategy.submit (lines 317-325) then marks the offset as added and completed, so the message is never processed but its offset becomes committable. Work that was still queued when the old pool shut down keeps its offsets in `outstanding` forever, which stalls commits for those partitions. Net effect: uptime results are silently lost after any rebalance and the commit point stops advancing. No test runs close() followed by create_with_partitions() on the same factory, so this is not caught. Pool ownership should stay with the factory; the strategy's close() should only stop its own commit thread.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 323, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Enqueue failures mark the offset as completed, so unprocessed messages get committed\", \"body\": \"In SimpleQueueProcessingStrategy.submit, any exception raised while decoding, grouping, or enqueueing a message reaches an except block that calls add_offset and then complete_offset for that message. The message is never handed to a worker, yet its offset is now treated as processed, so the commit loop advances past it and the message is dropped with only a log line. This is the mechanism that hides the ShutDown failure described above. Poison messages (decode or grouping errors) may reasonably be skipped, but a failure to enqueue must not mark the offset complete. Failed enqueues should keep the offset outstanding or propagate the error.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Per-queue work queues are unbounded, contradicting the documented backpressure\", \"body\": \"Each per-queue work queue is created as queue.Queue() with no maxsize (line 185), so FixedQueuePool.submit() never blocks. The SimpleQueueProcessingStrategy docstring (line 255) promises 'Natural backpressure when queues fill up', but nothing ever fills. If the handlers are slower than the Kafka fetch rate, the main thread keeps polling and queued WorkItems (each holding a full Message) accumulate without bound. Because commits are contiguous, the last committed offset stays pinned behind the slowest item, so the outstanding and all_offsets sets also grow. Either bound the queues and make submit block or pause the consumer, or remove the backpressure claim.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 90, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"A hole in the offset sequence permanently stalls all commits for that partition\", \"body\": \"get_committable_offsets breaks out of the scan on any offset that is not in all_offsets (line 90), so a missing offset blocks commits forever. Within a partition, Kafka delivers messages in offset order, so if offset 102 arrives after 100, offset 101 will never arrive later; it is a hole from compaction or a transaction marker, and the tracker waits for it indefinitely. Consequences: the committed point never moves past the hole, mark_committed never prunes all_offsets so it grows without bound, and every restart reprocesses everything after the hole. test_offset_gaps_block_commits in the queue consumer tests only passes because it submits offset 101 after 102 and 103, which real delivery cannot produce. The tracker should treat offsets skipped by a newer delivered offset as complete.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 287, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Arroyo commit callback is invoked from a background thread without synchronization\", \"body\": \"_commit_loop runs on its own thread and calls commit_function (line 287), which is the Arroyo commit callback from create_with_partitions. Arroyo's consumer is driven from the StreamProcessor thread (poll, stage, commit); nothing here coordinates with that loop, so commits can race with the main thread's consumer calls. There is also a shutdown race: after shutdown_event is set, the loop does not re-check the flag after shutdown_event.wait(1.0) (line 276), so it can run one more get_committable_offsets and commit_function after close() has begun or returned, and close() only joins for 5 seconds. Commit calls should be made from the processor thread (for example from poll()), and the loop should exit once the event is set.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 243, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Sequential 5-second joins make shutdown block for up to 100 seconds per rebalance\", \"body\": \"FixedQueuePool.shutdown joins each worker with a 5-second timeout, one after another (line 243). With the default 20 queues, if the workers are all stuck in slow result handlers (the exact case this PR targets), shutdown can block for up to 100 seconds. Because the strategy's close() also calls this shutdown (see the close() bug above), this delay occurs on every rebalance. That risks exceeding the consumer's poll or session timeouts and getting the consumer evicted from the group. Use one shared deadline for all joins, or avoid blocking joins on the rebalance path.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Error-handling test asserts the opposite of its stated intent and depends on timing\", \"body\": \"test_thread_queue_parallel_error_handling says errors in processing must not block offset commits for other messages. Its final assertion requires that the partition is NOT committed: `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`. By the design (the finally block completes the failed offset 100), both offsets 100 and 101 complete, so a later commit should reach 102. The assertion passes only because the test exits about 0.2 seconds after submission, before the commit thread's first one-second tick. The test therefore neither verifies the intended behavior nor is stable. It should wait for a commit and assert that the partition is committed at 102.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 200, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Racy assertion that queued items remain right after submission\", \"body\": \"test_stats_reporting asserts stats['total_items'] > 0 immediately after ten submits (line 200), while worker threads are already draining the queues. If the workers dequeue everything before this line runs (possible under CI load or GIL switching), the test fails intermittently. The check adds no coverage that the later == 0 assertion does not already provide, so either remove it or make the precondition deterministic, for example by blocking the workers first.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 137, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Test named for concurrency does not check concurrency\", \"body\": \"test_concurrent_processing_across_groups claims to verify that different groups are processed concurrently, but its only assertion (line 173) is that three group labels appear in the processed output. That would pass if every item ran serially on one thread, and with only three queues the groups can hash onto the same queue. The name and the assertion disagree, so the test gives false confidence about concurrency.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 138, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Worker transaction is named with a 'monitors.' prefix copied from another consumer\", \"body\": \"The worker transaction name is built as monitors.{identifier}.worker_{id} (line 138). This module is generic remote-subscription code used by the uptime results consumer, and the same prefix is copied into the result processor. Performance data for these workers will be filed under the monitors namespace, which misleads anyone looking at traces. The prefix should reflect the actual consumer or be derived from the identifier alone.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 415, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Strategy created in test is never closed, leaking a commit thread\", \"body\": \"test_factory_creates_thread_queue_parallel_strategy creates a SimpleQueueProcessingStrategy through the factory (line 415) but only calls factory.shutdown(), which stops the pool and not the strategy. The strategy's commit thread loops every second for the rest of the test session because its shutdown event is never set. The test should call strategy.close() so the thread is stopped and the test does not leak threads into later tests.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "critical",
+   "category": "data",
+   "title": "close() shuts down the factory-owned queue pool, so messages are silently dropped after the first rebalance",
+   "body": "SimpleQueueProcessingStrategy.close() calls self.queue_pool.shutdown(), but the FixedQueuePool is created once in ResultsStrategyFactory.__init__ and passed to every strategy that create_with_partitions() builds. Arroyo closes the current strategy on partition revocation and creates a new one on assignment, so after the first rebalance the pool's queues are already shut down and its workers have exited. The new strategy's submit() calls FixedQueuePool.submit -> queue.put(), which raises queue.ShutDown. The except branch in SimpleQueueProcessingStrategy.submit (lines 317-325) then marks the offset as added and completed, so the message is never processed but its offset becomes committable. Work that was still queued when the old pool shut down keeps its offsets in `outstanding` forever, which stalls commits for those partitions. Net effect: uptime results are silently lost after any rebalance and the commit point stops advancing. No test runs close() followed by create_with_partitions() on the same factory, so this is not caught. Pool ownership should stay with the factory; the strategy's close() should only stop its own commit thread."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 323,
+   "severity": "medium",
+   "category": "data",
+   "title": "Enqueue failures mark the offset as completed, so unprocessed messages get committed",
+   "body": "In SimpleQueueProcessingStrategy.submit, any exception raised while decoding, grouping, or enqueueing a message reaches an except block that calls add_offset and then complete_offset for that message. The message is never handed to a worker, yet its offset is now treated as processed, so the commit loop advances past it and the message is dropped with only a log line. This is the mechanism that hides the ShutDown failure described above. Poison messages (decode or grouping errors) may reasonably be skipped, but a failure to enqueue must not mark the offset complete. Failed enqueues should keep the offset outstanding or propagate the error."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Per-queue work queues are unbounded, contradicting the documented backpressure",
+   "body": "Each per-queue work queue is created as queue.Queue() with no maxsize (line 185), so FixedQueuePool.submit() never blocks. The SimpleQueueProcessingStrategy docstring (line 255) promises 'Natural backpressure when queues fill up', but nothing ever fills. If the handlers are slower than the Kafka fetch rate, the main thread keeps polling and queued WorkItems (each holding a full Message) accumulate without bound. Because commits are contiguous, the last committed offset stays pinned behind the slowest item, so the outstanding and all_offsets sets also grow. Either bound the queues and make submit block or pause the consumer, or remove the backpressure claim."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 90,
+   "severity": "medium",
+   "category": "bug",
+   "title": "A hole in the offset sequence permanently stalls all commits for that partition",
+   "body": "get_committable_offsets breaks out of the scan on any offset that is not in all_offsets (line 90), so a missing offset blocks commits forever. Within a partition, Kafka delivers messages in offset order, so if offset 102 arrives after 100, offset 101 will never arrive later; it is a hole from compaction or a transaction marker, and the tracker waits for it indefinitely. Consequences: the committed point never moves past the hole, mark_committed never prunes all_offsets so it grows without bound, and every restart reprocesses everything after the hole. test_offset_gaps_block_commits in the queue consumer tests only passes because it submits offset 101 after 102 and 103, which real delivery cannot produce. The tracker should treat offsets skipped by a newer delivered offset as complete."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 287,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Arroyo commit callback is invoked from a background thread without synchronization",
+   "body": "_commit_loop runs on its own thread and calls commit_function (line 287), which is the Arroyo commit callback from create_with_partitions. Arroyo's consumer is driven from the StreamProcessor thread (poll, stage, commit); nothing here coordinates with that loop, so commits can race with the main thread's consumer calls. There is also a shutdown race: after shutdown_event is set, the loop does not re-check the flag after shutdown_event.wait(1.0) (line 276), so it can run one more get_committable_offsets and commit_function after close() has begun or returned, and close() only joins for 5 seconds. Commit calls should be made from the processor thread (for example from poll()), and the loop should exit once the event is set."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 243,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Sequential 5-second joins make shutdown block for up to 100 seconds per rebalance",
+   "body": "FixedQueuePool.shutdown joins each worker with a 5-second timeout, one after another (line 243). With the default 20 queues, if the workers are all stuck in slow result handlers (the exact case this PR targets), shutdown can block for up to 100 seconds. Because the strategy's close() also calls this shutdown (see the close() bug above), this delay occurs on every rebalance. That risks exceeding the consumer's poll or session timeouts and getting the consumer evicted from the group. Use one shared deadline for all joins, or avoid blocking joins on the rebalance path."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Error-handling test asserts the opposite of its stated intent and depends on timing",
+   "body": "test_thread_queue_parallel_error_handling says errors in processing must not block offset commits for other messages. Its final assertion requires that the partition is NOT committed: `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`. By the design (the finally block completes the failed offset 100), both offsets 100 and 101 complete, so a later commit should reach 102. The assertion passes only because the test exits about 0.2 seconds after submission, before the commit thread's first one-second tick. The test therefore neither verifies the intended behavior nor is stable. It should wait for a commit and assert that the partition is committed at 102."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 200,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Racy assertion that queued items remain right after submission",
+   "body": "test_stats_reporting asserts stats['total_items'] > 0 immediately after ten submits (line 200), while worker threads are already draining the queues. If the workers dequeue everything before this line runs (possible under CI load or GIL switching), the test fails intermittently. The check adds no coverage that the later == 0 assertion does not already provide, so either remove it or make the precondition deterministic, for example by blocking the workers first."
+  },
+  {
+   "index": 8,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 137,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test named for concurrency does not check concurrency",
+   "body": "test_concurrent_processing_across_groups claims to verify that different groups are processed concurrently, but its only assertion (line 173) is that three group labels appear in the processed output. That would pass if every item ran serially on one thread, and with only three queues the groups can hash onto the same queue. The name and the assertion disagree, so the test gives false confidence about concurrency."
+  },
+  {
+   "index": 9,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 138,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Worker transaction is named with a 'monitors.' prefix copied from another consumer",
+   "body": "The worker transaction name is built as monitors.{identifier}.worker_{id} (line 138). This module is generic remote-subscription code used by the uptime results consumer, and the same prefix is copied into the result processor. Performance data for these workers will be filed under the monitors namespace, which misleads anyone looking at traces. The prefix should reflect the actual consumer or be derived from the identifier alone."
+  },
+  {
+   "index": 10,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 415,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Strategy created in test is never closed, leaking a commit thread",
+   "body": "test_factory_creates_thread_queue_parallel_strategy creates a SimpleQueueProcessingStrategy through the factory (line 415) but only calls factory.shutdown(), which stops the pool and not the strategy. The strategy's commit thread loops every second for the rest of the test session because its shutdown event is never set. The test should call strategy.close() so the thread is stopped and the test does not leak threads into later tests."
+  }
+ ],
+ "finding_count": 11
+}

@@ -1,0 +1,139 @@
+{
+ "run_id": "kimi-k3__low__cal.com__8087__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning_effort": "low"
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:28:40Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 38850,
+    "output": 1551,
+    "reasoning": 430,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 89974,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4822,
+   "raw_usage": {
+    "completion_tokens": 1551,
+    "prompt_tokens": 38850,
+    "total_tokens": 40401,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 430,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T20:28:40Z",
+   "first_chunk_ms": 14200,
+   "first_text_ms": 38568,
+   "response_id": "chatcmpl-upd3ujhs2qf65rd2xw6tgioeffd4cgdzcq2n6xnixtdysjdx3gaa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 38850,
+  "output": 1551,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 430
+ },
+ "cost_reported": null,
+ "latency_ms": 89974,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"async forEach makes calendar/video deletions fire-and-forget and defeats the try/catch\", \"body\": \"In `Reschedule`, the loop over `bookingRefsFiltered` was changed to `forEach(async (bookingRef) => ...)` because `getCalendar` is now async. `Array.prototype.forEach` does not await async callbacks, so all `calendar.deleteEvent` / `deleteMeeting` calls are now unawaited: the function proceeds to send the reschedule email and returns `true` before deletions finish, and any rejection inside a callback becomes an unhandled promise rejection that the surrounding `try/catch` (which only catches synchronous errors) will never see. Use `await Promise.all(bookingRefsFiltered.map(async ...))` (optionally with per-item catch) so failures are logged and deletions complete before the email is sent.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"async forEach makes calendar/video deletions fire-and-forget and defeats the try/catch\", \"body\": \"Same issue as in vital/lib/reschedule.ts: the loop was changed to `forEach(async (bookingRef) => ...)` to await the now-async `getCalendar`, but forEach does not await async callbacks. The booking is already marked CANCELLED and the reschedule email is sent before the calendar/video event deletions complete, and any failure to delete is an unhandled rejection invisible to the surrounding try/catch. Replace with `await Promise.all(bookingRefsFiltered.map(...))` with individual error handling.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"requestReschedule no longer awaits calendar/video deletions\", \"body\": \"In the `requestReschedule` mutation, `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })` was introduced because `getCalendar` became async. Since forEach doesn't await its callbacks, the mutation sends the reschedule email, fires webhooks, and returns while the `deleteEvent`/`deleteMeeting` calls are still pending; a serverless function may be frozen before they finish, leaving stale events on users' calendars, and any errors become unhandled rejections. Await the deletions with `Promise.all(...map(...))`.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Recurring-cancellation branch pushes into apiDeletes asynchronously after it is awaited\", \"body\": \"In the recurring-event cancellation path, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent); })` pushes deletion promises into `apiDeletes` from async callbacks. `apiDeletes` is later consumed by `await Promise.all(prismaPromises.concat(apiDeletes))` (and by `await apiDeletes` in the paid branch), both of which run before any of these pushes happen, so the recurring calendar event deletions are never awaited and their results/errors are lost. Cancel can return success while the recurring events remain on the calendar. Collect the deletions with `Promise.all(credentials.map(...))` and push the resulting promises synchronously.\"}, {\"file\": \"packages/app-store/index.ts\", \"line\": 3, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"appStore values are now Promises; only 6 of its consumers were updated\", \"body\": \"Every entry in the default-exported `appStore` map changed from a module namespace object to a `Promise` via top-level `import(...)`. This is a breaking contract change for every consumer of `@calcom/app-store`, but the PR only updates `getCalendar.ts`, `videoClient.ts`, `handleCancelBooking.ts`, `bookings.tsx`, `deletePayment.ts`, and `handlePayment.ts`. Any other file that indexes `appStore[...]` synchronously (e.g. `appStore[appName].lib` or `appStore[key].app`) will now receive a Promise and silently fail checks like `\\\"lib\\\" in app` or crash on property access. The change needs an audit (and ideally a type-level guarantee) that all importers of `@calcom/app-store` await the values.\"}, {\"file\": \"packages/app-store/_utils/getCalendar.ts\", \"line\": 20, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Debug log of CalendarService constructor left in getCalendar\", \"body\": \"`log.info(\\\"calendarApp\\\", calendarApp.lib.CalendarService)` logs the CalendarService class constructor on every calendar resolution. This runs on every booking/availability call, adding noisy, low-value log output (and potentially expensive serialization of a class). It looks like a debugging leftover and should be removed or downgraded.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "async forEach makes calendar/video deletions fire-and-forget and defeats the try/catch",
+   "body": "In `Reschedule`, the loop over `bookingRefsFiltered` was changed to `forEach(async (bookingRef) => ...)` because `getCalendar` is now async. `Array.prototype.forEach` does not await async callbacks, so all `calendar.deleteEvent` / `deleteMeeting` calls are now unawaited: the function proceeds to send the reschedule email and returns `true` before deletions finish, and any rejection inside a callback becomes an unhandled promise rejection that the surrounding `try/catch` (which only catches synchronous errors) will never see. Use `await Promise.all(bookingRefsFiltered.map(async ...))` (optionally with per-item catch) so failures are logged and deletions complete before the email is sent."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "async forEach makes calendar/video deletions fire-and-forget and defeats the try/catch",
+   "body": "Same issue as in vital/lib/reschedule.ts: the loop was changed to `forEach(async (bookingRef) => ...)` to await the now-async `getCalendar`, but forEach does not await async callbacks. The booking is already marked CANCELLED and the reschedule email is sent before the calendar/video event deletions complete, and any failure to delete is an unhandled rejection invisible to the surrounding try/catch. Replace with `await Promise.all(bookingRefsFiltered.map(...))` with individual error handling."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "requestReschedule no longer awaits calendar/video deletions",
+   "body": "In the `requestReschedule` mutation, `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })` was introduced because `getCalendar` became async. Since forEach doesn't await its callbacks, the mutation sends the reschedule email, fires webhooks, and returns while the `deleteEvent`/`deleteMeeting` calls are still pending; a serverless function may be frozen before they finish, leaving stale events on users' calendars, and any errors become unhandled rejections. Await the deletions with `Promise.all(...map(...))`."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Recurring-cancellation branch pushes into apiDeletes asynchronously after it is awaited",
+   "body": "In the recurring-event cancellation path, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent); })` pushes deletion promises into `apiDeletes` from async callbacks. `apiDeletes` is later consumed by `await Promise.all(prismaPromises.concat(apiDeletes))` (and by `await apiDeletes` in the paid branch), both of which run before any of these pushes happen, so the recurring calendar event deletions are never awaited and their results/errors are lost. Cancel can return success while the recurring events remain on the calendar. Collect the deletions with `Promise.all(credentials.map(...))` and push the resulting promises synchronously."
+  },
+  {
+   "index": 4,
+   "file": "packages/app-store/index.ts",
+   "line": 3,
+   "severity": "medium",
+   "category": "api",
+   "title": "appStore values are now Promises; only 6 of its consumers were updated",
+   "body": "Every entry in the default-exported `appStore` map changed from a module namespace object to a `Promise` via top-level `import(...)`. This is a breaking contract change for every consumer of `@calcom/app-store`, but the PR only updates `getCalendar.ts`, `videoClient.ts`, `handleCancelBooking.ts`, `bookings.tsx`, `deletePayment.ts`, and `handlePayment.ts`. Any other file that indexes `appStore[...]` synchronously (e.g. `appStore[appName].lib` or `appStore[key].app`) will now receive a Promise and silently fail checks like `\"lib\" in app` or crash on property access. The change needs an audit (and ideally a type-level guarantee) that all importers of `@calcom/app-store` await the values."
+  },
+  {
+   "index": 5,
+   "file": "packages/app-store/_utils/getCalendar.ts",
+   "line": 20,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Debug log of CalendarService constructor left in getCalendar",
+   "body": "`log.info(\"calendarApp\", calendarApp.lib.CalendarService)` logs the CalendarService class constructor on every calendar resolution. This runs on every booking/availability call, adding noisy, low-value log output (and potentially expensive serialization of a class). It looks like a debugging leftover and should be removed or downgraded."
+  }
+ ],
+ "finding_count": 6
+}

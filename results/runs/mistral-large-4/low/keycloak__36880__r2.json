@@ -1,0 +1,215 @@
+{
+ "run_id": "mistral-large-4__low__keycloak__36880__r2",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak__36880",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/36880",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:44:32Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 195247,
+  "sha": "333d87aa5ad74bfa",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 45079,
+    "output": 3766,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03852466,
+   "latency_ms": 45665,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 17827,
+   "raw_usage": {
+    "completion_tokens": 3766,
+    "prompt_tokens": 45079,
+    "total_tokens": 48845,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.03852466,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03852466,
+     "upstream_inference_prompt_cost": 0.03065372,
+     "upstream_inference_completions_cost": 0.00787094
+    }
+   },
+   "started_at": "2026-10-17T20:44:32Z",
+   "first_chunk_ms": 5000,
+   "first_text_ms": 5000,
+   "response_id": "gen-1792269872-AoP4SHlzq5JUozA1SZJp",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 45079,
+  "output": 3766,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.03852466,
+ "latency_ms": 45665,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 214,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Per-client permission lookup uses client.getId() as resource name, but resources are created with the client ID resolved by resolveClient, causing a mismatch and potential authorization bypass or denial\",\n      \"body\": \"In hasPermission(ClientModel client, String scope), the per-client resource is looked up with resourceStore.findByName(server, client.getId(), server.getId()). However, AdminPermissionsSchema.getOrCreateResource (server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java, lines 93-95 and 175-184) creates client resources using resolveClient(session, id), which returns client.getId() \u2014 the internal model ID. The lookup here also uses client.getId(), so for a ClientModel obtained from the realm this matches. But the fallback logic is broken: when the per-client resource is null, the code loads the 'all-clients' type resource and then checks authz.getStoreFactory().getPolicyStore().findByResource(server, resource).isEmpty() \u2014 if there are ANY policies attached to the all-clients resource (even policies that do not grant the requested scope to this admin, or policies of unrelated types), evaluation proceeds against the all-clients resource. The subsequent evaluatePermission call evaluates ALL scopes of that resource and returns true if the requested scope appears in ANY granted permission. This means an admin with, e.g., only a 'view' permission on all-clients would pass hasPermission(client, MANAGE) only if manage is granted \u2014 that part is OK \u2014 but the real issue is the fallback check findByResource(...).isEmpty() is only an optimization; the deeper problem is that when a per-client resource exists, permissions defined ONLY on the all-clients resource are never evaluated, so a negative/positive interplay between per-client and all-clients permissions is inconsistent with the Users implementation. More concretely: if a per-client resource exists but has no permission granting the scope, the method returns false WITHOUT falling back to the all-clients resource, whereas when no per-client resource exists it does fall back. This asymmetry means creating a resource for a client (e.g., by granting any permission on it) silently disables all-clients permissions for that client, which is a data-integrity/authorization-semantics bug. Additionally, if the all-clients resource is null (getResourceTypeResource returns null), findByResource(server, null) is called with a null resource, which will likely throw an NPE or behave unexpectedly instead of returning false.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 219,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Null resource passed to policyStore.findByResource when the Clients type resource does not exist\",\n      \"body\": \"In hasPermission(ClientModel client, String scope), when the per-client resource is not found, the code calls AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE) and immediately passes the result to authz.getStoreFactory().getPolicyStore().findByResource(server, resource) without a null check. getResourceTypeResource returns null when the resource type resource has not been created (e.g., admin permissions were enabled but init() was not run, or the resource was deleted). Passing null to findByResource will cause a NullPointerException (or store-specific failure) instead of the intended graceful 'return false'. The sibling method hasPermission(String scope) at line 244-247 correctly checks 'if (resource == null) return false;', showing the per-client variant is missing the same guard.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 224,\n      \"severity\": \"medium\",\n      \"category\": \"security\",\n      \"title\": \"Permission evaluation grants access if the requested scope appears in any granted permission, ignoring resource/scope binding semantics\",\n      \"body\": \"hasPermission(ClientModel client, String scope) builds a ResourcePermission with resource.getScopes() (ALL scopes of the resource) and then iterates over the resulting permissions, returning true if the expected scope name appears in permission.getScopes(). This conflates 'the admin was granted some permission that includes this scope' with proper evaluation. In Keycloak's authorization model, a Permission's scopes represent the scopes for which access was GRANTED after policy evaluation; iterating them is the pattern used by UserPermissionsV2, so this is consistent. However, the evaluation is performed with root.evaluatePermission(...) which evaluates in the context of the current admin \u2014 but the ResourcePermission is constructed with the resource's full scope set, meaning the evaluation engine will evaluate policies for all scopes and the result may include scopes granted by policies attached to the resource that are not actually the requested scope. The loop then matches by scope name only. This is the same approach as the Users V2 implementation, so it is likely intentional; the concrete defect is that when the per-client resource exists, the all-clients fallback is skipped entirely (see related finding), so a permission defined on the 'Clients' type resource is ignored for any client that has its own resource \u2014 an authorization-semantics inconsistency that can deny legitimate access or, combined with the fallback check only testing policy existence, grant access based on unrelated policies.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 262,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"getEvaluationContext is dead code and mutates a possibly-immutable map\",\n      \"body\": \"The private method getEvaluationContext(ClientModel authorizedClient, AccessToken token) is never called anywhere in the class (all token-exchange related methods throw UnsupportedOperationException). Additionally, it calls super.getBaseAttributes() and then attributes.put(...) \u2014 if DefaultEvaluationContext.getBaseAttributes() returns an immutable map, this would throw UnsupportedOperationException at runtime. Since the method is unused, it should be removed; leaving unused, broken code in a security-sensitive permission evaluator is a maintenance hazard and may confuse future maintainers into wiring it up incorrectly.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 46,\n      \"severity\": \"low\",\n      \"category\": \"style\",\n      \"title\": \"Unused static import TOKEN_EXCHANGE and unused logger/scope imports\",\n      \"body\": \"The class has 'import static org.keycloak.services.resources.admin.permissions.AdminPermissionManagement.TOKEN_EXCHANGE;' (line 46) which is never referenced, an unused 'logger' field (line 51), and unused imports including org.keycloak.authorization.model.Scope (line 27). These are harmless but indicate the class was scaffolded from a template and not cleaned up; the unused TOKEN_EXCHANGE import in particular suggests token-exchange support was planned but is explicitly unsupported (canExchangeTo throws).\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java\",\n      \"line\": 77,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"registerListener now gates V1 cleanup behavior behind ADMIN_FINE_GRAINED_AUTHZ, breaking permission cleanup when only V2 is enabled\",\n      \"body\": \"The diff wraps the entire event-handling body in 'if (Profile.isFeatureEnabled(Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ))'. Previously the listener unconditionally disabled permissions on role/client/group removal. ADMIN_FINE_GRAINED_AUTHZ_V2 is a separate feature flag from ADMIN_FINE_GRAINED_AUTHZ (the V2 evaluator is selected when ADMIN_FINE_GRAINED_AUTHZ_V2 is enabled, see AdminPermissions.evaluator). With V2 enabled but V1 disabled, RoleRemovedEvent, ClientRemovedEvent, and GroupRemovedEvent will no longer trigger setPermissionsEnabled(..., false), leaving stale fine-grained permissions referencing deleted roles/clients/groups. This is a data-integrity regression: orphaned permissions remain active and may grant access based on policies referencing non-existent entities. The guard should either be removed (the cleanup is harmless when permissions are disabled) or check for either feature flag.\"\n    },\n    {\n      \"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\",\n      \"line\": 214,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"getScope throws NullPointerException when resourceType is not in the schema\",\n      \"body\": \"In getScope(KeycloakSession session, ResourceServer resourceServer, String resourceType, String id), when supportsAuthorizationSchema is true, the code calls SCHEMA.getResourceTypes().get(resourceType).getScopes() without checking whether getResourceTypes().get(resourceType) returns null. If a caller passes a resourceType that is not 'Users' or 'Clients' (e.g., a custom type, or null), this throws a NullPointerException instead of a meaningful ModelValidationException. The sibling method throwExceptionIfResourceTypeOrScopesNotProvided (line 196) explicitly validates 'SCHEMA.getResourceTypes().get(rep.getResourceType()) == null', showing the intended contract; getScope violates it. This NPE would surface as a 500 error rather than a 400 validation error when creating a scope permission with an invalid resource type through a path that reaches getScope before the other validation.\"\n    },\n    {\n      \"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\",\n      \"line\": 304,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"getResourceName only handles the Users resource type; Clients resources fall through to displayName which may be null\",\n      \"body\": \"getResourceName(KeycloakSession session, Policy policy, Resource resource) resolves a human-readable name only for USERS resource type policies (returning 'All users' or the username). For a policy with resourceType 'Clients', the method skips the if-block and returns resource.getDisplayName(). Resources created by getOrCreateResource are created via resourceStore.create(resourceServer, name, resourceServer.getClientId()) without setting a display name, so getDisplayName() returns null for client resources. Any admin UI or API listing permissions for Clients resource-type policies will show a null/empty resource name instead of the client ID or clientId, degrading the admin experience and potentially breaking UI rendering that assumes a non-null name.\"\n    },\n    {\n      \"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java\",\n      \"line\": 148,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"testManageOnlyOneClient assumes at least 2 default client scopes and indexes get(1) without verifying size\",\n      \"body\": \"In testManageOnlyOneClient, the pre-permission negative check does 'ClientScopeRepresentation clientScopeRep = clientResource.getDefaultClientScopes().get(1);' \u2014 but this call is expected to FAIL with ForbiddenException before the permission is granted (the admin has no permission yet), so getDefaultClientScopes() throws and get(1) is never reached; the variable clientScopeRep is then unused in that block. Later, after granting MANAGE, the test does 'List<ClientScopeRepresentation> defaultClientScopes = clientResource.getDefaultClientScopes(); ... ClientScopeRepresentation clientScopeRep = defaultClientScopes.get(1);' \u2014 this assumes the client has at least 2 default client scopes. If the test realm's client has fewer than 2 default scopes (depends on realm config), this throws IndexOutOfBoundsException and the test fails for an unrelated reason. The test should assert the list size before indexing, or use get(0). The same pattern appears in testConfigureOnlyOneClient at line 234/242 using get(0), which is safer but still assumes a non-empty list.\"\n    },\n    {\n      \"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java\",\n      \"line\": 320,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"testViewAllClients creates a client with null representation and only asserts FORBIDDEN, not validating the actual rejection reason\",\n      \"body\": \"In testViewAllClients, the final negative check does 'realmAdminClient.realm(realm.getName()).clients().create(null)' and asserts the response is 403 FORBIDDEN. Passing a null ClientRepresentation is an unusual API call; the server may reject it with 400 Bad Request before even reaching the authorization check, depending on JAX-RS/RESTEasy null-body handling. If the server returns 400 instead of 403, the test fails for a reason unrelated to the permission logic being tested. The intent is clearly to verify that a view-only admin cannot create clients; a valid minimal ClientRepresentation (like the one used in testManageAllClients) should be passed instead so the 403 is attributable to the authorization layer.\"\n    },\n    {\n      \"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java\",\n      \"line\": 78,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"onAfter cleanup only removes scope permissions, leaving created user policies and clients behind\",\n      \"body\": \"The @AfterEach onAfter method removes all scope permissions via permissions.findAll(...).forEach(p -> permissions.findById(p.getId()).remove()), but the tests create UserPolicyRepresentations via createUserPolicy (which registers realm cleanup callbacks) and, in testManageAllClients, create and delete a 'newClient'. The createUserPolicy helper does register a realm.cleanup() callback to remove the policy, so policies are cleaned up at realm teardown. However, testMapRolesAndCompositesOnlyOneClient creates client roles ('myclient-role', 'myclient-subRole') via realm.admin() without registering cleanup, and these persist in the managed realm across tests within the same class if the realm is reused. If the test framework reuses the realm across test methods (ManagedRealm lifecycle), the second run of testMapRolesAndCompositesOnlyOneClient would fail because the roles already exist. The test should register cleanup for the created roles, e.g., realm.cleanup().add(r -> ...remove roles...).\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 125,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"getClientsWithPermission returns resource names (internal client IDs) rather than client IDs, producing unusable identifiers\",\n      \"body\": \"getClientsWithPermission(String scope) iterates resources of type CLIENTS_RESOURCE_TYPE and adds resource.getName() to the granted set. Per AdminPermissionsSchema.getOrCreateResource and resolveClient, the resource name for a client is the client's internal model ID (client.getId()), not the clientId. Callers of getClientsWithPermission (e.g., admin endpoints that filter or search clients by permission) expect to receive identifiers they can use to look up clients \u2014 typically the client ID used in admin APIs. Returning internal model IDs (UUIDs) instead of clientIds makes the result unusable for API consumers and inconsistent with the rest of the admin API where clients are addressed by their model ID in URLs but by clientId in search. The Users V2 equivalent (UserPermissionsV2.getUsersWithPermission) has the same pattern with user IDs, which is consistent there because users are addressed by ID; for clients, the resource name is the internal ID, so the method should either return the internal IDs consistently (and document it) or map them back to clientIds. At minimum, the semantics should be verified against actual callers.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\",\n      \"line\": 87,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"canView() delegates to canViewClientDefault() which is a V1 method with different semantics, potentially bypassing V2 permission checks\",\n      \"body\": \"canView() is implemented as 'return canViewClientDefault() || hasPermission(AdminPermissionsSchema.VIEW);'. canViewClientDefault() is inherited from ClientPermissions (V1) and checks the caller's realm-management roles (view-clients / manage-clients) via root.hasOneAdminRole. This is intentional for backward compatibility (admins with realm-management roles retain access). However, canViewClientDefault() in the V1 implementation may also consult the client's own permission settings or other V1 state that is explicitly unsupported in V2 (isPermissionsEnabled throws UnsupportedOperationException). If canViewClientDefault() internally calls isPermissionsEnabled or resource() on the client, it would throw UnsupportedOperationException at runtime for V2. The method should be verified to only use role checks; otherwise V2 evaluation could crash. This is a speculative but concrete risk given that multiple other inherited methods throw UnsupportedOperationException.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 214,
+   "severity": "high",
+   "category": "security",
+   "title": "Per-client permission lookup uses client.getId() as resource name, but resources are created with the client ID resolved by resolveClient, causing a mismatch and potential authorization bypass or denial",
+   "body": "In hasPermission(ClientModel client, String scope), the per-client resource is looked up with resourceStore.findByName(server, client.getId(), server.getId()). However, AdminPermissionsSchema.getOrCreateResource (server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java, lines 93-95 and 175-184) creates client resources using resolveClient(session, id), which returns client.getId() \u2014 the internal model ID. The lookup here also uses client.getId(), so for a ClientModel obtained from the realm this matches. But the fallback logic is broken: when the per-client resource is null, the code loads the 'all-clients' type resource and then checks authz.getStoreFactory().getPolicyStore().findByResource(server, resource).isEmpty() \u2014 if there are ANY policies attached to the all-clients resource (even policies that do not grant the requested scope to this admin, or policies of unrelated types), evaluation proceeds against the all-clients resource. The subsequent evaluatePermission call evaluates ALL scopes of that resource and returns true if the requested scope appears in ANY granted permission. This means an admin with, e.g., only a 'view' permission on all-clients would pass hasPermission(client, MANAGE) only if manage is granted \u2014 that part is OK \u2014 but the real issue is the fallback check findByResource(...).isEmpty() is only an optimization; the deeper problem is that when a per-client resource exists, permissions defined ONLY on the all-clients resource are never evaluated, so a negative/positive interplay between per-client and all-clients permissions is inconsistent with the Users implementation. More concretely: if a per-client resource exists but has no permission granting the scope, the method returns false WITHOUT falling back to the all-clients resource, whereas when no per-client resource exists it does fall back. This asymmetry means creating a resource for a client (e.g., by granting any permission on it) silently disables all-clients permissions for that client, which is a data-integrity/authorization-semantics bug. Additionally, if the all-clients resource is null (getResourceTypeResource returns null), findByResource(server, null) is called with a null resource, which will likely throw an NPE or behave unexpectedly instead of returning false."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 219,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Null resource passed to policyStore.findByResource when the Clients type resource does not exist",
+   "body": "In hasPermission(ClientModel client, String scope), when the per-client resource is not found, the code calls AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE) and immediately passes the result to authz.getStoreFactory().getPolicyStore().findByResource(server, resource) without a null check. getResourceTypeResource returns null when the resource type resource has not been created (e.g., admin permissions were enabled but init() was not run, or the resource was deleted). Passing null to findByResource will cause a NullPointerException (or store-specific failure) instead of the intended graceful 'return false'. The sibling method hasPermission(String scope) at line 244-247 correctly checks 'if (resource == null) return false;', showing the per-client variant is missing the same guard."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 224,
+   "severity": "medium",
+   "category": "security",
+   "title": "Permission evaluation grants access if the requested scope appears in any granted permission, ignoring resource/scope binding semantics",
+   "body": "hasPermission(ClientModel client, String scope) builds a ResourcePermission with resource.getScopes() (ALL scopes of the resource) and then iterates over the resulting permissions, returning true if the expected scope name appears in permission.getScopes(). This conflates 'the admin was granted some permission that includes this scope' with proper evaluation. In Keycloak's authorization model, a Permission's scopes represent the scopes for which access was GRANTED after policy evaluation; iterating them is the pattern used by UserPermissionsV2, so this is consistent. However, the evaluation is performed with root.evaluatePermission(...) which evaluates in the context of the current admin \u2014 but the ResourcePermission is constructed with the resource's full scope set, meaning the evaluation engine will evaluate policies for all scopes and the result may include scopes granted by policies attached to the resource that are not actually the requested scope. The loop then matches by scope name only. This is the same approach as the Users V2 implementation, so it is likely intentional; the concrete defect is that when the per-client resource exists, the all-clients fallback is skipped entirely (see related finding), so a permission defined on the 'Clients' type resource is ignored for any client that has its own resource \u2014 an authorization-semantics inconsistency that can deny legitimate access or, combined with the fallback check only testing policy existence, grant access based on unrelated policies."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 262,
+   "severity": "low",
+   "category": "bug",
+   "title": "getEvaluationContext is dead code and mutates a possibly-immutable map",
+   "body": "The private method getEvaluationContext(ClientModel authorizedClient, AccessToken token) is never called anywhere in the class (all token-exchange related methods throw UnsupportedOperationException). Additionally, it calls super.getBaseAttributes() and then attributes.put(...) \u2014 if DefaultEvaluationContext.getBaseAttributes() returns an immutable map, this would throw UnsupportedOperationException at runtime. Since the method is unused, it should be removed; leaving unused, broken code in a security-sensitive permission evaluator is a maintenance hazard and may confuse future maintainers into wiring it up incorrectly."
+  },
+  {
+   "index": 4,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 46,
+   "severity": "low",
+   "category": "style",
+   "title": "Unused static import TOKEN_EXCHANGE and unused logger/scope imports",
+   "body": "The class has 'import static org.keycloak.services.resources.admin.permissions.AdminPermissionManagement.TOKEN_EXCHANGE;' (line 46) which is never referenced, an unused 'logger' field (line 51), and unused imports including org.keycloak.authorization.model.Scope (line 27). These are harmless but indicate the class was scaffolded from a template and not cleaned up; the unused TOKEN_EXCHANGE import in particular suggests token-exchange support was planned but is explicitly unsupported (canExchangeTo throws)."
+  },
+  {
+   "index": 5,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java",
+   "line": 77,
+   "severity": "medium",
+   "category": "bug",
+   "title": "registerListener now gates V1 cleanup behavior behind ADMIN_FINE_GRAINED_AUTHZ, breaking permission cleanup when only V2 is enabled",
+   "body": "The diff wraps the entire event-handling body in 'if (Profile.isFeatureEnabled(Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ))'. Previously the listener unconditionally disabled permissions on role/client/group removal. ADMIN_FINE_GRAINED_AUTHZ_V2 is a separate feature flag from ADMIN_FINE_GRAINED_AUTHZ (the V2 evaluator is selected when ADMIN_FINE_GRAINED_AUTHZ_V2 is enabled, see AdminPermissions.evaluator). With V2 enabled but V1 disabled, RoleRemovedEvent, ClientRemovedEvent, and GroupRemovedEvent will no longer trigger setPermissionsEnabled(..., false), leaving stale fine-grained permissions referencing deleted roles/clients/groups. This is a data-integrity regression: orphaned permissions remain active and may grant access based on policies referencing non-existent entities. The guard should either be removed (the cleanup is harmless when permissions are disabled) or check for either feature flag."
+  },
+  {
+   "index": 6,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 214,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getScope throws NullPointerException when resourceType is not in the schema",
+   "body": "In getScope(KeycloakSession session, ResourceServer resourceServer, String resourceType, String id), when supportsAuthorizationSchema is true, the code calls SCHEMA.getResourceTypes().get(resourceType).getScopes() without checking whether getResourceTypes().get(resourceType) returns null. If a caller passes a resourceType that is not 'Users' or 'Clients' (e.g., a custom type, or null), this throws a NullPointerException instead of a meaningful ModelValidationException. The sibling method throwExceptionIfResourceTypeOrScopesNotProvided (line 196) explicitly validates 'SCHEMA.getResourceTypes().get(rep.getResourceType()) == null', showing the intended contract; getScope violates it. This NPE would surface as a 500 error rather than a 400 validation error when creating a scope permission with an invalid resource type through a path that reaches getScope before the other validation."
+  },
+  {
+   "index": 7,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 304,
+   "severity": "low",
+   "category": "bug",
+   "title": "getResourceName only handles the Users resource type; Clients resources fall through to displayName which may be null",
+   "body": "getResourceName(KeycloakSession session, Policy policy, Resource resource) resolves a human-readable name only for USERS resource type policies (returning 'All users' or the username). For a policy with resourceType 'Clients', the method skips the if-block and returns resource.getDisplayName(). Resources created by getOrCreateResource are created via resourceStore.create(resourceServer, name, resourceServer.getClientId()) without setting a display name, so getDisplayName() returns null for client resources. Any admin UI or API listing permissions for Clients resource-type policies will show a null/empty resource name instead of the client ID or clientId, degrading the admin experience and potentially breaking UI rendering that assumes a non-null name."
+  },
+  {
+   "index": 8,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java",
+   "line": 148,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "testManageOnlyOneClient assumes at least 2 default client scopes and indexes get(1) without verifying size",
+   "body": "In testManageOnlyOneClient, the pre-permission negative check does 'ClientScopeRepresentation clientScopeRep = clientResource.getDefaultClientScopes().get(1);' \u2014 but this call is expected to FAIL with ForbiddenException before the permission is granted (the admin has no permission yet), so getDefaultClientScopes() throws and get(1) is never reached; the variable clientScopeRep is then unused in that block. Later, after granting MANAGE, the test does 'List<ClientScopeRepresentation> defaultClientScopes = clientResource.getDefaultClientScopes(); ... ClientScopeRepresentation clientScopeRep = defaultClientScopes.get(1);' \u2014 this assumes the client has at least 2 default client scopes. If the test realm's client has fewer than 2 default scopes (depends on realm config), this throws IndexOutOfBoundsException and the test fails for an unrelated reason. The test should assert the list size before indexing, or use get(0). The same pattern appears in testConfigureOnlyOneClient at line 234/242 using get(0), which is safer but still assumes a non-empty list."
+  },
+  {
+   "index": 9,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java",
+   "line": 320,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "testViewAllClients creates a client with null representation and only asserts FORBIDDEN, not validating the actual rejection reason",
+   "body": "In testViewAllClients, the final negative check does 'realmAdminClient.realm(realm.getName()).clients().create(null)' and asserts the response is 403 FORBIDDEN. Passing a null ClientRepresentation is an unusual API call; the server may reject it with 400 Bad Request before even reaching the authorization check, depending on JAX-RS/RESTEasy null-body handling. If the server returns 400 instead of 403, the test fails for a reason unrelated to the permission logic being tested. The intent is clearly to verify that a view-only admin cannot create clients; a valid minimal ClientRepresentation (like the one used in testManageAllClients) should be passed instead so the 403 is attributable to the authorization layer."
+  },
+  {
+   "index": 10,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/PermissionClientTest.java",
+   "line": 78,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "onAfter cleanup only removes scope permissions, leaving created user policies and clients behind",
+   "body": "The @AfterEach onAfter method removes all scope permissions via permissions.findAll(...).forEach(p -> permissions.findById(p.getId()).remove()), but the tests create UserPolicyRepresentations via createUserPolicy (which registers realm cleanup callbacks) and, in testManageAllClients, create and delete a 'newClient'. The createUserPolicy helper does register a realm.cleanup() callback to remove the policy, so policies are cleaned up at realm teardown. However, testMapRolesAndCompositesOnlyOneClient creates client roles ('myclient-role', 'myclient-subRole') via realm.admin() without registering cleanup, and these persist in the managed realm across tests within the same class if the realm is reused. If the test framework reuses the realm across test methods (ManagedRealm lifecycle), the second run of testMapRolesAndCompositesOnlyOneClient would fail because the roles already exist. The test should register cleanup for the created roles, e.g., realm.cleanup().add(r -> ...remove roles...)."
+  },
+  {
+   "index": 11,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getClientsWithPermission returns resource names (internal client IDs) rather than client IDs, producing unusable identifiers",
+   "body": "getClientsWithPermission(String scope) iterates resources of type CLIENTS_RESOURCE_TYPE and adds resource.getName() to the granted set. Per AdminPermissionsSchema.getOrCreateResource and resolveClient, the resource name for a client is the client's internal model ID (client.getId()), not the clientId. Callers of getClientsWithPermission (e.g., admin endpoints that filter or search clients by permission) expect to receive identifiers they can use to look up clients \u2014 typically the client ID used in admin APIs. Returning internal model IDs (UUIDs) instead of clientIds makes the result unusable for API consumers and inconsistent with the rest of the admin API where clients are addressed by their model ID in URLs but by clientId in search. The Users V2 equivalent (UserPermissionsV2.getUsersWithPermission) has the same pattern with user IDs, which is consistent there because users are addressed by ID; for clients, the resource name is the internal ID, so the method should either return the internal IDs consistently (and document it) or map them back to clientIds. At minimum, the semantics should be verified against actual callers."
+  },
+  {
+   "index": 12,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 87,
+   "severity": "low",
+   "category": "bug",
+   "title": "canView() delegates to canViewClientDefault() which is a V1 method with different semantics, potentially bypassing V2 permission checks",
+   "body": "canView() is implemented as 'return canViewClientDefault() || hasPermission(AdminPermissionsSchema.VIEW);'. canViewClientDefault() is inherited from ClientPermissions (V1) and checks the caller's realm-management roles (view-clients / manage-clients) via root.hasOneAdminRole. This is intentional for backward compatibility (admins with realm-management roles retain access). However, canViewClientDefault() in the V1 implementation may also consult the client's own permission settings or other V1 state that is explicitly unsupported in V2 (isPermissionsEnabled throws UnsupportedOperationException). If canViewClientDefault() internally calls isPermissionsEnabled or resource() on the client, it would throw UnsupportedOperationException at runtime for V2. The method should be verified to only use role checks; otherwise V2 evaluation could crash. This is a speculative but concrete risk given that multiple other inherited methods throw UnsupportedOperationException."
+  }
+ ],
+ "finding_count": 13
+}

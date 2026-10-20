@@ -1,0 +1,133 @@
+{
+ "run_id": "grok-4.7__xhigh__grafana__80329__r1",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__80329",
+ "golden_url": "https://github.com/grafana/grafana/pull/80329",
+ "repeat": 1,
+ "started_at": "2026-10-17T16:00:13Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 65677,
+  "sha": "8d83e49cfc512854",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 21252,
+    "output": 50246,
+    "reasoning": 49256,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.344556,
+   "latency_ms": 709652,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4164,
+   "raw_usage": {
+    "completion_tokens": 50246,
+    "prompt_tokens": 22404,
+    "total_tokens": 72650,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 49256,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.344556,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.344556,
+     "upstream_inference_prompt_cost": 0.04308,
+     "upstream_inference_completions_cost": 0.301476
+    }
+   },
+   "started_at": "2026-10-17T16:00:13Z",
+   "first_chunk_ms": 2370,
+   "first_text_ms": 701144,
+   "response_id": "gen-1792252813-ua3gtgRFH56DteVvWYED",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 21252,
+  "output": 50246,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 49256
+ },
+ "cost_reported": 0.344556,
+ "latency_ms": 709652,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 534, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Successful cleanup batches are logged at Error with every ID\", \"body\": \"CleanAnnotations and CleanOrphanedAnnotationTags log every batch with r.log.Error (lines 534, 537, 554, 557, 576, and 579), including the full ID slice, the SQL condition, and an err value that is already known to be nil. These fire even when the batch is empty, so an idle instance emits error-level lines on every cleanup cycle for age, count, and orphan-tag passes. Error is always emitted at production log levels, so this will flood logs, trip error-rate alerts, and serialize up to AnnotationCleanupJobBatchSize IDs (the new test uses 32767) on the hot path between the SELECT and the DELETE. That I/O also widens the race window of the split statements. These are leftover debug traces and should be removed; do not keep them at Error, and do not log the ID list.\"}, {\"file\": \"pkg/services/cleanup/cleanup.go\", \"line\": 77, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cleanup job interval changed from 10 minutes to 1 minute\", \"body\": \"CleanUpService.Run now uses time.NewTicker(time.Minute * 1) instead of 10 minutes. The PR is about splitting annotation cleanup statements to avoid MySQL deadlocks; this schedule change is unrelated and undocumented. clean() still applies a 9-minute timeout, which only makes sense with the old 10-minute period so a run finishes before the next tick. At 1 minute, every cleanup job (temp files, snapshots, dashboard versions, images, annotations, invites, short URLs, and query history) runs up to 10x more often. If a run lasts longer than a minute, time.Ticker drops ticks and the next clean() starts immediately, so a slow annotation cleanup can run back-to-back with no gap and continuously load the database. Revert this to 10 minutes unless the frequency change is an intentional, documented product decision.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 611, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"SQLite IN-list is built with quadratic string concatenation\", \"body\": \"When the database is SQLite and AnnotationCleanupJobBatchSize is above 999, deleteByIDs interpolates IDs into DELETE ... WHERE id IN (...). The list is built with values = fmt.Sprintf(\\\"%s, %d\\\", values, v) inside the loop, which copies the entire growing string on every iteration. That is O(n^2) allocations on the path added specifically for large batches (the new test sets the batch size to 32767, and the setting is user-configurable with no upper bound here). Tens of thousands of IDs produce gigabytes of intermediate strings, GC pauses, and a cleanup stall or OOM, which defeats a larger batch size. Build the clause with strings.Builder or strconv.AppendInt into a buffer.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 556, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Max-count cleanup can delete annotations that should be kept\", \"body\": \"Count-based retention selects IDs with ORDER BY id DESC LIMIT batch OFFSET maxCount, then deleteByIDs removes those IDs in a later autocommit statement with no re-check that they are still outside the cap. The previous single-statement DELETE evaluated the OFFSET atomically with the delete, so a row that no longer fell past MaxCount could not be removed. If newer annotations (the ones the OFFSET skipped) are deleted between the SELECT and the DELETE \u2014 by a user, the API, or another instance \u2014 the already-selected IDs can now sit inside the retention window and are still deleted. Those annotations are permanently lost and the configured max count is not honored. Concurrent inserts only under-delete, which the next cycle can fix; this race over-deletes, which the next cycle cannot undo. The comment on the age path only mentions under-deletion from inserts. The Error log of the full ID list between the two statements makes the window larger. The DELETE needs to be conditional on the row still being past the cap, or the data-loss window has to be an explicit accepted risk.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 534,
+   "severity": "high",
+   "category": "bug",
+   "title": "Successful cleanup batches are logged at Error with every ID",
+   "body": "CleanAnnotations and CleanOrphanedAnnotationTags log every batch with r.log.Error (lines 534, 537, 554, 557, 576, and 579), including the full ID slice, the SQL condition, and an err value that is already known to be nil. These fire even when the batch is empty, so an idle instance emits error-level lines on every cleanup cycle for age, count, and orphan-tag passes. Error is always emitted at production log levels, so this will flood logs, trip error-rate alerts, and serialize up to AnnotationCleanupJobBatchSize IDs (the new test uses 32767) on the hot path between the SELECT and the DELETE. That I/O also widens the race window of the split statements. These are leftover debug traces and should be removed; do not keep them at Error, and do not log the ID list."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/cleanup/cleanup.go",
+   "line": 77,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cleanup job interval changed from 10 minutes to 1 minute",
+   "body": "CleanUpService.Run now uses time.NewTicker(time.Minute * 1) instead of 10 minutes. The PR is about splitting annotation cleanup statements to avoid MySQL deadlocks; this schedule change is unrelated and undocumented. clean() still applies a 9-minute timeout, which only makes sense with the old 10-minute period so a run finishes before the next tick. At 1 minute, every cleanup job (temp files, snapshots, dashboard versions, images, annotations, invites, short URLs, and query history) runs up to 10x more often. If a run lasts longer than a minute, time.Ticker drops ticks and the next clean() starts immediately, so a slow annotation cleanup can run back-to-back with no gap and continuously load the database. Revert this to 10 minutes unless the frequency change is an intentional, documented product decision."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 611,
+   "severity": "medium",
+   "category": "perf",
+   "title": "SQLite IN-list is built with quadratic string concatenation",
+   "body": "When the database is SQLite and AnnotationCleanupJobBatchSize is above 999, deleteByIDs interpolates IDs into DELETE ... WHERE id IN (...). The list is built with values = fmt.Sprintf(\"%s, %d\", values, v) inside the loop, which copies the entire growing string on every iteration. That is O(n^2) allocations on the path added specifically for large batches (the new test sets the batch size to 32767, and the setting is user-configurable with no upper bound here). Tens of thousands of IDs produce gigabytes of intermediate strings, GC pauses, and a cleanup stall or OOM, which defeats a larger batch size. Build the clause with strings.Builder or strconv.AppendInt into a buffer."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 556,
+   "severity": "medium",
+   "category": "data",
+   "title": "Max-count cleanup can delete annotations that should be kept",
+   "body": "Count-based retention selects IDs with ORDER BY id DESC LIMIT batch OFFSET maxCount, then deleteByIDs removes those IDs in a later autocommit statement with no re-check that they are still outside the cap. The previous single-statement DELETE evaluated the OFFSET atomically with the delete, so a row that no longer fell past MaxCount could not be removed. If newer annotations (the ones the OFFSET skipped) are deleted between the SELECT and the DELETE \u2014 by a user, the API, or another instance \u2014 the already-selected IDs can now sit inside the retention window and are still deleted. Those annotations are permanently lost and the configured max count is not honored. Concurrent inserts only under-delete, which the next cycle can fix; this race over-deletes, which the next cycle cannot undo. The comment on the age path only mentions under-deletion from inserts. The Error log of the full ID list between the two statements makes the window larger. The DELETE needs to be conditional on the row still being past the cap, or the data-loss window has to be an explicit accepted risk."
+  }
+ ],
+ "finding_count": 4
+}

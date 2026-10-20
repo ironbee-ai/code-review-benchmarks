@@ -1,0 +1,153 @@
+{
+ "run_id": "glm-5.3__default__sentry__95633__r2",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:12:13Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 31026,
+    "output": 9806,
+    "reasoning": 8471,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0865828,
+   "latency_ms": 152718,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 6067,
+   "raw_usage": {
+    "completion_tokens": 9806,
+    "prompt_tokens": 31026,
+    "total_tokens": 40832,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 8471,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0865828,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0865828,
+     "upstream_inference_prompt_cost": 0.0434364,
+     "upstream_inference_completions_cost": 0.0431464
+    }
+   },
+   "started_at": "2026-10-17T21:12:13Z",
+   "first_chunk_ms": 3509,
+   "first_text_ms": 137755,
+   "response_id": "gen-1792271533-SpO4vo8IHeRO3jXeENX9",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 31026,
+  "output": 9806,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 8471
+ },
+ "cost_reported": 0.0865828,
+ "latency_ms": 152718,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Strategy close() kills the factory-wide queue pool, so any consumer group rebalance silently drops all subsequent messages\", \"body\": \"The `FixedQueuePool` (and its 20 worker threads) is created once in `ResultsStrategyFactory.__init__` and shared across every `SimpleQueueProcessingStrategy` the factory produces. Arroyo tears down and recreates the strategy via `create_with_partitions` on every partition reassignment (any consumer-group rebalance, e.g. a rolling deploy or a peer dying). The old strategy's `close()` calls `self.queue_pool.shutdown()`, which sets every worker's shutdown flag and calls `queue.shutdown()` on all queues. The new strategy created after the rebalance then reuses the same dead pool: every `queue_pool.submit()` raises ValueError from `queue.put`, which `SimpleQueueProcessingStrategy.submit` catches, logs, and marks the offset as complete. The new strategy's commit thread then commits those offsets, so all messages after a rebalance are silently dropped while appearing fully consumed. The pool needs to be per-strategy (or `close()` must not destroy a pool the factory will reuse).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Unbounded work queues provide no backpressure despite the strategy's stated guarantee\", \"body\": \"`FixedQueuePool` builds plain `queue.Queue()` objects with no maxsize, and `SimpleQueueProcessingStrategy.submit`/`poll` never block or apply throttle. The class docstring claims \\\"Natural backpressure when queues fill up\\\", but nothing can fill up: arroyo will keep polling and fetching messages as fast as the broker allows while the workers drain slowly, so a slow or backlogged subscriber causes unbounded growth of in-memory `WorkItem`s (each retaining the full Kafka payload via `WorkItem.message`) and eventual OOM. The queues should be bounded (with the submit path blocking, or poll gating fetch on total queue depth) so memory is capped.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 149, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Failed messages are still marked complete and committed, contradicting the \\\"only commits offsets after successful processing\\\" guarantee\", \"body\": \"In `OrderedQueueWorker.run`, the `finally` block calls `offset_tracker.complete_offset(...)` even when `result_processor` raised, so a processing failure is treated identically to success: the offset becomes committable and the message is dropped with no retry. The `SimpleQueueProcessingStrategy` docstring explicitly promises \\\"Only commits offsets after successful processing\\\", and the new test `test_thread_queue_parallel_error_handling` (tests/sentry/uptime/consumers/test_results_consumer.py) asserts that a failed message blocks commits \u2014 which the implementation does not do. That test only passes because of a timing race: it sleeps 0.2s after processing finishes, while the commit loop only fires every 1.0s, so the commit it should be catching usually hasn't happened yet. Either the worker must keep failed offsets outstanding (at-least-once) or the docstring and test must be changed to document the at-most-once drop behavior; as written, the code drops failed messages while the tests claim otherwise.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 74, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"get_committable_offsets iterates all_offsets without a lock while other threads insert new partition keys\", \"body\": \"`get_committable_offsets` does `list(self.all_offsets.keys())` with no lock held. `add_offset` (called from the arroyo submit thread) inserts new keys into this defaultdict, and per-partition locks don't protect the dict itself. A key insertion concurrent with the key iteration can raise `RuntimeError: dictionary changed size during iteration`, which aborts that whole commit tick (it's caught and logged in `_commit_loop`, delaying all offset commits by a cycle). This happens whenever a partition is seen for the first time while the commit thread is scanning \u2014 e.g. right after a rebalance. The key list should be snapshotted under a dedicated lock that also guards key insertion.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 136, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Per-message Sentry transaction and per-message gauge emit excessive telemetry, and the queue-depth gauge is meaningless without a worker tag\", \"body\": \"Each work item processed by `OrderedQueueWorker` opens a `sentry_sdk.start_transaction` (on top of the transaction already opened inside `ResultProcessor.__call__`, so there are two transactions per message) and emits a `metrics.gauge` for queue depth. Under production throughput this is one transaction and one gauge per Kafka message, which is significant overhead and metric flooding. Additionally, the gauge is tagged only with `identifier`, not `worker_id`, so the 20 workers each report their own queue's depth into the same series and the last write wins \u2014 the reported depth is a random worker's depth rather than the pool's.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_stats_reporting asserts the queue is non-empty immediately after submit, a race with the worker threads\", \"body\": \"In `test_stats_reporting`, 10 items are submitted and the test immediately asserts `stats[\\\"total_items\\\"] > 0`. The three worker threads are free to fully drain the queues before `get_stats()` is called (nothing synchronizes them), in which case the assertion fails. This makes the test flaky on fast machines or under load. The assertion should either block processing until stats are captured or drop the non-emptiness check in favor of the post-drain assertions.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "high",
+   "category": "bug",
+   "title": "Strategy close() kills the factory-wide queue pool, so any consumer group rebalance silently drops all subsequent messages",
+   "body": "The `FixedQueuePool` (and its 20 worker threads) is created once in `ResultsStrategyFactory.__init__` and shared across every `SimpleQueueProcessingStrategy` the factory produces. Arroyo tears down and recreates the strategy via `create_with_partitions` on every partition reassignment (any consumer-group rebalance, e.g. a rolling deploy or a peer dying). The old strategy's `close()` calls `self.queue_pool.shutdown()`, which sets every worker's shutdown flag and calls `queue.shutdown()` on all queues. The new strategy created after the rebalance then reuses the same dead pool: every `queue_pool.submit()` raises ValueError from `queue.put`, which `SimpleQueueProcessingStrategy.submit` catches, logs, and marks the offset as complete. The new strategy's commit thread then commits those offsets, so all messages after a rebalance are silently dropped while appearing fully consumed. The pool needs to be per-strategy (or `close()` must not destroy a pool the factory will reuse)."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Unbounded work queues provide no backpressure despite the strategy's stated guarantee",
+   "body": "`FixedQueuePool` builds plain `queue.Queue()` objects with no maxsize, and `SimpleQueueProcessingStrategy.submit`/`poll` never block or apply throttle. The class docstring claims \"Natural backpressure when queues fill up\", but nothing can fill up: arroyo will keep polling and fetching messages as fast as the broker allows while the workers drain slowly, so a slow or backlogged subscriber causes unbounded growth of in-memory `WorkItem`s (each retaining the full Kafka payload via `WorkItem.message`) and eventual OOM. The queues should be bounded (with the submit path blocking, or poll gating fetch on total queue depth) so memory is capped."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 149,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Failed messages are still marked complete and committed, contradicting the \"only commits offsets after successful processing\" guarantee",
+   "body": "In `OrderedQueueWorker.run`, the `finally` block calls `offset_tracker.complete_offset(...)` even when `result_processor` raised, so a processing failure is treated identically to success: the offset becomes committable and the message is dropped with no retry. The `SimpleQueueProcessingStrategy` docstring explicitly promises \"Only commits offsets after successful processing\", and the new test `test_thread_queue_parallel_error_handling` (tests/sentry/uptime/consumers/test_results_consumer.py) asserts that a failed message blocks commits \u2014 which the implementation does not do. That test only passes because of a timing race: it sleeps 0.2s after processing finishes, while the commit loop only fires every 1.0s, so the commit it should be catching usually hasn't happened yet. Either the worker must keep failed offsets outstanding (at-least-once) or the docstring and test must be changed to document the at-most-once drop behavior; as written, the code drops failed messages while the tests claim otherwise."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 74,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "get_committable_offsets iterates all_offsets without a lock while other threads insert new partition keys",
+   "body": "`get_committable_offsets` does `list(self.all_offsets.keys())` with no lock held. `add_offset` (called from the arroyo submit thread) inserts new keys into this defaultdict, and per-partition locks don't protect the dict itself. A key insertion concurrent with the key iteration can raise `RuntimeError: dictionary changed size during iteration`, which aborts that whole commit tick (it's caught and logged in `_commit_loop`, delaying all offset commits by a cycle). This happens whenever a partition is seen for the first time while the commit thread is scanning \u2014 e.g. right after a rebalance. The key list should be snapshotted under a dedicated lock that also guards key insertion."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 136,
+   "severity": "low",
+   "category": "perf",
+   "title": "Per-message Sentry transaction and per-message gauge emit excessive telemetry, and the queue-depth gauge is meaningless without a worker tag",
+   "body": "Each work item processed by `OrderedQueueWorker` opens a `sentry_sdk.start_transaction` (on top of the transaction already opened inside `ResultProcessor.__call__`, so there are two transactions per message) and emits a `metrics.gauge` for queue depth. Under production throughput this is one transaction and one gauge per Kafka message, which is significant overhead and metric flooding. Additionally, the gauge is tagged only with `identifier`, not `worker_id`, so the 20 workers each report their own queue's depth into the same series and the last write wins \u2014 the reported depth is a random worker's depth rather than the pool's."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 199,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_stats_reporting asserts the queue is non-empty immediately after submit, a race with the worker threads",
+   "body": "In `test_stats_reporting`, 10 items are submitted and the test immediately asserts `stats[\"total_items\"] > 0`. The three worker threads are free to fully drain the queues before `get_stats()` is called (nothing synchronizes them), in which case the assertion fails. This makes the test flaky on fast machines or under load. The assertion should either block processing until stats are captured or drop the non-emptiness check in favor of the post-drain assertions."
+  }
+ ],
+ "finding_count": 6
+}

@@ -1,0 +1,130 @@
+{
+ "run_id": "kimi-k3__xhigh__sentry__95633__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T15:25:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30264,
+    "output": 14347,
+    "reasoning": 13042,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 639557,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6211,
+   "raw_usage": {
+    "completion_tokens": 14347,
+    "prompt_tokens": 30264,
+    "total_tokens": 44611,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 13042,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T15:25:57Z",
+   "first_chunk_ms": 4625,
+   "first_text_ms": 603155,
+   "response_id": "chatcmpl-lsqtjgb74vvwoq7mczlztc2xkraofdkcpk6zb2w4ryiaqnpevgiq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30264,
+  "output": 14347,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 13042
+ },
+ "cost_reported": null,
+ "latency_ms": 639557,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 133, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Shared FixedQueuePool is permanently shut down after the first strategy close, so post-rebalance messages are silently dropped\", \"body\": \"The FixedQueuePool is created once in ResultsStrategyFactory.__init__ and shared by every strategy the factory creates. SimpleQueueProcessingStrategy.close() calls queue_pool.shutdown(), which calls Queue.shutdown() on every internal queue (Python 3.13 semantics: put() on a shut-down queue raises queue.ShutDown). Arroyo's StreamProcessor closes and re-creates the strategy via create_with_partitions on every partition revocation/reassignment, but create_thread_queue_parallel_worker reuses the same already-shut-down pool. After the first rebalance, FixedQueuePool.submit -> work_queue.put() raises ShutDown, SimpleQueueProcessingStrategy.submit catches it in its broad 'except Exception' block, logs it, and then marks the offset complete \u2014 so every message received after a rebalance is never processed while its offset is committed anyway (silent data loss). Additionally, ResultsStrategyFactory.shutdown() sets self.queue_pool = None, after which the assert in create_thread_queue_parallel_worker would crash on a new assignment. The pool must be created per create_with_partitions call (or recreated/restarted when shut down), and close() must not permanently kill a factory-owned resource that later strategies depend on.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Unbounded queues with no backpressure despite docstring claiming 'natural backpressure'\", \"body\": \"FixedQueuePool creates each work queue as queue.Queue() with the default maxsize=0 (unbounded), and SimpleQueueProcessingStrategy.submit never raises MessageRejected and poll() never signals the processor to pause. Arroyo only applies backpressure when a strategy rejects messages (MessageRejected) or blocks in submit; here neither happens, so if workers fall behind (the exact slow-item scenario this PR targets) the consumer keeps reading from Kafka and buffers every message in memory without limit, risking unbounded heap growth/OOM on a lag spike. The class docstring ('Natural backpressure when queues fill up') is incorrect. Either bound the queues (maxsize) so put() blocks and naturally throttles the consumer, or raise MessageRejected when total queued depth exceeds a threshold.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 336, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"close()/join() stop the commit thread before draining and never commit final offsets; worker shutdown flag also prevents draining\", \"body\": \"SimpleQueueProcessingStrategy.close() sets shutdown_event and joins the commit thread first, then shuts down the queue pool. Any offsets completed by workers during the drain are therefore never committed, and join() (which arroyo expects to flush and commit final positions within the given timeout) just calls close() again, ignores its timeout argument, and never forces a final commit_function call. On every deploy/rebalance, all messages processed since the last 1-second commit tick are redelivered and reprocessed. Worse, FixedQueuePool.shutdown() sets worker.shutdown = True before calling q.shutdown(immediate=False): OrderedQueueWorker.run checks 'while not self.shutdown' at the top of the loop, so a worker exits after at most its current item instead of draining the remaining queued items, defeating the graceful drain (those offsets simply go uncommitted). close() should drain the queues, then perform a final commit of all completed offsets, and join() should honor its timeout.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 149, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Offset is marked complete in a finally block even when result processing fails, committing past failed messages\", \"body\": \"In OrderedQueueWorker.run, the finally block unconditionally calls self.offset_tracker.complete_offset(...) after catching any Exception from result_processor. That means a message whose processing raised is treated as successfully processed: the OffsetTracker will allow the commit loop to commit past it, and with no DLQ or retry the message is permanently lost. Today the concrete ResultProcessor.__call__ swallows all exceptions itself, which masks this, but this queue consumer is shared infrastructure for remote-subscription consumers (monitors, uptime, etc.) \u2014 any processor that lets an exception propagate (or any change to ResultProcessor) silently drops data and advances offsets. Failed items should either leave the offset outstanding (stalling commits so it can be retried) or be routed to a DLQ, not marked complete.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1875, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts behavior opposite of the implementation and only passes via a timing race\", \"body\": \"This test mocks the result processor to raise on the first message and then asserts 'len(committed_offsets) == 0 or test_partition not in committed_offsets'. But the worker's finally block completes the offset even on failure, so after both messages are handled, offsets 100 and 101 are both committable and the 1-second commit loop WILL commit offset 102. The test only passes because it breaks out of its wait loop and checks roughly 0.2s after processing finishes, typically before the commit loop's first 1s tick fires \u2014 on a slow CI runner the commit can land first and the test fails flakily. The assertion also contradicts the test's own docstring ('errors don't block offset commits for other messages', which would imply 101 gets committed) and the real semantics (the failed message 100 is skipped and committed past). The test should either wait deterministically for a commit and assert the actual expected offset, or the implementation's error semantics should be fixed and the test updated to match.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 133,
+   "severity": "high",
+   "category": "data",
+   "title": "Shared FixedQueuePool is permanently shut down after the first strategy close, so post-rebalance messages are silently dropped",
+   "body": "The FixedQueuePool is created once in ResultsStrategyFactory.__init__ and shared by every strategy the factory creates. SimpleQueueProcessingStrategy.close() calls queue_pool.shutdown(), which calls Queue.shutdown() on every internal queue (Python 3.13 semantics: put() on a shut-down queue raises queue.ShutDown). Arroyo's StreamProcessor closes and re-creates the strategy via create_with_partitions on every partition revocation/reassignment, but create_thread_queue_parallel_worker reuses the same already-shut-down pool. After the first rebalance, FixedQueuePool.submit -> work_queue.put() raises ShutDown, SimpleQueueProcessingStrategy.submit catches it in its broad 'except Exception' block, logs it, and then marks the offset complete \u2014 so every message received after a rebalance is never processed while its offset is committed anyway (silent data loss). Additionally, ResultsStrategyFactory.shutdown() sets self.queue_pool = None, after which the assert in create_thread_queue_parallel_worker would crash on a new assignment. The pool must be created per create_with_partitions call (or recreated/restarted when shut down), and close() must not permanently kill a factory-owned resource that later strategies depend on."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Unbounded queues with no backpressure despite docstring claiming 'natural backpressure'",
+   "body": "FixedQueuePool creates each work queue as queue.Queue() with the default maxsize=0 (unbounded), and SimpleQueueProcessingStrategy.submit never raises MessageRejected and poll() never signals the processor to pause. Arroyo only applies backpressure when a strategy rejects messages (MessageRejected) or blocks in submit; here neither happens, so if workers fall behind (the exact slow-item scenario this PR targets) the consumer keeps reading from Kafka and buffers every message in memory without limit, risking unbounded heap growth/OOM on a lag spike. The class docstring ('Natural backpressure when queues fill up') is incorrect. Either bound the queues (maxsize) so put() blocks and naturally throttles the consumer, or raise MessageRejected when total queued depth exceeds a threshold."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 336,
+   "severity": "medium",
+   "category": "bug",
+   "title": "close()/join() stop the commit thread before draining and never commit final offsets; worker shutdown flag also prevents draining",
+   "body": "SimpleQueueProcessingStrategy.close() sets shutdown_event and joins the commit thread first, then shuts down the queue pool. Any offsets completed by workers during the drain are therefore never committed, and join() (which arroyo expects to flush and commit final positions within the given timeout) just calls close() again, ignores its timeout argument, and never forces a final commit_function call. On every deploy/rebalance, all messages processed since the last 1-second commit tick are redelivered and reprocessed. Worse, FixedQueuePool.shutdown() sets worker.shutdown = True before calling q.shutdown(immediate=False): OrderedQueueWorker.run checks 'while not self.shutdown' at the top of the loop, so a worker exits after at most its current item instead of draining the remaining queued items, defeating the graceful drain (those offsets simply go uncommitted). close() should drain the queues, then perform a final commit of all completed offsets, and join() should honor its timeout."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 149,
+   "severity": "medium",
+   "category": "data",
+   "title": "Offset is marked complete in a finally block even when result processing fails, committing past failed messages",
+   "body": "In OrderedQueueWorker.run, the finally block unconditionally calls self.offset_tracker.complete_offset(...) after catching any Exception from result_processor. That means a message whose processing raised is treated as successfully processed: the OffsetTracker will allow the commit loop to commit past it, and with no DLQ or retry the message is permanently lost. Today the concrete ResultProcessor.__call__ swallows all exceptions itself, which masks this, but this queue consumer is shared infrastructure for remote-subscription consumers (monitors, uptime, etc.) \u2014 any processor that lets an exception propagate (or any change to ResultProcessor) silently drops data and advances offsets. Failed items should either leave the offset outstanding (stalling commits so it can be retried) or be routed to a DLQ, not marked complete."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1875,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts behavior opposite of the implementation and only passes via a timing race",
+   "body": "This test mocks the result processor to raise on the first message and then asserts 'len(committed_offsets) == 0 or test_partition not in committed_offsets'. But the worker's finally block completes the offset even on failure, so after both messages are handled, offsets 100 and 101 are both committable and the 1-second commit loop WILL commit offset 102. The test only passes because it breaks out of its wait loop and checks roughly 0.2s after processing finishes, typically before the commit loop's first 1s tick fires \u2014 on a slow CI runner the commit can land first and the test fails flakily. The assertion also contradicts the test's own docstring ('errors don't block offset commits for other messages', which would imply 101 gets committed) and the real semantics (the failed message 100 is skipped and committed past). The test should either wait deterministically for a commit and assert the actual expected offset, or the implementation's error semantics should be fixed and the test updated to match."
+  }
+ ],
+ "finding_count": 5
+}

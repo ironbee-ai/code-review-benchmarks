@@ -1,0 +1,130 @@
+{
+ "run_id": "kimi-k3__xhigh__grafana__79265__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 2,
+ "started_at": "2026-10-17T23:26:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29324,
+    "output": 3879,
+    "reasoning": 2833,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 172807,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4573,
+   "raw_usage": {
+    "completion_tokens": 3879,
+    "prompt_tokens": 29324,
+    "total_tokens": 33203,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2833,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T23:26:04Z",
+   "first_chunk_ms": 4909,
+   "first_text_ms": 131783,
+   "response_id": "chatcmpl-ppmw45qbrwc2bc5wqleyp5tjjprpgegxl54jfpwh3xbskssdpcoa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29324,
+  "output": 3879,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2833
+ },
+ "cost_reported": null,
+ "latency_ms": 172807,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Local cache is populated before the DB write, so the device limit is only enforced once per device\", \"body\": \"In tagDeviceUI, the cache key is set with `a.localCache.SetDefault(key, struct{}{})` (line 87) before `a.anonStore.CreateOrUpdateDevice` is called. When the device limit is reached, CreateOrUpdateDevice returns ErrDeviceLimitReached, but the cache entry was already written and stays valid for ~29 minutes. On the next request from the same device, tagDeviceUI hits the cache at line 83-84 and returns nil without touching the database, so Anonymous.Authenticate (client.go) no longer sees ErrDeviceLimitReached and the request is allowed. Result: a new device over the limit is rejected exactly once, then gets full anonymous access for the rest of the cache window (and the window renews each time the device is re-tagged after expiry fails again). This effectively defeats the configurable device limit this PR adds. The cache entry should only be set after CreateOrUpdateDevice succeeds.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 110, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Count-then-insert limit check is racy and can exceed the configured device limit\", \"body\": \"CreateOrUpdateDevice enforces the limit by calling CountDevices and then, if count < deviceLimit, running the INSERT ... ON CONFLICT upsert. These are two separate statements with no transaction or locking, so N concurrent requests with distinct new device IDs can all observe count < limit and all insert, pushing the device table past deviceLimit. Since anonymous requests are unauthenticated and arrive concurrently (and each device is only cached locally per instance for 29 minutes, so multi-instance deployments re-check often), overshooting the limit under load is realistic. If the limit is meant as a hard cap, enforcement needs to be atomic (e.g., conditional insert in a transaction or a database-level constraint).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 95, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"updateDevice can report ErrDeviceLimitReached for an existing device on MySQL\", \"body\": \"updateDevice treats `rowsAffected == 0` as 'device does not exist / not in window' and returns ErrDeviceLimitReached. On MySQL (grafana's DSN does not set clientFoundRows), RowsAffected counts rows actually changed, not rows matched. The UPDATE sets updated_at to the current time, but anon_device.updated_at has second precision on MySQL, so two tag refreshes for the same device within the same second with unchanged client_ip/user_agent produce no changed columns and rowsAffected == 0. An existing, in-window device then gets ErrDeviceLimitReached and its anonymous authentication fails even though it is already counted against the limit. Compare using a matched-rows semantic or restructure the check (e.g., SELECT the device first, or use CLIENT_FOUND_ROWS).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test that an existing device can still be updated when the limit is reached\", \"body\": \"TestIntegrationBeyondDeviceLimit only verifies that a *new* device is rejected with ErrDeviceLimitReached once the limit is reached. The other half of the feature \u2014 that a device already present in anon_device (and within the 30-day window) is still allowed via the updateDevice path when count >= deviceLimit \u2014 is untested. A regression that rejects existing devices at the limit (e.g., the MySQL rowsAffected issue, or a broken WHERE clause in updateDevice) would not be caught. Add a case: limit=1, create device A, then call CreateOrUpdateDevice again for device A and assert it succeeds and updates the row.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New device_limit option is not documented in the config files\", \"body\": \"The PR adds `cfg.AnonymousDeviceLimit = anonSection.Key(\\\"device_limit\\\").MustInt64(0)` under [auth.anonymous], but the changed-files list does not include conf/defaults.ini or conf/sample.ini, so the new `device_limit` option is undocumented and invisible to administrators browsing or generating config. Per Grafana convention, new ini options should be added (commented, with description) to conf/defaults.ini and conf/sample.ini; otherwise the feature is undiscoverable.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Local cache is populated before the DB write, so the device limit is only enforced once per device",
+   "body": "In tagDeviceUI, the cache key is set with `a.localCache.SetDefault(key, struct{}{})` (line 87) before `a.anonStore.CreateOrUpdateDevice` is called. When the device limit is reached, CreateOrUpdateDevice returns ErrDeviceLimitReached, but the cache entry was already written and stays valid for ~29 minutes. On the next request from the same device, tagDeviceUI hits the cache at line 83-84 and returns nil without touching the database, so Anonymous.Authenticate (client.go) no longer sees ErrDeviceLimitReached and the request is allowed. Result: a new device over the limit is rejected exactly once, then gets full anonymous access for the rest of the cache window (and the window renews each time the device is re-tagged after expiry fails again). This effectively defeats the configurable device limit this PR adds. The cache entry should only be set after CreateOrUpdateDevice succeeds."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 110,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Count-then-insert limit check is racy and can exceed the configured device limit",
+   "body": "CreateOrUpdateDevice enforces the limit by calling CountDevices and then, if count < deviceLimit, running the INSERT ... ON CONFLICT upsert. These are two separate statements with no transaction or locking, so N concurrent requests with distinct new device IDs can all observe count < limit and all insert, pushing the device table past deviceLimit. Since anonymous requests are unauthenticated and arrive concurrently (and each device is only cached locally per instance for 29 minutes, so multi-instance deployments re-check often), overshooting the limit under load is realistic. If the limit is meant as a hard cap, enforcement needs to be atomic (e.g., conditional insert in a transaction or a database-level constraint)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 95,
+   "severity": "low",
+   "category": "bug",
+   "title": "updateDevice can report ErrDeviceLimitReached for an existing device on MySQL",
+   "body": "updateDevice treats `rowsAffected == 0` as 'device does not exist / not in window' and returns ErrDeviceLimitReached. On MySQL (grafana's DSN does not set clientFoundRows), RowsAffected counts rows actually changed, not rows matched. The UPDATE sets updated_at to the current time, but anon_device.updated_at has second precision on MySQL, so two tag refreshes for the same device within the same second with unchanged client_ip/user_agent produce no changed columns and rowsAffected == 0. An existing, in-window device then gets ErrDeviceLimitReached and its anonymous authentication fails even though it is already counted against the limit. Compare using a matched-rows semantic or restructure the check (e.g., SELECT the device first, or use CLIENT_FOUND_ROWS)."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test that an existing device can still be updated when the limit is reached",
+   "body": "TestIntegrationBeyondDeviceLimit only verifies that a *new* device is rejected with ErrDeviceLimitReached once the limit is reached. The other half of the feature \u2014 that a device already present in anon_device (and within the 30-day window) is still allowed via the updateDevice path when count >= deviceLimit \u2014 is untested. A regression that rejects existing devices at the limit (e.g., the MySQL rowsAffected issue, or a broken WHERE clause in updateDevice) would not be caught. Add a case: limit=1, create device A, then call CreateOrUpdateDevice again for device A and assert it succeeds and updates the row."
+  },
+  {
+   "index": 4,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New device_limit option is not documented in the config files",
+   "body": "The PR adds `cfg.AnonymousDeviceLimit = anonSection.Key(\"device_limit\").MustInt64(0)` under [auth.anonymous], but the changed-files list does not include conf/defaults.ini or conf/sample.ini, so the new `device_limit` option is undocumented and invisible to administrators browsing or generating config. Per Grafana convention, new ini options should be added (commented, with description) to conf/defaults.ini and conf/sample.ini; otherwise the feature is undiscoverable."
+  }
+ ],
+ "finding_count": 5
+}

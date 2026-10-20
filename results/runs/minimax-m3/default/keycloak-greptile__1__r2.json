@@ -1,0 +1,111 @@
+{
+ "run_id": "minimax-m3__default__keycloak-greptile__1__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "keycloak-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:09:41Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 146325,
+  "sha": "30fcfd5722e5e8a2",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 32782,
+    "output": 25370,
+    "reasoning": 24587,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04028628,
+   "latency_ms": 98386,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 3431,
+   "raw_usage": {
+    "completion_tokens": 25370,
+    "prompt_tokens": 32910,
+    "total_tokens": 58280,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 24587,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04028628,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04028628,
+     "upstream_inference_prompt_cost": 0.00984228,
+     "upstream_inference_completions_cost": 0.030444
+    }
+   },
+   "started_at": "2026-10-17T21:09:41Z",
+   "first_chunk_ms": 2873,
+   "first_text_ms": 93526,
+   "response_id": "gen-1792271381-lJRwGmFC8hgyMjMJeMuY",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 32782,
+  "output": 25370,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 24587
+ },
+ "cost_reported": 0.04028628,
+ "latency_ms": 98386,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to check the actual logic and whether tests would catch the issues.\n\nLet me trace through the code paths:\n\n**UsernameForm.java line 47**: Calls `isConditionalPasskeysEnabled()` with no arguments, but the only definition in the parent class `UsernamePasswordForm` is `isConditionalPasskeysEnabled(UserModel user)`. This won't compile.\n\n**UsernamePasswordForm.java lines 115-117**: The new condition `isConditionalPasskeysEnabled(context.getUser())` requires `user != null` (the helper enforces this), so `fillContextForm` is never called when user is null. The original code called `fillContextForm` unconditionally when passkeys were enabled at realm level (inside the `else` branch when user was null).\n\nLet me verify the regression breaks the existing test `passwordLoginWithNonDiscoverableKey` (which was modified only stylistically, not in its assertions about the webauthn form). It still asserts `driver.findElement(By.xpath(\"//form[@id='webauth']\"))` is `notNullValue()` even on the first login page when user is null. With the new code, `fillContextForm` won't run when user is null, so `ENABLE_WEBAUTHN_CONDITIONAL_UI` won't be set and the webauthn form won't render.\n\n```json\n{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java\", \"line\": 47, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Compilation error: isConditionalPasskeysEnabled() called without required UserModel argument\", \"body\": \"The condition `!isConditionalPasskeysEnabled()` invokes the method with zero arguments, but the only method available in `UsernamePasswordForm` (the parent class) is `protected boolean isConditionalPasskeysEnabled(UserModel user)`. There is no no-arg overload defined anywhere in the codebase, so this line fails to compile and the PR cannot be built. The caller almost certainly meant `isConditionalPasskeysEnabled(context.getUser())`.\"}, {\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java\", \"line\": 115, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Conditional passkeys UI not initialized on initial (user-less) login\", \"body\": \"The new check `if (isConditionalPasskeysEnabled(context.getUser()))` relies on a helper that includes `user != null` in its predicate. As a result `webauthnAuth.fillContextForm(context)` is never invoked when the user has not yet been identified on the first visit to the username/password form. The pre-PR code (inside the `else` branch) unconditionally called `fillContextForm` when `webauthnAuth != null && webauthnAuth.isPasskeysEnabled()`, which is the behavior the existing test `PasskeysUsernamePasswordFormTest#passwordLoginWithNonDiscoverableKey` (and the equivalent test in `PasskeysOrganizationAuthenticationTest`) still relies on. Both tests assert that `//form[@id='webauth']` is present and that `usernameAutocomplete` equals `\\\"username webauthn\\\"` on the very first login page before any user is set, so this regression will make those tests fail. The intent of the PR is to add passkey support for re-authentication (user already present), not to remove it for the initial login. The fix is to gate `fillContextForm` on `webauthnAuth != null && webauthnAuth.isPasskeysEnabled()` only, dropping the user-presence requirement (or splitting the helper into a realm-level predicate and a user-level predicate).\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java",
+   "line": 47,
+   "severity": "high",
+   "category": "bug",
+   "title": "Compilation error: isConditionalPasskeysEnabled() called without required UserModel argument",
+   "body": "The condition `!isConditionalPasskeysEnabled()` invokes the method with zero arguments, but the only method available in `UsernamePasswordForm` (the parent class) is `protected boolean isConditionalPasskeysEnabled(UserModel user)`. There is no no-arg overload defined anywhere in the codebase, so this line fails to compile and the PR cannot be built. The caller almost certainly meant `isConditionalPasskeysEnabled(context.getUser())`."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+   "line": 115,
+   "severity": "high",
+   "category": "bug",
+   "title": "Conditional passkeys UI not initialized on initial (user-less) login",
+   "body": "The new check `if (isConditionalPasskeysEnabled(context.getUser()))` relies on a helper that includes `user != null` in its predicate. As a result `webauthnAuth.fillContextForm(context)` is never invoked when the user has not yet been identified on the first visit to the username/password form. The pre-PR code (inside the `else` branch) unconditionally called `fillContextForm` when `webauthnAuth != null && webauthnAuth.isPasskeysEnabled()`, which is the behavior the existing test `PasskeysUsernamePasswordFormTest#passwordLoginWithNonDiscoverableKey` (and the equivalent test in `PasskeysOrganizationAuthenticationTest`) still relies on. Both tests assert that `//form[@id='webauth']` is present and that `usernameAutocomplete` equals `\"username webauthn\"` on the very first login page before any user is set, so this regression will make those tests fail. The intent of the PR is to add passkey support for re-authentication (user already present), not to remove it for the initial login. The fix is to gate `fillContextForm` on `webauthnAuth != null && webauthnAuth.isPasskeysEnabled()` only, dropping the user-presence requirement (or splitting the helper into a realm-level predicate and a user-level predicate)."
+  }
+ ],
+ "finding_count": 2
+}

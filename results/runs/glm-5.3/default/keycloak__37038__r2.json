@@ -1,0 +1,135 @@
+{
+ "run_id": "glm-5.3__default__keycloak__37038__r2",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak__37038",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/37038",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:03:07Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 304183,
+  "sha": "27305572236283fe",
+  "patch_only": [
+   "server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70400,
+    "output": 21349,
+    "reasoning": 20121,
+    "cache_read": 256,
+    "cache_write": 0
+   },
+   "cost_reported": 0.19256216,
+   "latency_ms": 307417,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5847,
+   "raw_usage": {
+    "completion_tokens": 21349,
+    "prompt_tokens": 70656,
+    "total_tokens": 92005,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 20121,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 256,
+     "video_tokens": 0
+    },
+    "cost": 0.19256216,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.19256216,
+     "upstream_inference_prompt_cost": 0.09862656,
+     "upstream_inference_completions_cost": 0.0939356
+    }
+   },
+   "started_at": "2026-10-17T21:03:07Z",
+   "first_chunk_ms": 3830,
+   "first_text_ms": 295322,
+   "response_id": "gen-1792270987-EJa4sSM4vnqybkBeCHV3",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70400,
+  "output": 21349,
+  "cache_read": 256,
+  "cache_write": 0,
+  "reasoning": 20121
+ },
+ "cost_reported": 0.19256216,
+ "latency_ms": 307417,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 123, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"getGroupIdsWithViewPermission collects authorization resource IDs instead of group IDs\", \"body\": \"In GroupPermissionsV2.getGroupIdsWithViewPermission(), the code iterates group resources and does `granted.add(groupResource.getId())`. Per-group resources in the V2 schema are created (AdminPermissionsSchema.getOrCreateResource) with the group's ID as the resource *name* and a store-generated internal ID, which is what `getId()` returns. Every consumer of the returned set treats it as a set of group IDs: UsersResource.getUsersCount passes it to `session.users().getUsersCount(realm, ..., groupIds)`, and UsersResource.searchForUser / BruteForceUsersResource.searchForUser set it as the `UserModel.GROUPS` session attribute used for DB-level membership filtering. With resource UUIDs instead of group IDs, those queries match no groups, so a group-scoped admin gets empty user searches and wrong (zero) user counts. Additionally, on line 122 `hasPermission(groupResource.getId(), ...)` passes a resource ID into a method that resolves resources via `resourceStore.findByName(server, groupId)` (i.e. it expects a group ID), so the per-group resource is never matched and evaluation silently falls back to the all-groups resource \u2014 per-group view-members/manage-members permissions therefore never contribute their group to the set. The V1 implementation correctly derived the group ID from the resource name (`resource.getName().substring(RESOURCE_NAME_PREFIX.length())`); this should use `groupResource.getName()`. The new tests don't catch this because the per-user `canView` filter compensates in the search endpoint; no test exercises getUsersCount or the DB-level GROUPS filtering with group permissions.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 70, \"severity\": \"high\", \"category\": \"security\", \"title\": \"canManage() grants manage access when only the VIEW scope is granted on the Groups resource type\", \"body\": \"GroupPermissionsV2.canManage() (the no-arg, realm-wide variant) is implemented as `hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE)`, i.e. it returns true when the caller has *either* the view or the manage scope on the all-groups resource. This is inconsistent with canManage(GroupModel) (line 79), which correctly checks only the MANAGE scope, and with canView(), which legitimately accepts view-or-manage. Consequence: an admin who was granted only the `view` scope on the \\\"Groups\\\" resource type passes `auth.groups().requireManage()` and can create top-level groups (GroupsResource.addTopLevelGroup) and move existing groups to the top level \u2014 a privilege escalation within fine-grained admin permissions. It also produces the nonsensical state where such an admin can create a group but then cannot update or delete it (canManage(group) correctly denies). The line should be `hasPermission(null, AdminPermissionsSchema.MANAGE)`. The new tests never attempt a manage operation with a view-only permission, so this is uncaught.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 174, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"setPermissionsEnabled throws UnsupportedOperationException, breaking the group-removal cleanup listener under V2\", \"body\": \"GroupPermissionsV2.setPermissionsEnabled(group, enable) unconditionally throws UnsupportedOperationException(\\\"Not supported in V2\\\"). However, AdminPermissions.registerListener (AdminPermissions.java line 94) registers a ProviderEventListener that, on GroupModel.GroupRemovedEvent, calls `management(session, realm).groups().setPermissionsEnabled(group, false)`. When both ADMIN_FINE_GRAINED_AUTHZ (which gates listener registration) and ADMIN_FINE_GRAINED_AUTHZ_V2 (which makes AdminPermissions.management() return MgmtPermissionsV2, whose groups() now returns GroupPermissionsV2 \u2014 previously it returned the V1 GroupPermissions) are enabled, deleting any group triggers the UnsupportedOperationException during event processing, failing the delete request or its permission cleanup. Before this change MgmtPermissionsV2 inherited the working V1 implementation. Either the V2 class must perform equivalent cleanup (or no-op safely) or the listener must be adjusted for V2. Note the same applies to GroupResource.setManagementPermissionsEnabled, which calls permissions.groups().setPermissionsEnabled and would now return a raw 500 UnsupportedOperationException instead of a graceful error.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 147, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"hasPermission can dereference a null fallback resource from getResourceTypeResource\", \"body\": \"In GroupPermissionsV2.hasPermission(), when no per-group resource exists, the code falls back to `AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, GROUPS_RESOURCE_TYPE)`. That method returns null whenever `supportsAuthorizationSchema` is false \u2014 e.g. when the realm's admin permissions flag is disabled while the admin permissions client (and thus its resource server) still exists. The result is then passed to `policyStore.findByResource(server, resource)` and later `resource.getScopes()` without a null check, producing a NullPointerException (HTTP 500) on any group permission check (group view/manage/members) for an admin without realm roles. The identical pattern exists in UserPermissionsV2, but this new code copies it; a null check returning false (mirroring the `server == null` early return) is needed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 123,
+   "severity": "high",
+   "category": "bug",
+   "title": "getGroupIdsWithViewPermission collects authorization resource IDs instead of group IDs",
+   "body": "In GroupPermissionsV2.getGroupIdsWithViewPermission(), the code iterates group resources and does `granted.add(groupResource.getId())`. Per-group resources in the V2 schema are created (AdminPermissionsSchema.getOrCreateResource) with the group's ID as the resource *name* and a store-generated internal ID, which is what `getId()` returns. Every consumer of the returned set treats it as a set of group IDs: UsersResource.getUsersCount passes it to `session.users().getUsersCount(realm, ..., groupIds)`, and UsersResource.searchForUser / BruteForceUsersResource.searchForUser set it as the `UserModel.GROUPS` session attribute used for DB-level membership filtering. With resource UUIDs instead of group IDs, those queries match no groups, so a group-scoped admin gets empty user searches and wrong (zero) user counts. Additionally, on line 122 `hasPermission(groupResource.getId(), ...)` passes a resource ID into a method that resolves resources via `resourceStore.findByName(server, groupId)` (i.e. it expects a group ID), so the per-group resource is never matched and evaluation silently falls back to the all-groups resource \u2014 per-group view-members/manage-members permissions therefore never contribute their group to the set. The V1 implementation correctly derived the group ID from the resource name (`resource.getName().substring(RESOURCE_NAME_PREFIX.length())`); this should use `groupResource.getName()`. The new tests don't catch this because the per-user `canView` filter compensates in the search endpoint; no test exercises getUsersCount or the DB-level GROUPS filtering with group permissions."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 70,
+   "severity": "high",
+   "category": "security",
+   "title": "canManage() grants manage access when only the VIEW scope is granted on the Groups resource type",
+   "body": "GroupPermissionsV2.canManage() (the no-arg, realm-wide variant) is implemented as `hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE)`, i.e. it returns true when the caller has *either* the view or the manage scope on the all-groups resource. This is inconsistent with canManage(GroupModel) (line 79), which correctly checks only the MANAGE scope, and with canView(), which legitimately accepts view-or-manage. Consequence: an admin who was granted only the `view` scope on the \"Groups\" resource type passes `auth.groups().requireManage()` and can create top-level groups (GroupsResource.addTopLevelGroup) and move existing groups to the top level \u2014 a privilege escalation within fine-grained admin permissions. It also produces the nonsensical state where such an admin can create a group but then cannot update or delete it (canManage(group) correctly denies). The line should be `hasPermission(null, AdminPermissionsSchema.MANAGE)`. The new tests never attempt a manage operation with a view-only permission, so this is uncaught."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 174,
+   "severity": "medium",
+   "category": "bug",
+   "title": "setPermissionsEnabled throws UnsupportedOperationException, breaking the group-removal cleanup listener under V2",
+   "body": "GroupPermissionsV2.setPermissionsEnabled(group, enable) unconditionally throws UnsupportedOperationException(\"Not supported in V2\"). However, AdminPermissions.registerListener (AdminPermissions.java line 94) registers a ProviderEventListener that, on GroupModel.GroupRemovedEvent, calls `management(session, realm).groups().setPermissionsEnabled(group, false)`. When both ADMIN_FINE_GRAINED_AUTHZ (which gates listener registration) and ADMIN_FINE_GRAINED_AUTHZ_V2 (which makes AdminPermissions.management() return MgmtPermissionsV2, whose groups() now returns GroupPermissionsV2 \u2014 previously it returned the V1 GroupPermissions) are enabled, deleting any group triggers the UnsupportedOperationException during event processing, failing the delete request or its permission cleanup. Before this change MgmtPermissionsV2 inherited the working V1 implementation. Either the V2 class must perform equivalent cleanup (or no-op safely) or the listener must be adjusted for V2. Note the same applies to GroupResource.setManagementPermissionsEnabled, which calls permissions.groups().setPermissionsEnabled and would now return a raw 500 UnsupportedOperationException instead of a graceful error."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 147,
+   "severity": "low",
+   "category": "bug",
+   "title": "hasPermission can dereference a null fallback resource from getResourceTypeResource",
+   "body": "In GroupPermissionsV2.hasPermission(), when no per-group resource exists, the code falls back to `AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, GROUPS_RESOURCE_TYPE)`. That method returns null whenever `supportsAuthorizationSchema` is false \u2014 e.g. when the realm's admin permissions flag is disabled while the admin permissions client (and thus its resource server) still exists. The result is then passed to `policyStore.findByResource(server, resource)` and later `resource.getScopes()` without a null check, producing a NullPointerException (HTTP 500) on any group permission check (group view/manage/members) for an admin without realm roles. The identical pattern exists in UserPermissionsV2, but this new code copies it; a null check returning false (mirroring the `server == null` early return) is needed."
+  }
+ ],
+ "finding_count": 4
+}

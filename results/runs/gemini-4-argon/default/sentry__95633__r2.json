@@ -1,0 +1,131 @@
+{
+ "run_id": "gemini-4-argon__default__sentry__95633__r2",
+ "model_id": "gemini-4-argon",
+ "family": "google",
+ "route": "openrouter",
+ "provider_model": "google/gemini-4-argon",
+ "provider_pin": {
+  "order": [
+   "google-ai-studio"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:40:05Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 40505,
+    "output": 909,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0901,
+   "latency_ms": 17099,
+   "finish_reason": "stop",
+   "served_model": "google/gemini-4-argon",
+   "provider_served": "Google AI Studio",
+   "http_attempts": 1,
+   "text_chars": 3937,
+   "raw_usage": {
+    "completion_tokens": 909,
+    "prompt_tokens": 40505,
+    "total_tokens": 41414,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0901,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0901,
+     "upstream_inference_prompt_cost": 0.08101,
+     "upstream_inference_completions_cost": 0.00909
+    }
+   },
+   "started_at": "2026-10-17T20:40:05Z",
+   "first_chunk_ms": 5595,
+   "first_text_ms": 5595,
+   "response_id": "gen-1792269605-kldhZXHFXrRhV07wY1n8",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 40505,
+  "output": 909,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.0901,
+ "latency_ms": 17099,
+ "served_model": "google/gemini-4-argon",
+ "provider_served": "Google AI Studio",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 270, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Calling `commit` from a background thread violates Arroyo/confluent-kafka thread safety\", \"body\": \"`SimpleQueueProcessingStrategy` spawns a background `commit_thread` that calls `self.commit_function(committable)`, which invokes the Arroyo `Commit` callback passed into `create_with_partitions`. In Arroyo's `StreamProcessor`, that callback calls `self.__consumer.stage_positions(...)` and `self.__consumer.commit(...)` on the underlying `KafkaConsumer` (and `confluent_kafka.Consumer`), while the main processor thread is concurrently calling `poll()` / `stage_positions()` on the same consumer and unsynchronized internal dicts (`__PartitionState.__staged_offsets`). Arroyo strategies are expected to invoke `commit` from `poll()`, `submit()`, or `join()` on the main consumer thread. Calling `commit` from a separate thread introduces data races on Arroyo's offset state and concurrent calls into the librdkafka consumer.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 335, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"`close()` and `terminate()` shut down the shared `FixedQueuePool`, breaking partition rebalances\", \"body\": \"`ResultsStrategyFactory` creates a single `self.queue_pool` in `__init__` and reuses it across every `create_with_partitions` call. In Arroyo, whenever partitions are revoked or rebalanced, the active strategy has `close()`/`join()` (or `terminate()`) called on it, and `create_with_partitions` is then called again to build a new strategy instance. Because `SimpleQueueProcessingStrategy.close()` and `terminate()` call `self.queue_pool.shutdown()` (which permanently shuts down all queues and stops all worker threads), the first rebalance will leave `self.queue_pool` dead: subsequent `submit()` calls on the newly created strategy will raise `queue.ShutDown` (caught and immediately marked completed in `submit()`), silently dropping all messages and committing their offsets without processing.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Work queues are unbounded and `submit()` never raises `MessageRejected`, allowing unbounded memory growth\", \"body\": \"In `FixedQueuePool.__init__`, each `queue.Queue()` is created with `maxsize=0` (unbounded), and `SimpleQueueProcessingStrategy.submit` never raises Arroyo's `MessageRejected`. Although the class docstring claims \\\"Natural backpressure when queues fill up\\\", the main consumer loop will read from Kafka at full speed and buffer an arbitrary number of `WorkItem` objects (each retaining the raw `Message` and decoded payload) in memory if any worker falls behind, risking OOM kills and also failing to flush remaining queued items on shutdown because `worker.shutdown = True` causes workers to exit their loop on the next iteration instead of draining the queue.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 233, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`FixedQueuePool.shutdown` sets `worker.shutdown = True` before draining, dropping queued items and skipping final commit\", \"body\": \"`FixedQueuePool.shutdown()` sets `worker.shutdown = True` on all workers and then calls `q.shutdown(immediate=False)`. Because `OrderedQueueWorker.run` checks `while not self.shutdown:`, any worker that finishes its current item sees `self.shutdown == True` and exits immediately instead of draining the remaining items in `work_queue` (which `q.shutdown(immediate=False)` is meant to allow). Furthermore, `SimpleQueueProcessingStrategy.close()` stops `commit_thread` before calling `queue_pool.shutdown()` and never performs a final commit afterwards, so offsets for items completed during shutdown are never committed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 270,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Calling `commit` from a background thread violates Arroyo/confluent-kafka thread safety",
+   "body": "`SimpleQueueProcessingStrategy` spawns a background `commit_thread` that calls `self.commit_function(committable)`, which invokes the Arroyo `Commit` callback passed into `create_with_partitions`. In Arroyo's `StreamProcessor`, that callback calls `self.__consumer.stage_positions(...)` and `self.__consumer.commit(...)` on the underlying `KafkaConsumer` (and `confluent_kafka.Consumer`), while the main processor thread is concurrently calling `poll()` / `stage_positions()` on the same consumer and unsynchronized internal dicts (`__PartitionState.__staged_offsets`). Arroyo strategies are expected to invoke `commit` from `poll()`, `submit()`, or `join()` on the main consumer thread. Calling `commit` from a separate thread introduces data races on Arroyo's offset state and concurrent calls into the librdkafka consumer."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "high",
+   "category": "bug",
+   "title": "`close()` and `terminate()` shut down the shared `FixedQueuePool`, breaking partition rebalances",
+   "body": "`ResultsStrategyFactory` creates a single `self.queue_pool` in `__init__` and reuses it across every `create_with_partitions` call. In Arroyo, whenever partitions are revoked or rebalanced, the active strategy has `close()`/`join()` (or `terminate()`) called on it, and `create_with_partitions` is then called again to build a new strategy instance. Because `SimpleQueueProcessingStrategy.close()` and `terminate()` call `self.queue_pool.shutdown()` (which permanently shuts down all queues and stops all worker threads), the first rebalance will leave `self.queue_pool` dead: subsequent `submit()` calls on the newly created strategy will raise `queue.ShutDown` (caught and immediately marked completed in `submit()`), silently dropping all messages and committing their offsets without processing."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "perf",
+   "title": "Work queues are unbounded and `submit()` never raises `MessageRejected`, allowing unbounded memory growth",
+   "body": "In `FixedQueuePool.__init__`, each `queue.Queue()` is created with `maxsize=0` (unbounded), and `SimpleQueueProcessingStrategy.submit` never raises Arroyo's `MessageRejected`. Although the class docstring claims \"Natural backpressure when queues fill up\", the main consumer loop will read from Kafka at full speed and buffer an arbitrary number of `WorkItem` objects (each retaining the raw `Message` and decoded payload) in memory if any worker falls behind, risking OOM kills and also failing to flush remaining queued items on shutdown because `worker.shutdown = True` causes workers to exit their loop on the next iteration instead of draining the queue."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 233,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`FixedQueuePool.shutdown` sets `worker.shutdown = True` before draining, dropping queued items and skipping final commit",
+   "body": "`FixedQueuePool.shutdown()` sets `worker.shutdown = True` on all workers and then calls `q.shutdown(immediate=False)`. Because `OrderedQueueWorker.run` checks `while not self.shutdown:`, any worker that finishes its current item sees `self.shutdown == True` and exits immediately instead of draining the remaining items in `work_queue` (which `q.shutdown(immediate=False)` is meant to allow). Furthermore, `SimpleQueueProcessingStrategy.close()` stops `commit_thread` before calling `queue_pool.shutdown()` and never performs a final commit afterwards, so offsets for items completed during shutdown are never committed."
+  }
+ ],
+ "finding_count": 4
+}

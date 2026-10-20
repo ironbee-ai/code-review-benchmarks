@@ -1,0 +1,157 @@
+{
+ "run_id": "muse-wonder__low__sentry__95633__r2",
+ "model_id": "muse-wonder",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-wonder",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-18T21:34:30Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30354,
+    "output": 2945,
+    "reasoning": 1645,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.180316,
+   "latency_ms": 37088,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-wonder",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 5727,
+   "raw_usage": {
+    "completion_tokens": 2945,
+    "prompt_tokens": 30354,
+    "total_tokens": 33299,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 1645,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.180316,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.180316,
+     "upstream_inference_prompt_cost": 0.121416,
+     "upstream_inference_completions_cost": 0.0589
+    }
+   },
+   "started_at": "2026-10-18T21:34:30Z",
+   "first_chunk_ms": 5139,
+   "first_text_ms": 26552,
+   "response_id": "gen-1792359270-QpvvxKhRE6YCk3k5goXE",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30354,
+  "output": 2945,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 1645
+ },
+ "cost_reported": 0.180316,
+ "latency_ms": 37088,
+ "served_model": "meta/muse-wonder",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 335, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Strategy close permanently shuts down the factory-owned shared queue pool\", \"body\": \"SimpleQueueProcessingStrategy.close()/terminate() calls queue_pool.shutdown(), but ResultsStrategyFactory owns one FixedQueuePool and reuses it for every create_with_partitions() call. Arroyo closes the processing strategy when partitions are revoked/rebalanced and then creates a new strategy for the next assignment; the new strategy reuses a pool whose workers have exited and whose queues have been shut down. Subsequent queue.put() calls raise queue.ShutDown, which submit() then mishandles (see its exception path), so processing after any rebalance is broken and can silently drop work. The pool should be owned/refcounted by the factory, recreated per assignment, or not shut down by the per-assignment strategy.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 231, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Graceful shutdown discards queued items instead of draining them\", \"body\": \"FixedQueuePool.shutdown() sets worker.shutdown=True before calling q.shutdown(immediate=False). OrderedQueueWorker.run() checks `while not self.shutdown` before each get(), so a worker that finishes its current item exits even if its queue still contains pending items, despite immediate=False intending a drain. Those unprocessed items are simply abandoned on strategy close (they will only be recovered by Kafka redelivery, if ever), contradicting the graceful-shutdown contract and delaying/losing in-flight processing on every deploy or rebalance.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 148, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Failed work items are marked complete and their offsets are committed\", \"body\": \"OrderedQueueWorker.run() catches every Exception from result_processor, logs it, and then unconditionally calls offset_tracker.complete_offset() in the finally block. The commit loop therefore treats a crashed/failed result as successfully processed and advances the Kafka offset past it, so the message is never redelivered or sent to a DLQ. This contradicts the strategy docstring claim 'Only commits offsets after successful processing' and causes permanent data loss for transient processing failures.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 317, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Any submit-time exception is swallowed and the offset is marked processed\", \"body\": \"SimpleQueueProcessingStrategy.submit() wraps decoding, grouping and queue submission in one try/except; on any exception it logs, then add_offset()+complete_offset() for that message. If grouping_fn raises, the queue is already shut down, or queue.put() fails, the message was never processed yet becomes committable, advancing the offset and dropping the result with no DLQ/InvalidMessage propagation to Arroyo. Only genuinely undecodable/filtered messages should be skipped this way; processing/submission failures must not be marked complete.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Queues are unbounded, so there is no backpressure despite the documented guarantee\", \"body\": \"FixedQueuePool creates plain queue.Queue() instances with no maxsize, and submit() never blocks or raises MessageRejected. The strategy therefore accepts messages from Arroyo as fast as they are polled and accumulates them in memory while a slow group blocks its queue, growing memory (and the OffsetTracker's all_offsets/outstanding sets, which are only pruned up to the blocked offset) without bound and risking max.poll.interval/OOM kills. This contradicts the class docstring claims of 'Natural backpressure when queues fill up'. Bounded queues plus MessageRejected on full are needed.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 43, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"OffsetTracker state is never reset when partitions are revoked or reassigned\", \"body\": \"OffsetTracker keeps last_committed/all_offsets/outstanding per Partition for the life of the factory-owned pool, and nothing clears them when Arroyo revokes a partition or reassigns it (possibly to a different committed position, or back to this consumer later at a lower offset after a group reset/rebalance). get_committable_offsets() starts scanning at max(last_committed+1, min_offset), so with a stale last_committed higher than the newly assigned offsets, no offset for that partition can ever be committed again; stale outstanding entries likewise permanently block commits. Tracker state must be (re)initialized from the partitions/offsets passed to create_with_partitions and cleaned up on revocation.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 222, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"wait_until_empty reports empty while items are still being processed\", \"body\": \"wait_until_empty()/get_stats() only sum Queue.qsize(), which counts items still waiting in the queue but not the item a worker has already dequeued and is currently processing. As soon as the last item is picked up, total_items becomes 0 and wait_until_empty returns True while processing (and its side effects) are still in flight, so callers/tests/shutdown logic relying on it can proceed or commit-check too early. Use the queue's unfinished_tasks/task_done accounting or an explicit in-flight counter instead of qsize.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Strategy close permanently shuts down the factory-owned shared queue pool",
+   "body": "SimpleQueueProcessingStrategy.close()/terminate() calls queue_pool.shutdown(), but ResultsStrategyFactory owns one FixedQueuePool and reuses it for every create_with_partitions() call. Arroyo closes the processing strategy when partitions are revoked/rebalanced and then creates a new strategy for the next assignment; the new strategy reuses a pool whose workers have exited and whose queues have been shut down. Subsequent queue.put() calls raise queue.ShutDown, which submit() then mishandles (see its exception path), so processing after any rebalance is broken and can silently drop work. The pool should be owned/refcounted by the factory, recreated per assignment, or not shut down by the per-assignment strategy."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 231,
+   "severity": "high",
+   "category": "bug",
+   "title": "Graceful shutdown discards queued items instead of draining them",
+   "body": "FixedQueuePool.shutdown() sets worker.shutdown=True before calling q.shutdown(immediate=False). OrderedQueueWorker.run() checks `while not self.shutdown` before each get(), so a worker that finishes its current item exits even if its queue still contains pending items, despite immediate=False intending a drain. Those unprocessed items are simply abandoned on strategy close (they will only be recovered by Kafka redelivery, if ever), contradicting the graceful-shutdown contract and delaying/losing in-flight processing on every deploy or rebalance."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 148,
+   "severity": "high",
+   "category": "data",
+   "title": "Failed work items are marked complete and their offsets are committed",
+   "body": "OrderedQueueWorker.run() catches every Exception from result_processor, logs it, and then unconditionally calls offset_tracker.complete_offset() in the finally block. The commit loop therefore treats a crashed/failed result as successfully processed and advances the Kafka offset past it, so the message is never redelivered or sent to a DLQ. This contradicts the strategy docstring claim 'Only commits offsets after successful processing' and causes permanent data loss for transient processing failures."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 317,
+   "severity": "high",
+   "category": "data",
+   "title": "Any submit-time exception is swallowed and the offset is marked processed",
+   "body": "SimpleQueueProcessingStrategy.submit() wraps decoding, grouping and queue submission in one try/except; on any exception it logs, then add_offset()+complete_offset() for that message. If grouping_fn raises, the queue is already shut down, or queue.put() fails, the message was never processed yet becomes committable, advancing the offset and dropping the result with no DLQ/InvalidMessage propagation to Arroyo. Only genuinely undecodable/filtered messages should be skipped this way; processing/submission failures must not be marked complete."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Queues are unbounded, so there is no backpressure despite the documented guarantee",
+   "body": "FixedQueuePool creates plain queue.Queue() instances with no maxsize, and submit() never blocks or raises MessageRejected. The strategy therefore accepts messages from Arroyo as fast as they are polled and accumulates them in memory while a slow group blocks its queue, growing memory (and the OffsetTracker's all_offsets/outstanding sets, which are only pruned up to the blocked offset) without bound and risking max.poll.interval/OOM kills. This contradicts the class docstring claims of 'Natural backpressure when queues fill up'. Bounded queues plus MessageRejected on full are needed."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 43,
+   "severity": "medium",
+   "category": "bug",
+   "title": "OffsetTracker state is never reset when partitions are revoked or reassigned",
+   "body": "OffsetTracker keeps last_committed/all_offsets/outstanding per Partition for the life of the factory-owned pool, and nothing clears them when Arroyo revokes a partition or reassigns it (possibly to a different committed position, or back to this consumer later at a lower offset after a group reset/rebalance). get_committable_offsets() starts scanning at max(last_committed+1, min_offset), so with a stale last_committed higher than the newly assigned offsets, no offset for that partition can ever be committed again; stale outstanding entries likewise permanently block commits. Tracker state must be (re)initialized from the partitions/offsets passed to create_with_partitions and cleaned up on revocation."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 222,
+   "severity": "medium",
+   "category": "bug",
+   "title": "wait_until_empty reports empty while items are still being processed",
+   "body": "wait_until_empty()/get_stats() only sum Queue.qsize(), which counts items still waiting in the queue but not the item a worker has already dequeued and is currently processing. As soon as the last item is picked up, total_items becomes 0 and wait_until_empty returns True while processing (and its side effects) are still in flight, so callers/tests/shutdown logic relying on it can proceed or commit-check too early. Use the queue's unfinished_tasks/task_done accounting or an explicit in-flight counter instead of qsize."
+  }
+ ],
+ "finding_count": 7
+}

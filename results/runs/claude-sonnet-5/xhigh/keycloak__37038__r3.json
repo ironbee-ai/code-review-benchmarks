@@ -1,0 +1,131 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__keycloak__37038__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "keycloak__37038",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/37038",
+ "repeat": 3,
+ "started_at": "2026-10-18T22:42:33Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 304183,
+  "sha": "27305572236283fe",
+  "patch_only": [
+   "server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 124034,
+    "output": 41270,
+    "reasoning": 38980,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 366807,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6040,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 124034,
+    "output_tokens": 41270,
+    "output_tokens_details": {
+     "thinking_tokens": 38980
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:42:33Z",
+   "first_chunk_ms": 3225,
+   "first_text_ms": 347709,
+   "response_id": "msg_bdrk_lxhxbnyucv75gslwvuqh2xrkdaoyi364wqlgzwqo4vlr4vl5wesq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 124034,
+  "output": 41270,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 38980
+ },
+ "cost_reported": null,
+ "latency_ms": 366807,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 65, \"severity\": \"critical\", \"category\": \"security\", \"title\": \"canManage() for Groups V2 treats VIEW scope as sufficient for MANAGE, enabling privilege escalation\", \"body\": \"In GroupPermissionsV2.canManage() (no-arg, global check), the implementation is:\\n```\\npublic boolean canManage() {\\n    if (root.hasOneAdminRole(AdminRoles.MANAGE_USERS)) return true;\\n    return hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE);\\n}\\n```\\nIt checks for either VIEW or MANAGE scope on the all-groups resource, instead of only MANAGE (as correctly done in the per-group overload `canManage(GroupModel group)`, which only checks `AdminPermissionsSchema.MANAGE`). As a result, an admin who was only granted the 'view' scope on the all-groups ('Groups') resource (intended for read-only access) will also satisfy `canManage()`/`requireManage()`. This method is called directly by `GroupsResource.addTopLevelGroup()` via `auth.groups().requireManage()`, so a user with only VIEW permission on groups would be able to create top-level groups - an unintended privilege escalation. The analogous Users V2 implementation (`UserPermissionsV2.canManage(user)`) correctly checks only MANAGE, confirming this is a copy/paste mistake from `canView()`.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 141, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"getGroupIdsWithViewPermission() passes resource ID where a domain Group ID (resource name) is expected\", \"body\": \"In `getGroupIdsWithViewPermission()`, the code iterates resources of type GROUPS_RESOURCE_TYPE and calls `hasPermission(groupResource.getId(), VIEW_MEMBERS, MANAGE_MEMBERS)`, then adds `groupResource.getId()` to the granted set. Inside `hasPermission(String groupId, ...)`, the value is used as `resourceStore.findByName(server, groupId)` - i.e. it is treated as the resource's *name*, which (per `AdminPermissionsSchema.resolveGroup`) is the domain Group's own ID, not the Resource entity's internal ID. Everywhere else in this class (e.g. `canView(GroupModel group)`, `canManage(GroupModel group)`) the method is correctly invoked with `group.getId()` (the domain Group ID == resource name). Passing `groupResource.getId()` (the internal Resource PK) instead of `groupResource.getName()` means the by-name lookup will not find the correct resource, causing the method to fall back to only checking the 'all-groups' resource and to add garbage/internal IDs (not real group IDs) to the returned set. This breaks `getGroupIdsWithViewPermission()` for admins who were granted VIEW_MEMBERS/MANAGE_MEMBERS on individual groups (rather than an all-groups permission): such grants will not be detected, and consumers such as `UsersResource.getUsersCount(realm, search, groupIds)` and the `UserModel.GROUPS` session-attribute optimization will receive an incorrect/empty or meaningless set of IDs, under-counting or mis-filtering visible users.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 152, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"hasPermission() omits resource-id filter present in the analogous UserPermissionsV2 implementation\", \"body\": \"`GroupPermissionsV2.hasPermission(String groupId, String... scopes)` evaluates permissions with `root.evaluatePermission(new ResourcePermission(resource, resource.getScopes(), server), server)` and then checks every returned `Permission`'s scopes without verifying `permission.getResourceId().equals(resource.getId())`. The structurally similar `UserPermissionsV2.hasPermission(...)` does include this check (`if (permission.getResourceId().equals(resource.getId()))`). Without this filter, if the evaluation ever returns permissions for a resource other than the one being checked (e.g. due to how the policy engine aggregates results), GroupPermissionsV2 could incorrectly grant access based on an unrelated resource's permission that happens to share a scope name. This inconsistency with the Users implementation suggests a missed safety check.\"}, {\"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/GroupResourceTypeEvaluationTest.java\", \"line\": 139, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test exercises the global canManage()/requireManage() path with only VIEW scope granted\", \"body\": \"`testManageAllGroups()` only tests granting the `MANAGE` scope via `createAllGroupsPermission(policy, Set.of(MANAGE))` and verifies group management becomes possible. There is no test that grants only `VIEW` scope on the all-groups resource and then asserts that group-management operations (e.g. `POST /groups`) remain forbidden. Such a test would have caught the bug in `GroupPermissionsV2.canManage()` where VIEW scope is incorrectly treated as sufficient for management operations (see separate finding), so its absence is a meaningful coverage gap for this new feature.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java\", \"line\": 147, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Interface methods renamed/removed without deprecation on a cross-module interface\", \"body\": \"`GroupPermissionEvaluator` previously exposed `boolean getGroupsWithViewPermission(GroupModel group)` and `Set<String> getGroupsWithViewPermission()`. Both were removed/renamed (the group-specific boolean overload was dropped entirely in favor of `canViewMembers(GroupModel)`, and the Set-returning method was renamed to `getGroupIdsWithViewPermission()` with a changed return value semantics - names vs. IDs). This interface is consumed outside the `services` module (e.g. `rest/admin-ui-ext`'s `BruteForceUsersResource`), so any other out-of-tree code built against the previous method signatures will fail to compile, with no deprecation cycle offered.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 65,
+   "severity": "critical",
+   "category": "security",
+   "title": "canManage() for Groups V2 treats VIEW scope as sufficient for MANAGE, enabling privilege escalation",
+   "body": "In GroupPermissionsV2.canManage() (no-arg, global check), the implementation is:\n```\npublic boolean canManage() {\n    if (root.hasOneAdminRole(AdminRoles.MANAGE_USERS)) return true;\n    return hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE);\n}\n```\nIt checks for either VIEW or MANAGE scope on the all-groups resource, instead of only MANAGE (as correctly done in the per-group overload `canManage(GroupModel group)`, which only checks `AdminPermissionsSchema.MANAGE`). As a result, an admin who was only granted the 'view' scope on the all-groups ('Groups') resource (intended for read-only access) will also satisfy `canManage()`/`requireManage()`. This method is called directly by `GroupsResource.addTopLevelGroup()` via `auth.groups().requireManage()`, so a user with only VIEW permission on groups would be able to create top-level groups - an unintended privilege escalation. The analogous Users V2 implementation (`UserPermissionsV2.canManage(user)`) correctly checks only MANAGE, confirming this is a copy/paste mistake from `canView()`."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 141,
+   "severity": "high",
+   "category": "bug",
+   "title": "getGroupIdsWithViewPermission() passes resource ID where a domain Group ID (resource name) is expected",
+   "body": "In `getGroupIdsWithViewPermission()`, the code iterates resources of type GROUPS_RESOURCE_TYPE and calls `hasPermission(groupResource.getId(), VIEW_MEMBERS, MANAGE_MEMBERS)`, then adds `groupResource.getId()` to the granted set. Inside `hasPermission(String groupId, ...)`, the value is used as `resourceStore.findByName(server, groupId)` - i.e. it is treated as the resource's *name*, which (per `AdminPermissionsSchema.resolveGroup`) is the domain Group's own ID, not the Resource entity's internal ID. Everywhere else in this class (e.g. `canView(GroupModel group)`, `canManage(GroupModel group)`) the method is correctly invoked with `group.getId()` (the domain Group ID == resource name). Passing `groupResource.getId()` (the internal Resource PK) instead of `groupResource.getName()` means the by-name lookup will not find the correct resource, causing the method to fall back to only checking the 'all-groups' resource and to add garbage/internal IDs (not real group IDs) to the returned set. This breaks `getGroupIdsWithViewPermission()` for admins who were granted VIEW_MEMBERS/MANAGE_MEMBERS on individual groups (rather than an all-groups permission): such grants will not be detected, and consumers such as `UsersResource.getUsersCount(realm, search, groupIds)` and the `UserModel.GROUPS` session-attribute optimization will receive an incorrect/empty or meaningless set of IDs, under-counting or mis-filtering visible users."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 152,
+   "severity": "medium",
+   "category": "bug",
+   "title": "hasPermission() omits resource-id filter present in the analogous UserPermissionsV2 implementation",
+   "body": "`GroupPermissionsV2.hasPermission(String groupId, String... scopes)` evaluates permissions with `root.evaluatePermission(new ResourcePermission(resource, resource.getScopes(), server), server)` and then checks every returned `Permission`'s scopes without verifying `permission.getResourceId().equals(resource.getId())`. The structurally similar `UserPermissionsV2.hasPermission(...)` does include this check (`if (permission.getResourceId().equals(resource.getId()))`). Without this filter, if the evaluation ever returns permissions for a resource other than the one being checked (e.g. due to how the policy engine aggregates results), GroupPermissionsV2 could incorrectly grant access based on an unrelated resource's permission that happens to share a scope name. This inconsistency with the Users implementation suggests a missed safety check."
+  },
+  {
+   "index": 3,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/GroupResourceTypeEvaluationTest.java",
+   "line": 139,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test exercises the global canManage()/requireManage() path with only VIEW scope granted",
+   "body": "`testManageAllGroups()` only tests granting the `MANAGE` scope via `createAllGroupsPermission(policy, Set.of(MANAGE))` and verifies group management becomes possible. There is no test that grants only `VIEW` scope on the all-groups resource and then asserts that group-management operations (e.g. `POST /groups`) remain forbidden. Such a test would have caught the bug in `GroupPermissionsV2.canManage()` where VIEW scope is incorrectly treated as sufficient for management operations (see separate finding), so its absence is a meaningful coverage gap for this new feature."
+  },
+  {
+   "index": 4,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionEvaluator.java",
+   "line": 147,
+   "severity": "low",
+   "category": "api",
+   "title": "Interface methods renamed/removed without deprecation on a cross-module interface",
+   "body": "`GroupPermissionEvaluator` previously exposed `boolean getGroupsWithViewPermission(GroupModel group)` and `Set<String> getGroupsWithViewPermission()`. Both were removed/renamed (the group-specific boolean overload was dropped entirely in favor of `canViewMembers(GroupModel)`, and the Set-returning method was renamed to `getGroupIdsWithViewPermission()` with a changed return value semantics - names vs. IDs). This interface is consumed outside the `services` module (e.g. `rest/admin-ui-ext`'s `BruteForceUsersResource`), so any other out-of-tree code built against the previous method signatures will fail to compile, with no deprecation cycle offered."
+  }
+ ],
+ "finding_count": 5
+}

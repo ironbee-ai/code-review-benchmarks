@@ -1,0 +1,179 @@
+{
+ "run_id": "mistral-large-4__low__sentry__77754__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:43:29Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18655,
+    "output": 2627,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01817583,
+   "latency_ms": 43994,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 11453,
+   "raw_usage": {
+    "completion_tokens": 2627,
+    "prompt_tokens": 18655,
+    "total_tokens": 21282,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01817583,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01817583,
+     "upstream_inference_prompt_cost": 0.0126854,
+     "upstream_inference_completions_cost": 0.00549043
+    }
+   },
+   "started_at": "2026-10-17T11:43:29Z",
+   "first_chunk_ms": 2169,
+   "first_text_ms": 2169,
+   "response_id": "gen-1792237409-GYUTW3zTw11FLhYdN5FQ",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18655,
+  "output": 2627,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01817583,
+ "latency_ms": 43994,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/integrations/services/assignment_source.py\",\n      \"line\": 18,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Mutable default evaluated once at import time for `queued` field\",\n      \"body\": \"The `queued: datetime = timezone.now()` default is evaluated a single time when the module is imported, not per-instance. Every `AssignmentSource` created without an explicit `queued` value (which is every call site, including `from_integration`) will share the exact same timestamp \u2014 the process start time. The field is named `queued` and typed as a datetime, strongly implying it records when the assignment was queued, but it actually records when the Python module was first loaded. This makes the field useless for its apparent purpose (e.g., detecting stale/delayed sync tasks, ordering, or debugging sync loops) and is misleading. Fix: use `field(default_factory=timezone.now)`.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/services/assignment_source.py\",\n      \"line\": 31,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"`from_dict` silently swallows malformed data and loses the `queued` datetime round-trip\",\n      \"body\": \"`from_dict` catches `(ValueError, TypeError)` and returns `None`, which means a corrupted or partially-valid `assignment_source_dict` (e.g., `integration_id` as a string, or a `queued` value serialized as an ISO string by the task queue) silently degrades to `None`. In `sync_assignee_outbound` (src/sentry/integrations/tasks/sync_assignee_outbound.py:53-56), a `None` parsed source means `should_sync` will NOT suppress the originating integration, so the sync-cycle protection this PR adds is silently disabled whenever the dict fails to round-trip. Two concrete problems: (1) `to_dict()` uses `asdict`, which leaves `queued` as a `datetime` object; depending on the Celery serializer this may not survive the task queue round-trip, and `from_dict` does not parse it back (passing a string to a `datetime`-typed field does not raise at construction \u2014 dataclasses don't validate types \u2014 so `queued` would hold a string, or the whole dict may fail elsewhere). (2) There is no validation that `integration_id` is an int or that required keys exist before the broad except. At minimum, `from_dict` should parse/validate `queued` explicitly and the failure mode should be logged rather than silently returning `None`, because a `None` result re-enables the very sync loop this PR is meant to break.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/mixins/issues.py\",\n      \"line\": 390,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"Cycle guard compares `org_integration.integration_id` but `AssignmentSource.integration_id` is the Integration id \u2014 verify these are the same id space\",\n      \"body\": \"`should_sync` suppresses outbound sync when `sync_source.integration_id == self.org_integration.integration_id`. `AssignmentSource.from_integration` sets `integration_id=integration.id` where `integration` is an `Integration`/`RpcIntegration` (src/sentry/integrations/services/assignment_source.py:24). The comparison is against `self.org_integration.integration_id`, which is the FK from `OrganizationIntegration` to `Integration`. These should be the same id space, but the guard's correctness \u2014 the entire point of the PR \u2014 depends on it, and nothing in the tests exercises a mismatched-id scenario or documents the invariant. If any code path constructs `AssignmentSource` with an `OrganizationIntegration` id or an external id instead of the `Integration` id, the guard silently fails and the sync loop returns. The test `test_assignee_sync_outbound_assign_with_matching_source_integration` only covers the happy path; there is no test that a *different* integration's source still allows syncing (i.e., that the guard is not over-broad), nor a test pinning down which id is stored.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/mixins/issues.py\",\n      \"line\": 66,\n      \"severity\": \"low\",\n      \"category\": \"api\",\n      \"title\": \"`IssueBasicIntegration.should_sync` signature diverges from `IssueSyncIntegration.should_sync`\",\n      \"body\": \"`IssueBasicIntegration.should_sync(self, attribute, sync_source=None)` returns `False` unconditionally and ignores `sync_source`, while the subclass `IssueSyncIntegration.should_sync` implements the cycle guard. Any caller that holds an `IssueBasicIntegration` reference (rather than `IssueSyncIntegration`) and passes a `sync_source` will get `False` regardless \u2014 which is safe for cycle prevention but means the base-class signature promises behavior it does not implement. More importantly, `where_should_sync` (src/sentry/integrations/utils/sync.py:48) calls `.should_sync(key)` without a source, so inbound status sync paths are unaffected \u2014 fine \u2014 but the asymmetry between the two signatures (one typed `-> bool`, the other untyped) is a latent contract break for any third-party integration subclass that overrides `should_sync(self, attribute)` with the old single-argument signature: calls that now pass `sync_source` positionally/keyword will raise `TypeError`. The PR changes a public-ish method signature without a compatibility shim; existing external integration subclasses overriding `should_sync(self, attribute)` will break when `sync_assignee_outbound` task calls `installation.should_sync(\\\"outbound_assignee\\\", parsed_assignment_source)`.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/tasks/sync_assignee_outbound.py\",\n      \"line\": 60,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"`sync_assignee_outbound` installation method is called with `assignment_source` kwarg that the abstract signature does not declare\",\n      \"body\": \"The task calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)` (line 59-61), but the abstract method in `IssueSyncIntegration` (src/sentry/integrations/mixins/issues.py:396-408) declares only `(self, external_issue, user, assign=True, **kwargs)`. Concrete implementations (Jira, GitHub, etc., not shown in this PR) that define `sync_assignee_outbound(self, external_issue, user, assign=True)` without `**kwargs` will raise `TypeError: unexpected keyword argument 'assignment_source'` at runtime. The abstract base should declare `assignment_source: AssignmentSource | None = None` explicitly (as was done for `sync_status_outbound`) so the contract is clear and implementations are forced to accept it. This is exactly the kind of break that only surfaces in production when a webhook-triggered assignment flows through the task.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/utils/sync.py\",\n      \"line\": 141,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"`assignment_source.to_dict()` embeds a `datetime` in Celery task kwargs without guaranteed serializability\",\n      \"body\": \"`sync_group_assignee_outbound` passes `assignment_source.to_dict()` (which includes the `queued` datetime via `asdict`) directly into `sync_assignee_outbound.apply_async(kwargs=...)`. Celery's default JSON serializer cannot serialize `datetime` objects and will raise a `TypeError`/`SerializationError` at enqueue time \u2014 meaning any inbound webhook assignment (the exact scenario this PR targets) would fail to enqueue the outbound task entirely, or the deployment must be using a serializer that handles datetimes (pickle, or a custom one). If the serializer rejects it, the exception propagates out of `GroupAssignee.objects.assign`/`deassign` inside the `affected` block, after the DB write and activity record \u2014 a data-integrity-adjacent failure where the local assignment succeeds but the outbound sync task is never queued and the error surfaces to the webhook caller. `to_dict()` should serialize `queued` to an ISO-8601 string (and `from_dict` should parse it back), making the payload JSON-safe by construction.\"\n    },\n    {\n      \"file\": \"tests/sentry/integrations/services/test_assignment_source.py\",\n      \"line\": 13,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"Test name typo and missing round-trip test for `to_dict`/`from_dict`\",\n      \"body\": \"The test `test_from_dict_inalid_data` (line 13) is misspelled (\\\"inalid\\\" \u2192 \\\"invalid\\\"). More substantively, there is no test that `AssignmentSource.from_dict(source.to_dict())` round-trips successfully \u2014 which is the exact path used in production (`sync_group_assignee_outbound` \u2192 task kwargs \u2192 `from_dict` in the task). Given that `to_dict()` emits a raw `datetime` for `queued` and `from_dict` does no parsing, a round-trip test would immediately expose the serialization/parse mismatch described in the `assignment_source.py` findings. The absence of this test means the core mechanism of the PR (passing the source through the task queue) is untested end-to-end.\"\n    },\n    {\n      \"file\": \"tests/sentry/models/test_groupassignee.py\",\n      \"line\": 180,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test that a *different* integration's assignment source still syncs outbound (guard is not over-broad)\",\n      \"body\": \"`test_assignee_sync_outbound_assign_with_matching_source_integration` verifies the guard suppresses sync when the source integration matches the target. But the PR description explicitly states the intent: \\\"This should still allow other integrations to propagate changes outward\\\" (comment in mixins/issues.py:388-389). There is no test with two integrations (or a source integration whose id differs from the external issue's integration) asserting that `sync_assignee_outbound` IS still called. Without it, a regression that suppresses ALL outbound syncs whenever any `assignment_source` is present (e.g., comparing against the wrong id field, or an inverted condition) would pass the test suite. This is the positive case that proves the fix breaks the cycle without breaking legitimate cross-integration propagation.\"\n    },\n    {\n      \"file\": \"src/sentry/models/groupassignee.py\",\n      \"line\": 189,\n      \"severity\": \"low\",\n      \"category\": \"concurrency\",\n      \"title\": \"Outbound sync enqueued inside `assign` without the assignment row being committed/visible to the task\",\n      \"body\": \"`sync_group_assignee_outbound` is called synchronously within `GroupAssigneeManager.assign` (line 192-194), which enqueues `sync_assignee_outbound` via `apply_async`. The task, when it runs, reads `ExternalIssue`/`GroupLink` but relies on the `GroupAssignee` state having been written. `assign` performs its writes with `get_or_create`/`update` but the outbound task is enqueued before the surrounding transaction commits (the `issue_assigned` signal is deferred via `transaction.on_commit`, but the sync call is not). If the task executes before the transaction that created/updated the `GroupAssignee` row commits (possible under async workers with fast queues or in tests with eager tasks), the outbound sync may run against a group whose assignee is not yet visible, or the enqueue itself can be lost if the transaction rolls back after the task was queued (Celery has no transactional outbox here). The `issue_assigned` signal is correctly deferred with `on_commit`, but the integration sync is not \u2014 an inconsistency that can cause lost or premature outbound syncs under transaction rollback or worker race.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "high",
+   "category": "bug",
+   "title": "Mutable default evaluated once at import time for `queued` field",
+   "body": "The `queued: datetime = timezone.now()` default is evaluated a single time when the module is imported, not per-instance. Every `AssignmentSource` created without an explicit `queued` value (which is every call site, including `from_integration`) will share the exact same timestamp \u2014 the process start time. The field is named `queued` and typed as a datetime, strongly implying it records when the assignment was queued, but it actually records when the Python module was first loaded. This makes the field useless for its apparent purpose (e.g., detecting stale/delayed sync tasks, ordering, or debugging sync loops) and is misleading. Fix: use `field(default_factory=timezone.now)`."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 31,
+   "severity": "medium",
+   "category": "data",
+   "title": "`from_dict` silently swallows malformed data and loses the `queued` datetime round-trip",
+   "body": "`from_dict` catches `(ValueError, TypeError)` and returns `None`, which means a corrupted or partially-valid `assignment_source_dict` (e.g., `integration_id` as a string, or a `queued` value serialized as an ISO string by the task queue) silently degrades to `None`. In `sync_assignee_outbound` (src/sentry/integrations/tasks/sync_assignee_outbound.py:53-56), a `None` parsed source means `should_sync` will NOT suppress the originating integration, so the sync-cycle protection this PR adds is silently disabled whenever the dict fails to round-trip. Two concrete problems: (1) `to_dict()` uses `asdict`, which leaves `queued` as a `datetime` object; depending on the Celery serializer this may not survive the task queue round-trip, and `from_dict` does not parse it back (passing a string to a `datetime`-typed field does not raise at construction \u2014 dataclasses don't validate types \u2014 so `queued` would hold a string, or the whole dict may fail elsewhere). (2) There is no validation that `integration_id` is an int or that required keys exist before the broad except. At minimum, `from_dict` should parse/validate `queued` explicitly and the failure mode should be logged rather than silently returning `None`, because a `None` result re-enables the very sync loop this PR is meant to break."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 390,
+   "severity": "medium",
+   "category": "api",
+   "title": "Cycle guard compares `org_integration.integration_id` but `AssignmentSource.integration_id` is the Integration id \u2014 verify these are the same id space",
+   "body": "`should_sync` suppresses outbound sync when `sync_source.integration_id == self.org_integration.integration_id`. `AssignmentSource.from_integration` sets `integration_id=integration.id` where `integration` is an `Integration`/`RpcIntegration` (src/sentry/integrations/services/assignment_source.py:24). The comparison is against `self.org_integration.integration_id`, which is the FK from `OrganizationIntegration` to `Integration`. These should be the same id space, but the guard's correctness \u2014 the entire point of the PR \u2014 depends on it, and nothing in the tests exercises a mismatched-id scenario or documents the invariant. If any code path constructs `AssignmentSource` with an `OrganizationIntegration` id or an external id instead of the `Integration` id, the guard silently fails and the sync loop returns. The test `test_assignee_sync_outbound_assign_with_matching_source_integration` only covers the happy path; there is no test that a *different* integration's source still allows syncing (i.e., that the guard is not over-broad), nor a test pinning down which id is stored."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 66,
+   "severity": "low",
+   "category": "api",
+   "title": "`IssueBasicIntegration.should_sync` signature diverges from `IssueSyncIntegration.should_sync`",
+   "body": "`IssueBasicIntegration.should_sync(self, attribute, sync_source=None)` returns `False` unconditionally and ignores `sync_source`, while the subclass `IssueSyncIntegration.should_sync` implements the cycle guard. Any caller that holds an `IssueBasicIntegration` reference (rather than `IssueSyncIntegration`) and passes a `sync_source` will get `False` regardless \u2014 which is safe for cycle prevention but means the base-class signature promises behavior it does not implement. More importantly, `where_should_sync` (src/sentry/integrations/utils/sync.py:48) calls `.should_sync(key)` without a source, so inbound status sync paths are unaffected \u2014 fine \u2014 but the asymmetry between the two signatures (one typed `-> bool`, the other untyped) is a latent contract break for any third-party integration subclass that overrides `should_sync(self, attribute)` with the old single-argument signature: calls that now pass `sync_source` positionally/keyword will raise `TypeError`. The PR changes a public-ish method signature without a compatibility shim; existing external integration subclasses overriding `should_sync(self, attribute)` will break when `sync_assignee_outbound` task calls `installation.should_sync(\"outbound_assignee\", parsed_assignment_source)`."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/tasks/sync_assignee_outbound.py",
+   "line": 60,
+   "severity": "medium",
+   "category": "api",
+   "title": "`sync_assignee_outbound` installation method is called with `assignment_source` kwarg that the abstract signature does not declare",
+   "body": "The task calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)` (line 59-61), but the abstract method in `IssueSyncIntegration` (src/sentry/integrations/mixins/issues.py:396-408) declares only `(self, external_issue, user, assign=True, **kwargs)`. Concrete implementations (Jira, GitHub, etc., not shown in this PR) that define `sync_assignee_outbound(self, external_issue, user, assign=True)` without `**kwargs` will raise `TypeError: unexpected keyword argument 'assignment_source'` at runtime. The abstract base should declare `assignment_source: AssignmentSource | None = None` explicitly (as was done for `sync_status_outbound`) so the contract is clear and implementations are forced to accept it. This is exactly the kind of break that only surfaces in production when a webhook-triggered assignment flows through the task."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/integrations/utils/sync.py",
+   "line": 141,
+   "severity": "low",
+   "category": "data",
+   "title": "`assignment_source.to_dict()` embeds a `datetime` in Celery task kwargs without guaranteed serializability",
+   "body": "`sync_group_assignee_outbound` passes `assignment_source.to_dict()` (which includes the `queued` datetime via `asdict`) directly into `sync_assignee_outbound.apply_async(kwargs=...)`. Celery's default JSON serializer cannot serialize `datetime` objects and will raise a `TypeError`/`SerializationError` at enqueue time \u2014 meaning any inbound webhook assignment (the exact scenario this PR targets) would fail to enqueue the outbound task entirely, or the deployment must be using a serializer that handles datetimes (pickle, or a custom one). If the serializer rejects it, the exception propagates out of `GroupAssignee.objects.assign`/`deassign` inside the `affected` block, after the DB write and activity record \u2014 a data-integrity-adjacent failure where the local assignment succeeds but the outbound sync task is never queued and the error surfaces to the webhook caller. `to_dict()` should serialize `queued` to an ISO-8601 string (and `from_dict` should parse it back), making the payload JSON-safe by construction."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/integrations/services/test_assignment_source.py",
+   "line": 13,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test name typo and missing round-trip test for `to_dict`/`from_dict`",
+   "body": "The test `test_from_dict_inalid_data` (line 13) is misspelled (\"inalid\" \u2192 \"invalid\"). More substantively, there is no test that `AssignmentSource.from_dict(source.to_dict())` round-trips successfully \u2014 which is the exact path used in production (`sync_group_assignee_outbound` \u2192 task kwargs \u2192 `from_dict` in the task). Given that `to_dict()` emits a raw `datetime` for `queued` and `from_dict` does no parsing, a round-trip test would immediately expose the serialization/parse mismatch described in the `assignment_source.py` findings. The absence of this test means the core mechanism of the PR (passing the source through the task queue) is untested end-to-end."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/models/test_groupassignee.py",
+   "line": 180,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test that a *different* integration's assignment source still syncs outbound (guard is not over-broad)",
+   "body": "`test_assignee_sync_outbound_assign_with_matching_source_integration` verifies the guard suppresses sync when the source integration matches the target. But the PR description explicitly states the intent: \"This should still allow other integrations to propagate changes outward\" (comment in mixins/issues.py:388-389). There is no test with two integrations (or a source integration whose id differs from the external issue's integration) asserting that `sync_assignee_outbound` IS still called. Without it, a regression that suppresses ALL outbound syncs whenever any `assignment_source` is present (e.g., comparing against the wrong id field, or an inverted condition) would pass the test suite. This is the positive case that proves the fix breaks the cycle without breaking legitimate cross-integration propagation."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/models/groupassignee.py",
+   "line": 189,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Outbound sync enqueued inside `assign` without the assignment row being committed/visible to the task",
+   "body": "`sync_group_assignee_outbound` is called synchronously within `GroupAssigneeManager.assign` (line 192-194), which enqueues `sync_assignee_outbound` via `apply_async`. The task, when it runs, reads `ExternalIssue`/`GroupLink` but relies on the `GroupAssignee` state having been written. `assign` performs its writes with `get_or_create`/`update` but the outbound task is enqueued before the surrounding transaction commits (the `issue_assigned` signal is deferred via `transaction.on_commit`, but the sync call is not). If the task executes before the transaction that created/updated the `GroupAssignee` row commits (possible under async workers with fast queues or in tests with eager tasks), the outbound sync may run against a group whose assignee is not yet visible, or the enqueue itself can be lost if the transaction rolls back after the task was queued (Celery has no transactional outbox here). The `issue_assigned` signal is correctly deferred with `on_commit`, but the integration sync is not \u2014 an inconsistency that can cause lost or premature outbound syncs under transaction rollback or worker race."
+  }
+ ],
+ "finding_count": 9
+}

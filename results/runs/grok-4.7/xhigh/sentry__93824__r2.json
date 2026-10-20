@@ -1,0 +1,160 @@
+{
+ "run_id": "grok-4.7__xhigh__sentry__93824__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 2,
+ "started_at": "2026-10-18T00:26:52Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 27899,
+    "output": 59591,
+    "reasoning": 57879,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.41392,
+   "latency_ms": 839613,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 7103,
+   "raw_usage": {
+    "completion_tokens": 59591,
+    "prompt_tokens": 29051,
+    "total_tokens": 88642,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 57879,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.41392,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.41392,
+     "upstream_inference_prompt_cost": 0.056374,
+     "upstream_inference_completions_cost": 0.357546
+    }
+   },
+   "started_at": "2026-10-18T00:26:52Z",
+   "first_chunk_ms": 35520,
+   "first_text_ms": 825511,
+   "response_id": "gen-1792283212-gf11nMGQMJBpPMuc6Xd0",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 27899,
+  "output": 59591,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 57879
+ },
+ "cost_reported": 0.41392,
+ "latency_ms": 839613,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 341, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Shutdown abandons flusher processes once the join deadline passes\", \"body\": \"SpanFlusher.join() is the only place that stops background flushers (close() deliberately leaves them running through rebalance). It spends the entire caller timeout in next_step.join(timeout) first, then walks self.processes and breaks as soon as the deadline is already past. That break skips both the wait and process.terminate() for the current process and every process after it. With the old single-process join, terminate() always ran after the wait; this loop does not. If CommitOffsets.join consumes the timeout, or one slow flusher uses up what remains, the other flushers are left alive. They are daemons, so they keep calling flush_segments and producing to buffered-segments while the consumer process stays up. Rebalance then builds a new SpanFlusher for the same partitions, and the old and new flushers flush the same Redis shards and emit duplicate segments. Even the path that does call terminate() never join()s the child, so join() can return while a just-signaled process is still producing. Under load \u2014 the case this change is meant to handle \u2014 a flush/produce longer than the join timeout is exactly when this fires.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 255, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Replacing a flusher does not wait for the old one to stop\", \"body\": \"When a flusher is dead or hung, _ensure_processes_alive kill()s it and immediately calls _create_process_for_shards for the same shards, without join()ing the old process. kill()/os.kill returns when the signal is queued, not when the process has exited; a process blocked in a syscall keeps running until the call returns, and SIGKILL does not cancel an in-flight Redis flush or Kafka produce. The old Process is then overwritten in self.processes, so nothing ever waits for it. The replacement starts flush_segments on the same shards while the old process may already have produced those segments and not yet called done_flush_segments, so the same segment is written to buffered-segments twice (or a partial delete races the new read). The kill is also skipped for threading.Thread (the produce_to_pipe path) because it is guarded by isinstance(..., multiprocessing.Process), and that check does not match the spawn-context process type this file annotates as multiprocessing.context.SpawnProcess if that class is not a subclass of multiprocessing.Process \u2014 in that case a hung production flusher is never killed and a second flusher is started beside it. A slow produce that exceeds spans.buffer.flusher.max-unhealthy-seconds takes this path, not only hard crashes.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 144, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Flusher metric shard tag is a comma-separated list\", \"body\": \"Each flusher process sets shard_tag to \\\",\\\".join of every shard it owns and puts that string on spans.buffer.flusher.produce, spans.buffer.segment_size_bytes, and spans.buffer.flusher.wait_produce. The new --flusher-processes option defaults to 1, so the default production setup runs one process for every assigned partition and the tag value is the full partition list (for example \\\"0,1,2,5\\\"), not a single shard. StatsD/DogStatsD frames tags as a comma-separated list, so shard:0,1,2 is parsed as shard=0 plus stray tags, the series cannot be grouped by shard, and the value changes on every rebalance (new cardinality). A long assignment can also exceed backend tag-length limits. The unhealthy metric already emits one integer shard tag per shard; these timers should do the same, or use a process index that does not contain commas.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"wait_produce metric uses a different tag key than the other flusher timers\", \"body\": \"spans.buffer.flusher.wait_produce is recorded with tag key \\\"shards\\\", while spans.buffer.flusher.produce and spans.buffer.segment_size_bytes in the same loop use \\\"shard\\\". Anything filtering or grouping the flusher timers by shard silently drops produce-ack wait time, so latency dashboards under-report the time spent blocked on Kafka and make the flusher look healthier than it is.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 51, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"flusher_processes of 0 or negative does not do what the flag says\", \"body\": \"--flusher-processes is an unconstrained click int, and SpanFlusher sets max_processes with `max_processes or len(assigned_shards)`. 0 is falsy, so --flusher-processes 0 does not cap the flusher; it spawns one process per assigned shard. Each of those is a spawn-context process that imports the full Sentry app, so a config template that sets 0 (meaning unset or disabled) can start dozens of Django processes and OOM the pod. A negative value is truthy, then min(negative, shard_count) is negative, range() is empty, and no flusher process is created. self.buffers and process_backpressure_since are then empty, so neither Redis-memory hard backpressure nor flusher backpressure can fire, and the consumer keeps writing spans to Redis and never flushes them. The option needs a minimum of 1, and 0 must not be coerced into one-process-per-shard.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 62, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Drift wait in test_basic is a no-op, so the flush assertion is racy\", \"body\": \"test_basic monkeypatches time.sleep to a no-op, then after setting current_drift to 9000 calls time.sleep(0.1) with a comment that it gives the flusher time to run. That sleep is the patched no-op, so it does not wait. step.join() then sets the shared stopped flag immediately, and the flusher only produces inside `while not stopped`. If the flusher thread does not get the GIL between the drift write and that flag, it exits without flushing and `(msg,) = messages` fails. The same patch turns SpanFlusher.join's time.sleep(0.1) into a GIL-holding busy spin, so whether the test passes depends on accidental thread switches. The sleep added in this PR does not close the race it was meant to fix.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 113, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test flushes spans across multiple flusher processes\", \"body\": \"test_flusher_processes_limit only asserts that four partitions yield two thread objects and that the shard lists sum to 4. It never submits a span or checks that each shard is flushed once. Every flush test passes produce_to_pipe, which forces threading.Thread instead of a spawn-context Process, so the production path \u2014 per-process KafkaProducer, kill/restart, and join/terminate \u2014 never runs. A bad shard split, a double-flush on restart, or the join timeout leak would not fail CI.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 341,
+   "severity": "high",
+   "category": "bug",
+   "title": "Shutdown abandons flusher processes once the join deadline passes",
+   "body": "SpanFlusher.join() is the only place that stops background flushers (close() deliberately leaves them running through rebalance). It spends the entire caller timeout in next_step.join(timeout) first, then walks self.processes and breaks as soon as the deadline is already past. That break skips both the wait and process.terminate() for the current process and every process after it. With the old single-process join, terminate() always ran after the wait; this loop does not. If CommitOffsets.join consumes the timeout, or one slow flusher uses up what remains, the other flushers are left alive. They are daemons, so they keep calling flush_segments and producing to buffered-segments while the consumer process stays up. Rebalance then builds a new SpanFlusher for the same partitions, and the old and new flushers flush the same Redis shards and emit duplicate segments. Even the path that does call terminate() never join()s the child, so join() can return while a just-signaled process is still producing. Under load \u2014 the case this change is meant to handle \u2014 a flush/produce longer than the join timeout is exactly when this fires."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 255,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Replacing a flusher does not wait for the old one to stop",
+   "body": "When a flusher is dead or hung, _ensure_processes_alive kill()s it and immediately calls _create_process_for_shards for the same shards, without join()ing the old process. kill()/os.kill returns when the signal is queued, not when the process has exited; a process blocked in a syscall keeps running until the call returns, and SIGKILL does not cancel an in-flight Redis flush or Kafka produce. The old Process is then overwritten in self.processes, so nothing ever waits for it. The replacement starts flush_segments on the same shards while the old process may already have produced those segments and not yet called done_flush_segments, so the same segment is written to buffered-segments twice (or a partial delete races the new read). The kill is also skipped for threading.Thread (the produce_to_pipe path) because it is guarded by isinstance(..., multiprocessing.Process), and that check does not match the spawn-context process type this file annotates as multiprocessing.context.SpawnProcess if that class is not a subclass of multiprocessing.Process \u2014 in that case a hung production flusher is never killed and a second flusher is started beside it. A slow produce that exceeds spans.buffer.flusher.max-unhealthy-seconds takes this path, not only hard crashes."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 144,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Flusher metric shard tag is a comma-separated list",
+   "body": "Each flusher process sets shard_tag to \",\".join of every shard it owns and puts that string on spans.buffer.flusher.produce, spans.buffer.segment_size_bytes, and spans.buffer.flusher.wait_produce. The new --flusher-processes option defaults to 1, so the default production setup runs one process for every assigned partition and the tag value is the full partition list (for example \"0,1,2,5\"), not a single shard. StatsD/DogStatsD frames tags as a comma-separated list, so shard:0,1,2 is parsed as shard=0 plus stray tags, the series cannot be grouped by shard, and the value changes on every rebalance (new cardinality). A long assignment can also exceed backend tag-length limits. The unhealthy metric already emits one integer shard tag per shard; these timers should do the same, or use a process index that does not contain commas."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 199,
+   "severity": "low",
+   "category": "bug",
+   "title": "wait_produce metric uses a different tag key than the other flusher timers",
+   "body": "spans.buffer.flusher.wait_produce is recorded with tag key \"shards\", while spans.buffer.flusher.produce and spans.buffer.segment_size_bytes in the same loop use \"shard\". Anything filtering or grouping the flusher timers by shard silently drops produce-ack wait time, so latency dashboards under-report the time spent blocked on Kafka and make the flusher look healthier than it is."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 51,
+   "severity": "medium",
+   "category": "bug",
+   "title": "flusher_processes of 0 or negative does not do what the flag says",
+   "body": "--flusher-processes is an unconstrained click int, and SpanFlusher sets max_processes with `max_processes or len(assigned_shards)`. 0 is falsy, so --flusher-processes 0 does not cap the flusher; it spawns one process per assigned shard. Each of those is a spawn-context process that imports the full Sentry app, so a config template that sets 0 (meaning unset or disabled) can start dozens of Django processes and OOM the pod. A negative value is truthy, then min(negative, shard_count) is negative, range() is empty, and no flusher process is created. self.buffers and process_backpressure_since are then empty, so neither Redis-memory hard backpressure nor flusher backpressure can fire, and the consumer keeps writing spans to Redis and never flushes them. The option needs a minimum of 1, and 0 must not be coerced into one-process-per-shard."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Drift wait in test_basic is a no-op, so the flush assertion is racy",
+   "body": "test_basic monkeypatches time.sleep to a no-op, then after setting current_drift to 9000 calls time.sleep(0.1) with a comment that it gives the flusher time to run. That sleep is the patched no-op, so it does not wait. step.join() then sets the shared stopped flag immediately, and the flusher only produces inside `while not stopped`. If the flusher thread does not get the GIL between the drift write and that flag, it exits without flushing and `(msg,) = messages` fails. The same patch turns SpanFlusher.join's time.sleep(0.1) into a GIL-holding busy spin, so whether the test passes depends on accidental thread switches. The sleep added in this PR does not close the race it was meant to fix."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 113,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test flushes spans across multiple flusher processes",
+   "body": "test_flusher_processes_limit only asserts that four partitions yield two thread objects and that the shard lists sum to 4. It never submits a span or checks that each shard is flushed once. Every flush test passes produce_to_pipe, which forces threading.Thread instead of a spawn-context Process, so the production path \u2014 per-process KafkaProducer, kill/restart, and join/terminate \u2014 never runs. A bad shard split, a double-flush on restart, or the join timeout leak would not fail CI."
+  }
+ ],
+ "finding_count": 7
+}

@@ -1,0 +1,138 @@
+{
+ "run_id": "minimax-m3__default__grafana__97529__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:09:32Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 1,
+    "output": 33345,
+    "reasoning": 32013,
+    "cache_read": 33898,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04204818,
+   "latency_ms": 145549,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5780,
+   "raw_usage": {
+    "completion_tokens": 33345,
+    "prompt_tokens": 33899,
+    "total_tokens": 67244,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 32013,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 33898,
+     "video_tokens": 0
+    },
+    "cost": 0.04204818,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04204818,
+     "upstream_inference_prompt_cost": 0.00203418,
+     "upstream_inference_completions_cost": 0.040014
+    }
+   },
+   "started_at": "2026-10-17T21:09:32Z",
+   "first_chunk_ms": 1010,
+   "first_text_ms": 136762,
+   "response_id": "gen-1792271372-j1fStNVmCYJSYQh68Y83",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 1,
+  "output": 33345,
+  "cache_read": 33898,
+  "cache_write": 0,
+  "reasoning": 32013
+ },
+ "cost_reported": 0.04204818,
+ "latency_ms": 145549,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/storage/unified/search/bleve.go\",\n      \"line\": 134,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"BuildIndex loses per-key serialization, allowing same-key races\",\n      \"body\": \"The diff removes `b.cacheMu.Lock(); defer b.cacheMu.Unlock()` from the top of `BuildIndex` and only locks around the final `b.cache[key] = idx` write. Previously, two concurrent calls to `BuildIndex` for the same `key` were serialized, so `bleve.New(dir, mapper)` (lines ~96-102) was only ever invoked once per directory. With the new finer-grained locking, two callers that race through `getOrCreateIndex` for the same key when `size > b.opts.FileThreshold` will both call `bleve.New(dir, mapper)` on the same directory. bleve's New on an already-existing directory either errors or reopens stale state; one call returns an error to a caller even though the index they wanted was successfully created and is sitting in the cache. `searchSupport.getOrCreateIndex` already has a TODO admitting it has no per-key mutex, so this relaxation of the backend's serialization makes a known race easier to trigger. Consider keeping the exclusive lock around the directory creation (or adding a per-key `sync.Map` / singleflight) and only using the finer-grained lock to protect the cache map mutation.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/search/bleve.go\",\n      \"line\": 144,\n      \"severity\": \"low\",\n      \"category\": \"concurrency\",\n      \"title\": \"TotalDocs iterates the cache map without holding cacheMu\",\n      \"body\": \"`bleveBackend.TotalDocs` does `for _, v := range b.cache { ... }` with no read-lock on `cacheMu`, while `BuildIndex` writes `b.cache[key] = idx` under `cacheMu`. Go map iteration concurrent with writes panics with \\\"concurrent map iteration and map write\\\". The new `s.log.Info(..., \\\"total_docs\\\", s.search.TotalDocs())` added in `search.go` happens after `group.Wait()` so it is safe today, but `TotalDocs` is part of the `SearchBackend` interface and any future caller (e.g., a metrics endpoint, health check, or test) that invokes it while index construction is in flight will crash the process. Either take `cacheMu.RLock()` for the iteration, or iterate a snapshot of the keys under the lock.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 309,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"Two long-running WatchWriteEvents pollers run for the same backend\",\n      \"body\": \"After this change, both `searchSupport.init` (lines ~202-213 in search.go) and `server.initWatcher` (line 752) each call `s.backend.WatchWriteEvents(...)`, which for the SQL backend (`pkg/storage/unified/sql/backend.go:558`) starts its own 100 ms poller goroutine. The `errgroup` already sets the search index up; now the broadcaster independently starts a second poller querying the same resource history tables. Two pollers every 100 ms doubles DB load, doubles history scans, and produces two independent `mostRecentRV` writers and two event streams. The order swap (initWatcher first vs. search.init first) does not change this \u2014 both sequences still leave the search support's watcher running alongside `initWatcher`. The author's stated goal was just to parallelize index build across distinct keys; the duplicate watcher is unrelated and should be removed (let the search support's handler pipe into the broadcaster, or use the broadcaster as the single event source).\"\n    },\n    {\n      \"file\": \"pkg/server/module_server_test.go\",\n      \"line\": 36,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"Postgres integration test now silently skipped with a TODO\",\n      \"body\": \"The diff adds `if dbType == \\\"postgres\\\" { t.Skip(...) }` to the only integration test that exercises the storage server target with a real DB. Combined with the existing `sqlite3` skip, the test is now skipped for every DB type the CI matrix runs against \u2014 it provides no coverage. The TODO comment admits the test \\\"works locally\\\" but not in Drone, strongly suggesting the new eager `Init()` in `NewResourceServer` exposes an init-only failure mode that the lazy initialization hid. A `t.Skip` is the wrong fix here: the test should be made to pass for both `Init()` orderings, or split so that the storage-server integration is verified separately for postgres. Otherwise a regression in the eager-init path on postgres will land unnoticed.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 258,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Eager Init swallows cancelation from the caller's context\",\n      \"body\": \"`NewResourceServer` now passes its locally constructed `ctx` (a `context.WithCancel(context.Background(), ...)` wrapping a static service-account identity) into `s.Init(ctx)`. Inside `Init`, this `ctx` is forwarded to `search.init(ctx)`, which in turn calls `s.storage.GetResourceStats(ctx, ...)` and `s.storage.ListIterator(ctx, ...)` for every namespace being indexed. Those calls now use a context that lives for the lifetime of the server and is only cancelled when `s.Stop` runs \u2014 they never see a deadline or the caller's cancellation. That is fine for a production server, but `NewResourceServer` is also called from `InitializeModuleServer` in tests and from any tooling that builds a transient server. The previous per-handler `s.Init(ctx)` propagated the per-request deadline/cancellation, so a hung DB could be aborted by closing the test context. With the eager call, an unresponsive backend during index build will block `NewResourceServer` indefinitely, which in turn blocks module startup with no way to cancel it from outside.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 134,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "BuildIndex loses per-key serialization, allowing same-key races",
+   "body": "The diff removes `b.cacheMu.Lock(); defer b.cacheMu.Unlock()` from the top of `BuildIndex` and only locks around the final `b.cache[key] = idx` write. Previously, two concurrent calls to `BuildIndex` for the same `key` were serialized, so `bleve.New(dir, mapper)` (lines ~96-102) was only ever invoked once per directory. With the new finer-grained locking, two callers that race through `getOrCreateIndex` for the same key when `size > b.opts.FileThreshold` will both call `bleve.New(dir, mapper)` on the same directory. bleve's New on an already-existing directory either errors or reopens stale state; one call returns an error to a caller even though the index they wanted was successfully created and is sitting in the cache. `searchSupport.getOrCreateIndex` already has a TODO admitting it has no per-key mutex, so this relaxation of the backend's serialization makes a known race easier to trigger. Consider keeping the exclusive lock around the directory creation (or adding a per-key `sync.Map` / singleflight) and only using the finer-grained lock to protect the cache map mutation."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 144,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the cache map without holding cacheMu",
+   "body": "`bleveBackend.TotalDocs` does `for _, v := range b.cache { ... }` with no read-lock on `cacheMu`, while `BuildIndex` writes `b.cache[key] = idx` under `cacheMu`. Go map iteration concurrent with writes panics with \"concurrent map iteration and map write\". The new `s.log.Info(..., \"total_docs\", s.search.TotalDocs())` added in `search.go` happens after `group.Wait()` so it is safe today, but `TotalDocs` is part of the `SearchBackend` interface and any future caller (e.g., a metrics endpoint, health check, or test) that invokes it while index construction is in flight will crash the process. Either take `cacheMu.RLock()` for the iteration, or iterate a snapshot of the keys under the lock."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 309,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Two long-running WatchWriteEvents pollers run for the same backend",
+   "body": "After this change, both `searchSupport.init` (lines ~202-213 in search.go) and `server.initWatcher` (line 752) each call `s.backend.WatchWriteEvents(...)`, which for the SQL backend (`pkg/storage/unified/sql/backend.go:558`) starts its own 100 ms poller goroutine. The `errgroup` already sets the search index up; now the broadcaster independently starts a second poller querying the same resource history tables. Two pollers every 100 ms doubles DB load, doubles history scans, and produces two independent `mostRecentRV` writers and two event streams. The order swap (initWatcher first vs. search.init first) does not change this \u2014 both sequences still leave the search support's watcher running alongside `initWatcher`. The author's stated goal was just to parallelize index build across distinct keys; the duplicate watcher is unrelated and should be removed (let the search support's handler pipe into the broadcaster, or use the broadcaster as the single event source)."
+  },
+  {
+   "index": 3,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres integration test now silently skipped with a TODO",
+   "body": "The diff adds `if dbType == \"postgres\" { t.Skip(...) }` to the only integration test that exercises the storage server target with a real DB. Combined with the existing `sqlite3` skip, the test is now skipped for every DB type the CI matrix runs against \u2014 it provides no coverage. The TODO comment admits the test \"works locally\" but not in Drone, strongly suggesting the new eager `Init()` in `NewResourceServer` exposes an init-only failure mode that the lazy initialization hid. A `t.Skip` is the wrong fix here: the test should be made to pass for both `Init()` orderings, or split so that the storage-server integration is verified separately for postgres. Otherwise a regression in the eager-init path on postgres will land unnoticed."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Eager Init swallows cancelation from the caller's context",
+   "body": "`NewResourceServer` now passes its locally constructed `ctx` (a `context.WithCancel(context.Background(), ...)` wrapping a static service-account identity) into `s.Init(ctx)`. Inside `Init`, this `ctx` is forwarded to `search.init(ctx)`, which in turn calls `s.storage.GetResourceStats(ctx, ...)` and `s.storage.ListIterator(ctx, ...)` for every namespace being indexed. Those calls now use a context that lives for the lifetime of the server and is only cancelled when `s.Stop` runs \u2014 they never see a deadline or the caller's cancellation. That is fine for a production server, but `NewResourceServer` is also called from `InitializeModuleServer` in tests and from any tooling that builds a transient server. The previous per-handler `s.Init(ctx)` propagated the per-request deadline/cancellation, so a hung DB could be aborted by closing the test context. With the eager call, an unresponsive backend during index build will block `NewResourceServer` indefinitely, which in turn blocks module startup with no way to cancel it from outside."
+  }
+ ],
+ "finding_count": 5
+}

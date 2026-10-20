@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-opus-5__xhigh__keycloak__32918__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "keycloak__32918",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/32918",
+ "repeat": 1,
+ "started_at": "2026-10-18T22:14:51Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103546,
+  "sha": "a57687892c97cff0",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 41354,
+    "output": 26641,
+    "reasoning": 23579,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 324752,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 8564,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 41354,
+    "output_tokens": 26641,
+    "output_tokens_details": {
+     "thinking_tokens": 23579
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:14:51Z",
+   "first_chunk_ms": 2139,
+   "first_text_ms": 290606,
+   "response_id": "msg_bdrk_k4nkcivhgij2swuosj7qjsrjsyaxtdrgsunevarruq2l5yd7gjxa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 41354,
+  "output": 26641,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 23579
+ },
+ "cost_reported": null,
+ "latency_ms": 324752,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinishpanIdentityProviderStorageProvider.java\", \"line\": 93, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Login-cache invalidation decision uses the org-aware wrapped model, so required invalidations can be skipped\", \"body\": \"In `update()` the \\\"original\\\" model passed to `registerIDPLoginInvalidationOnUpdate()` comes from `getById(model.getInternalId())`, which returns the model wrapped by `createOrganizationAwareIdentityProviderModel()`. That wrapper's `isEnabled()` returns `false` whenever the linked organization (or the realm's organization support) is disabled, even though the underlying IDP row is enabled. The login cache, however, is populated from the JPA query, which only filters on the IDP's own `enabled` flag and therefore *does* contain such IDPs. The result is an asymmetry: for an org-linked IDP whose organization is currently disabled, `getLoginPredicate().test(original)` is `false`, so an update that also makes the raw model non-eligible (e.g. setting `hideOnLogin=true`, `enabled=false`, or `broker_public=false`) takes the first early-return branch and no login cache is invalidated, while the cached id list still contains the provider. After the organization is re-enabled (organization updates do not invalidate the login keys), `getForLogin()` keeps returning that id from the cache, so a hidden or non-public (private) organization broker is still offered on the login page. Note that `create()` and `remove()` evaluate the predicate on raw models (`model`, `idpDelegate.getByAlias(alias)`), so only `update()` is inconsistent; the fix is to evaluate the predicate on the unwrapped model (e.g. `idpDelegate.getById(...)`).\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 223, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"One login cache entry per realm+fetch mode aggregates all organizations, causing cluster-wide invalidation churn\", \"body\": \"`getForLogin()` stores all results for a given realm and `FetchMode` in a single cache object keyed by `cacheKeyForLogin(realm, mode)`, using the organization id as the inner search key. Whenever a request asks for an organization that is not yet present in that object, line 236 calls `cache.invalidateObject(cacheKey)`, which drops the entry locally and broadcasts an invalidation to the whole cluster, then re-adds a merged copy. `OrganizationAwareIdentityProviderBean` calls `getForLogin(ALL, organization.getId())` on the login path, so in a realm with many organizations the first login for each new organization on each node wipes every other node's cached login IDP lists for that fetch mode, which must then be rebuilt from the database; the merged entry itself also grows with one id set per organization without any bound. Keying the cache per `(mode, organizationId)` (as `getByOrganization` does per organization) would avoid the shared-entry contention. Additionally, for `FetchMode.REALM_ONLY` the `organizationId` argument is documented as ignored, yet it is still used as the search key, so passing different organization ids creates redundant duplicate entries with identical content.\"}, {\"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java\", \"line\": 381, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Cleanup registers a non-existent alias, leaking 21 identity providers into the shared test realm\", \"body\": \"`getCleanup().addCleanup(testRealm().identityProviders().get(\\\"alias\\\")::remove)` (lines 381 and 425) uses the literal string \\\"alias\\\" instead of the alias of the provider just created (`idpRep.getAlias()`). Consequently the 20 providers `idp-alias-0..19` plus `idp-alias-20` are never deleted after the test, and the cleanup action itself targets a provider that does not exist (404 at teardown). Because `OrganizationCacheTest` uses the shared test realm across test methods, these leftover providers change the IDP counts other tests in this class rely on (e.g. `testCacheIDPForLogin` asserts exactly 5/5/10 login providers and `testCacheIDPByOrg` asserts 6/2/4), making results order-dependent and flaky. Note that the same mistake already exists at line 303 and is being copied here.\"}, {\"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java\", \"line\": 417, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No coverage for the new create/remove login-cache invalidation\", \"body\": \"The new test only exercises the negative cases for the invalidation hooks added to `create()` and `remove()`: it creates an IDP with `hideOnLogin=true` and removes a disabled IDP, then asserts the login caches are still present. There is no case that creates a login-eligible IDP (enabled, not link-only, not hidden) or removes one and asserts that all three `cacheKeyForLogin(realm, mode)` entries are invalidated. Those are exactly the paths added by `registerIDPLoginInvalidation(model)` in `create()` and `registerIDPLoginInvalidation(storedIdp)` in `remove()`, so a regression that drops either call (leaving stale login lists that hide a new broker or still advertise a deleted one) would not be caught.\"}, {\"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java\", \"line\": 401, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Test asserts only on cache internals, never on what getForLogin returns\", \"body\": \"`testCacheIDPForLogin` discards the stream returned by `session.identityProviders().getForLogin(...)` and only inspects the sizes of the internal `IdentityProviderListQuery` entries. Nothing verifies that the cached code path returns the same providers as the uncached delegate path (for example that the aliases match, that disabled/hidden/non-public providers are excluded, or that the second, cache-hit call returns the same result as the first). A bug in the cache-hit branch (e.g. the `getById` loop returning wrapped models whose `isEnabled()` is false, or the fallback on a missing id) would pass this test unnoticed.\"}, {\"file\": \"server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java\", \"line\": 254, \"severity\": \"low\", \"category\": \"api\", \"title\": \"getLoginPredicate() silently gains an organization/BROKER_PUBLIC criterion that getLoginSearchOptions() does not have\", \"body\": \"`LoginFilter.getLoginPredicate()` now additionally rejects any IDP that is linked to an organization and does not have `BROKER_PUBLIC=true`. This criterion is not represented by any `LoginFilter` constant and is therefore absent from `getLoginSearchOptions()`, so the query-based and predicate-based helpers of the same enum no longer agree on what \\\"available for login\\\" means; the enum's javadoc (\\\"contains all fields that are considered when deciding if a provider should be available for login\\\") is now inaccurate. The change also affects every existing caller of `getLoginPredicate()` (e.g. `IdentityProviderBean.federatedProviderPredicate()`, which `OrganizationAwareIdentityProviderBean` builds on): non-public organization brokers that previously passed the predicate are now filtered out. If that behavior change is intended it should be documented; otherwise the extra condition belongs in the Infinispan invalidation logic rather than in the shared SPI predicate.\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 254, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Cached getForLogin returns providers in non-deterministic order, unlike the delegate path\", \"body\": \"On a cache hit, `getForLogin()` returns `identityProviders.stream()` built from a `HashSet`, so the iteration order is arbitrary, whereas the fallback paths (lines 218 and 249) return the delegate's stream, which for `FetchMode.ALL` is realm-level providers followed by organization providers in query order. The order of providers returned by the same call therefore differs depending on whether the cache is warm or cold. Current login beans sort the result, but any consumer that relies on the stream order (or picks the first element) will behave non-deterministically; this should at least be documented in `IdentityProviderStorageProvider.getForLogin`, which says nothing about ordering.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinishpanIdentityProviderStorageProvider.java",
+   "line": 93,
+   "severity": "high",
+   "category": "bug",
+   "title": "Login-cache invalidation decision uses the org-aware wrapped model, so required invalidations can be skipped",
+   "body": "In `update()` the \"original\" model passed to `registerIDPLoginInvalidationOnUpdate()` comes from `getById(model.getInternalId())`, which returns the model wrapped by `createOrganizationAwareIdentityProviderModel()`. That wrapper's `isEnabled()` returns `false` whenever the linked organization (or the realm's organization support) is disabled, even though the underlying IDP row is enabled. The login cache, however, is populated from the JPA query, which only filters on the IDP's own `enabled` flag and therefore *does* contain such IDPs. The result is an asymmetry: for an org-linked IDP whose organization is currently disabled, `getLoginPredicate().test(original)` is `false`, so an update that also makes the raw model non-eligible (e.g. setting `hideOnLogin=true`, `enabled=false`, or `broker_public=false`) takes the first early-return branch and no login cache is invalidated, while the cached id list still contains the provider. After the organization is re-enabled (organization updates do not invalidate the login keys), `getForLogin()` keeps returning that id from the cache, so a hidden or non-public (private) organization broker is still offered on the login page. Note that `create()` and `remove()` evaluate the predicate on raw models (`model`, `idpDelegate.getByAlias(alias)`), so only `update()` is inconsistent; the fix is to evaluate the predicate on the unwrapped model (e.g. `idpDelegate.getById(...)`)."
+  },
+  {
+   "index": 1,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 223,
+   "severity": "medium",
+   "category": "perf",
+   "title": "One login cache entry per realm+fetch mode aggregates all organizations, causing cluster-wide invalidation churn",
+   "body": "`getForLogin()` stores all results for a given realm and `FetchMode` in a single cache object keyed by `cacheKeyForLogin(realm, mode)`, using the organization id as the inner search key. Whenever a request asks for an organization that is not yet present in that object, line 236 calls `cache.invalidateObject(cacheKey)`, which drops the entry locally and broadcasts an invalidation to the whole cluster, then re-adds a merged copy. `OrganizationAwareIdentityProviderBean` calls `getForLogin(ALL, organization.getId())` on the login path, so in a realm with many organizations the first login for each new organization on each node wipes every other node's cached login IDP lists for that fetch mode, which must then be rebuilt from the database; the merged entry itself also grows with one id set per organization without any bound. Keying the cache per `(mode, organizationId)` (as `getByOrganization` does per organization) would avoid the shared-entry contention. Additionally, for `FetchMode.REALM_ONLY` the `organizationId` argument is documented as ignored, yet it is still used as the search key, so passing different organization ids creates redundant duplicate entries with identical content."
+  },
+  {
+   "index": 2,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java",
+   "line": 381,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Cleanup registers a non-existent alias, leaking 21 identity providers into the shared test realm",
+   "body": "`getCleanup().addCleanup(testRealm().identityProviders().get(\"alias\")::remove)` (lines 381 and 425) uses the literal string \"alias\" instead of the alias of the provider just created (`idpRep.getAlias()`). Consequently the 20 providers `idp-alias-0..19` plus `idp-alias-20` are never deleted after the test, and the cleanup action itself targets a provider that does not exist (404 at teardown). Because `OrganizationCacheTest` uses the shared test realm across test methods, these leftover providers change the IDP counts other tests in this class rely on (e.g. `testCacheIDPForLogin` asserts exactly 5/5/10 login providers and `testCacheIDPByOrg` asserts 6/2/4), making results order-dependent and flaky. Note that the same mistake already exists at line 303 and is being copied here."
+  },
+  {
+   "index": 3,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java",
+   "line": 417,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No coverage for the new create/remove login-cache invalidation",
+   "body": "The new test only exercises the negative cases for the invalidation hooks added to `create()` and `remove()`: it creates an IDP with `hideOnLogin=true` and removes a disabled IDP, then asserts the login caches are still present. There is no case that creates a login-eligible IDP (enabled, not link-only, not hidden) or removes one and asserts that all three `cacheKeyForLogin(realm, mode)` entries are invalidated. Those are exactly the paths added by `registerIDPLoginInvalidation(model)` in `create()` and `registerIDPLoginInvalidation(storedIdp)` in `remove()`, so a regression that drops either call (leaving stale login lists that hide a new broker or still advertise a deleted one) would not be caught."
+  },
+  {
+   "index": 4,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java",
+   "line": 401,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test asserts only on cache internals, never on what getForLogin returns",
+   "body": "`testCacheIDPForLogin` discards the stream returned by `session.identityProviders().getForLogin(...)` and only inspects the sizes of the internal `IdentityProviderListQuery` entries. Nothing verifies that the cached code path returns the same providers as the uncached delegate path (for example that the aliases match, that disabled/hidden/non-public providers are excluded, or that the second, cache-hit call returns the same result as the first). A bug in the cache-hit branch (e.g. the `getById` loop returning wrapped models whose `isEnabled()` is false, or the fallback on a missing id) would pass this test unnoticed."
+  },
+  {
+   "index": 5,
+   "file": "server-spi/src/main/java/org/keycloak/models/IdentityProviderStorageProvider.java",
+   "line": 254,
+   "severity": "low",
+   "category": "api",
+   "title": "getLoginPredicate() silently gains an organization/BROKER_PUBLIC criterion that getLoginSearchOptions() does not have",
+   "body": "`LoginFilter.getLoginPredicate()` now additionally rejects any IDP that is linked to an organization and does not have `BROKER_PUBLIC=true`. This criterion is not represented by any `LoginFilter` constant and is therefore absent from `getLoginSearchOptions()`, so the query-based and predicate-based helpers of the same enum no longer agree on what \"available for login\" means; the enum's javadoc (\"contains all fields that are considered when deciding if a provider should be available for login\") is now inaccurate. The change also affects every existing caller of `getLoginPredicate()` (e.g. `IdentityProviderBean.federatedProviderPredicate()`, which `OrganizationAwareIdentityProviderBean` builds on): non-public organization brokers that previously passed the predicate are now filtered out. If that behavior change is intended it should be documented; otherwise the extra condition belongs in the Infinispan invalidation logic rather than in the shared SPI predicate."
+  },
+  {
+   "index": 6,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 254,
+   "severity": "low",
+   "category": "bug",
+   "title": "Cached getForLogin returns providers in non-deterministic order, unlike the delegate path",
+   "body": "On a cache hit, `getForLogin()` returns `identityProviders.stream()` built from a `HashSet`, so the iteration order is arbitrary, whereas the fallback paths (lines 218 and 249) return the delegate's stream, which for `FetchMode.ALL` is realm-level providers followed by organization providers in query order. The order of providers returned by the same call therefore differs depending on whether the cache is warm or cold. Current login beans sort the result, but any consumer that relies on the stream order (or picks the first element) will behave non-deterministically; this should at least be documented in `IdentityProviderStorageProvider.getForLogin`, which says nothing about ordering."
+  }
+ ],
+ "finding_count": 7
+}

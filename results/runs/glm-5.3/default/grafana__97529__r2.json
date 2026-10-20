@@ -1,0 +1,151 @@
+{
+ "run_id": "glm-5.3__default__grafana__97529__r2",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:58:27Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 35027,
+    "output": 7412,
+    "reasoning": 6112,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0816506,
+   "latency_ms": 180815,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5985,
+   "raw_usage": {
+    "completion_tokens": 7412,
+    "prompt_tokens": 35027,
+    "total_tokens": 42439,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 6112,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0816506,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0816506,
+     "upstream_inference_prompt_cost": 0.0490378,
+     "upstream_inference_completions_cost": 0.0326128
+    }
+   },
+   "started_at": "2026-10-17T20:58:27Z",
+   "first_chunk_ms": 3838,
+   "first_text_ms": 156536,
+   "response_id": "gen-1792270707-n99f1fPrWuQCsgqpaZeT",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 35027,
+  "output": 7412,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 6112
+ },
+ "cost_reported": 0.0816506,
+ "latency_ms": 180815,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on shared 'err' and 'totalBatchesIndexed' now that index builds run concurrently\", \"body\": \"In searchSupport.init, the errgroup worker closure does `totalBatchesIndexed++` and `_, _, err = s.build(ctx, ...)` where both `totalBatchesIndexed` and `err` are variables captured from the enclosing function scope. Previously the whole-body cacheMu lock in bleveBackend.BuildIndex serialized the build calls (and therefore the `err` assignments), but this PR removes that lock while init still runs up to `initWorkers` goroutines concurrently. Multiple goroutines now write the same `err` variable (and increment the counter) simultaneously, which is a data race (Go race detector will flag it, and a lost/overwritten error can be returned as the init result even when another namespace failed, or vice versa). Each goroutine should use its own local error variable and the counter should be atomic or aggregated after group.Wait().\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing the coarse BuildIndex lock allows concurrent builds of the same index key\", \"body\": \"BuildIndex previously held cacheMu for the entire function, which (among other things) serialized builds of the same NamespacedResource. Now only the final cache write is locked. getOrCreateIndex in resource/search.go has a check-then-build pattern with no per-key synchronization (its own TODO admits this): both the watch-event goroutine (handleEvent) and a Search RPC can observe `GetIndex == nil` for the same key and invoke BuildIndex concurrently. Consequences: two in-memory indexes are built for the same key and the last writer wins in the cache, so documents written via handleEvent into the losing index are silently dropped from search results; for file-based indexes (size > FileThreshold) both calls run bleve.New against the same directory path, where the second call fails with 'index path already exists' (or worse, races on the same on-disk files). A per-key lock or singleflight is needed to make the cache write safe.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs reads the cache map without holding cacheMu and can panic\", \"body\": \"bleveBackend.TotalDocs iterates b.cache without acquiring b.cacheMu, unlike GetIndex which takes the RLock. This PR adds a call to TotalDocs in searchSupport.init (the new 'search index initialized' log line) after the watch-event goroutine has already been started (the goroutine is launched before the log line). That goroutine can concurrently call handleEvent -> getOrCreateIndex -> BuildIndex, which takes the write lock and mutates b.cache. An unlocked map iteration concurrent with a map write is a fatal runtime error in Go ('concurrent map iteration and map write'), crashing the whole server process. TotalDocs must take b.cacheMu.RLock (and the DocCount calls should be made outside the lock or the lock held for the whole iteration).\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Eager Init makes any index-build error fatal to server startup, including bleve 'path already exists' on restart\", \"body\": \"NewResourceServer now calls s.Init synchronously and returns an error, so any failure while building the search index prevents the server from being created at all. This interacts badly with bleveBackend.BuildIndex: it always calls bleve.New (never bleve.Open) on a fixed path under opts.Root for indexes above FileThreshold, and bleve.New returns an error if the directory already exists. The index cache is in-memory only, so on every process restart the cache is empty and BuildIndex runs again against the same directory left over from the previous run. With lazy init this surfaced as a failed Search RPC while the server kept serving storage requests; now it aborts NewResourceServer and the storage server cannot start until the stale index directory is manually deleted. Transient errors (e.g., a DB hiccup while listing documents during init) similarly become startup-fatal. Either the backend must open/reuse existing on-disk indexes, or startup should tolerate/degrade gracefully on search init failure.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 259, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Context and goroutines leak when Init fails in the constructor\", \"body\": \"When s.Init(ctx) fails, NewResourceServer returns nil, err without calling the cancel function created for the server's background watcher context (line 229). Additionally, a partially-failed search init may have already started the watch-events goroutine in searchSupport.init, which runs on context.Background() with no cancellation path and blocks forever on the events channel. So a failed construction leaves leaked goroutines and an uncancellable context alive while the caller believes the server was not created. The error path should invoke s.cancel() (and ideally stop the search watcher) before returning.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Postgres integration coverage for the storage server target is silently disabled\", \"body\": \"The test now skips whenever GRAFANA_TEST_DB is postgres with a TODO saying it does not work in Drone but works locally. Since this is the only integration test that boots the storage server module end to end, postgres support is now completely untested in CI, and regressions specific to the postgres dialect (e.g., in the SQL backend or the eager-init startup path this PR introduces) will not be caught. The underlying Drone failure should be diagnosed rather than skipped, or the skip should at least be tracked so it is not forgotten.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on shared 'err' and 'totalBatchesIndexed' now that index builds run concurrently",
+   "body": "In searchSupport.init, the errgroup worker closure does `totalBatchesIndexed++` and `_, _, err = s.build(ctx, ...)` where both `totalBatchesIndexed` and `err` are variables captured from the enclosing function scope. Previously the whole-body cacheMu lock in bleveBackend.BuildIndex serialized the build calls (and therefore the `err` assignments), but this PR removes that lock while init still runs up to `initWorkers` goroutines concurrently. Multiple goroutines now write the same `err` variable (and increment the counter) simultaneously, which is a data race (Go race detector will flag it, and a lost/overwritten error can be returned as the init result even when another namespace failed, or vice versa). Each goroutine should use its own local error variable and the counter should be atomic or aggregated after group.Wait()."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing the coarse BuildIndex lock allows concurrent builds of the same index key",
+   "body": "BuildIndex previously held cacheMu for the entire function, which (among other things) serialized builds of the same NamespacedResource. Now only the final cache write is locked. getOrCreateIndex in resource/search.go has a check-then-build pattern with no per-key synchronization (its own TODO admits this): both the watch-event goroutine (handleEvent) and a Search RPC can observe `GetIndex == nil` for the same key and invoke BuildIndex concurrently. Consequences: two in-memory indexes are built for the same key and the last writer wins in the cache, so documents written via handleEvent into the losing index are silently dropped from search results; for file-based indexes (size > FileThreshold) both calls run bleve.New against the same directory path, where the second call fails with 'index path already exists' (or worse, races on the same on-disk files). A per-key lock or singleflight is needed to make the cache write safe."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs reads the cache map without holding cacheMu and can panic",
+   "body": "bleveBackend.TotalDocs iterates b.cache without acquiring b.cacheMu, unlike GetIndex which takes the RLock. This PR adds a call to TotalDocs in searchSupport.init (the new 'search index initialized' log line) after the watch-event goroutine has already been started (the goroutine is launched before the log line). That goroutine can concurrently call handleEvent -> getOrCreateIndex -> BuildIndex, which takes the write lock and mutates b.cache. An unlocked map iteration concurrent with a map write is a fatal runtime error in Go ('concurrent map iteration and map write'), crashing the whole server process. TotalDocs must take b.cacheMu.RLock (and the DocCount calls should be made outside the lock or the lock held for the whole iteration)."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "high",
+   "category": "bug",
+   "title": "Eager Init makes any index-build error fatal to server startup, including bleve 'path already exists' on restart",
+   "body": "NewResourceServer now calls s.Init synchronously and returns an error, so any failure while building the search index prevents the server from being created at all. This interacts badly with bleveBackend.BuildIndex: it always calls bleve.New (never bleve.Open) on a fixed path under opts.Root for indexes above FileThreshold, and bleve.New returns an error if the directory already exists. The index cache is in-memory only, so on every process restart the cache is empty and BuildIndex runs again against the same directory left over from the previous run. With lazy init this surfaced as a failed Search RPC while the server kept serving storage requests; now it aborts NewResourceServer and the storage server cannot start until the stale index directory is manually deleted. Transient errors (e.g., a DB hiccup while listing documents during init) similarly become startup-fatal. Either the backend must open/reuse existing on-disk indexes, or startup should tolerate/degrade gracefully on search init failure."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 259,
+   "severity": "low",
+   "category": "bug",
+   "title": "Context and goroutines leak when Init fails in the constructor",
+   "body": "When s.Init(ctx) fails, NewResourceServer returns nil, err without calling the cancel function created for the server's background watcher context (line 229). Additionally, a partially-failed search init may have already started the watch-events goroutine in searchSupport.init, which runs on context.Background() with no cancellation path and blocks forever on the events channel. So a failed construction leaves leaked goroutines and an uncancellable context alive while the caller believes the server was not created. The error path should invoke s.cancel() (and ideally stop the search watcher) before returning."
+  },
+  {
+   "index": 5,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres integration coverage for the storage server target is silently disabled",
+   "body": "The test now skips whenever GRAFANA_TEST_DB is postgres with a TODO saying it does not work in Drone but works locally. Since this is the only integration test that boots the storage server module end to end, postgres support is now completely untested in CI, and regressions specific to the postgres dialect (e.g., in the SQL backend or the eager-init startup path this PR introduces) will not be caught. The underlying Drone failure should be diagnosed rather than skipped, or the skip should at least be tracked so it is not forgotten."
+  }
+ ],
+ "finding_count": 6
+}

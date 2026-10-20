@@ -1,0 +1,133 @@
+{
+ "run_id": "grok-4.7__xhigh__sentry__93824__r3",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 3,
+ "started_at": "2026-10-18T15:40:22Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 27899,
+    "output": 89489,
+    "reasoning": 88349,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.593308,
+   "latency_ms": 1138302,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4945,
+   "raw_usage": {
+    "completion_tokens": 89489,
+    "prompt_tokens": 29051,
+    "total_tokens": 118540,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 88349,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.593308,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.593308,
+     "upstream_inference_prompt_cost": 0.056374,
+     "upstream_inference_completions_cost": 0.536934
+    }
+   },
+   "started_at": "2026-10-18T15:40:22Z",
+   "first_chunk_ms": 2313,
+   "first_text_ms": 1132028,
+   "response_id": "gen-1792338022-mTfi8aBjbv9bw92NTC6J",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 27899,
+  "output": 89489,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 88349
+ },
+ "cost_reported": 0.593308,
+ "latency_ms": 1138302,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 341, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"join() can return without stopping every flusher process\", \"body\": \"SpanFlusher.join sets stopped, then calls next_step.join(timeout) before waiting on flusher workers. The deadline is that same timeout, and the new loop breaks as soon as it has passed, skipping process.terminate() for every worker not yet visited. If next_step.join consumes the timeout, or the first stuck worker uses up the rest, the remaining shard flushers are never signaled. close() intentionally does not stop them, so join() is the only shutdown path. Those workers are daemons, but the consumer process stays up across rebalances, so a leaked flusher keeps calling flush_segments and producing to the buffered-segments topic for shards that may already have been revoked and assigned to another consumer. That races Redis flush state and emits duplicate segments. This is a regression from the previous single-process join, which always called terminate() after the wait even if the deadline had already passed. Workers that do get terminate() are never join()ed, so join() can return while they are still alive, and there is no try/finally, so an exception from next_step.join skips cleanup entirely. Always stop every worker (kill if needed) and join() it, including on the timeout and exception paths.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 259, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Flusher restart does not wait for the old worker to exit\", \"body\": \"When a flusher is unhealthy, _ensure_processes_alive calls kill() only for multiprocessing.Process, then _create_process_for_shards starts a replacement and overwrites self.processes without joining the previous worker. kill() returns before the process has actually died, and the old Process object is dropped, so the supervisor no longer tracks it and never reaps it. The thread backend used whenever produce_to_pipe is set is not interrupted at all (kill/terminate are skipped for non-Process workers). A hung thread therefore keeps flushing the same shards after a new thread is started; each hang restart adds another live flusher until MAX_PROCESS_RESTARTS trips, and those threads all call flush_segments and produce, duplicating segments and racing done_flush_segments. On the process backend the replacement is spawned while the killed worker may still be inside Redis flush or Kafka produce. Join (or join-after-kill) the old worker, and do not start a second thread while the first is alive, before creating the replacement.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 144, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Comma-separated shard list is emitted as one metric tag\", \"body\": \"shard_tag is the comma-joined list of every shard that process handles, and it is sent as the shard tag on spans.buffer.flusher.produce and spans.buffer.segment_size_bytes, and as shards on spans.buffer.flusher.wait_produce. DogStatsD encodes tags as a comma-separated key:value list and does not escape commas inside values, so a tag like shard:0,1,2 is parsed as shard:0 plus stray tags 1 and 2. Those timers and gauges will be dropped or attributed to the wrong series. With the CLI default --flusher-processes 1, every assigned partition is concatenated into that single value, so this breaks as soon as the consumer has more than one partition, not only when multiple flusher processes are enabled. The value also changes on every rebalance (high cardinality) and can exceed backend tag-length limits. wait_produce uses the key shards while the other metrics use shard, so they would not group together even after the value is fixed. The unhealthy counter already tags one shard id; the produce metrics should do the same, or use a bounded process index, and must not embed commas. The same comma-joined string is also set as the Sentry tag sentry_spans_buffer_shards.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 62, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"test_basic wait after advancing drift is a no-op\", \"body\": \"test_basic monkeypatches time.sleep to a no-op so the flusher does not block, then calls time.sleep(0.1) after setting current_drift to 9000, with a comment that this gives the flusher time to process. That call uses the same patched time.sleep, so it returns immediately and does not wait. step.join() sets SpanFlusher.stopped before it waits for the worker; if the worker has not yet observed the advanced drift and produced, it leaves its loop and the (msg,) = messages assertion fails. The synchronization added to fix that race does not run. Save the original time.sleep before monkeypatching and wait on that saved function (the flusher looks up time.sleep at call time, so it will still see the no-op), and only then join.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 341,
+   "severity": "high",
+   "category": "bug",
+   "title": "join() can return without stopping every flusher process",
+   "body": "SpanFlusher.join sets stopped, then calls next_step.join(timeout) before waiting on flusher workers. The deadline is that same timeout, and the new loop breaks as soon as it has passed, skipping process.terminate() for every worker not yet visited. If next_step.join consumes the timeout, or the first stuck worker uses up the rest, the remaining shard flushers are never signaled. close() intentionally does not stop them, so join() is the only shutdown path. Those workers are daemons, but the consumer process stays up across rebalances, so a leaked flusher keeps calling flush_segments and producing to the buffered-segments topic for shards that may already have been revoked and assigned to another consumer. That races Redis flush state and emits duplicate segments. This is a regression from the previous single-process join, which always called terminate() after the wait even if the deadline had already passed. Workers that do get terminate() are never join()ed, so join() can return while they are still alive, and there is no try/finally, so an exception from next_step.join skips cleanup entirely. Always stop every worker (kill if needed) and join() it, including on the timeout and exception paths."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 259,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Flusher restart does not wait for the old worker to exit",
+   "body": "When a flusher is unhealthy, _ensure_processes_alive calls kill() only for multiprocessing.Process, then _create_process_for_shards starts a replacement and overwrites self.processes without joining the previous worker. kill() returns before the process has actually died, and the old Process object is dropped, so the supervisor no longer tracks it and never reaps it. The thread backend used whenever produce_to_pipe is set is not interrupted at all (kill/terminate are skipped for non-Process workers). A hung thread therefore keeps flushing the same shards after a new thread is started; each hang restart adds another live flusher until MAX_PROCESS_RESTARTS trips, and those threads all call flush_segments and produce, duplicating segments and racing done_flush_segments. On the process backend the replacement is spawned while the killed worker may still be inside Redis flush or Kafka produce. Join (or join-after-kill) the old worker, and do not start a second thread while the first is alive, before creating the replacement."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 144,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Comma-separated shard list is emitted as one metric tag",
+   "body": "shard_tag is the comma-joined list of every shard that process handles, and it is sent as the shard tag on spans.buffer.flusher.produce and spans.buffer.segment_size_bytes, and as shards on spans.buffer.flusher.wait_produce. DogStatsD encodes tags as a comma-separated key:value list and does not escape commas inside values, so a tag like shard:0,1,2 is parsed as shard:0 plus stray tags 1 and 2. Those timers and gauges will be dropped or attributed to the wrong series. With the CLI default --flusher-processes 1, every assigned partition is concatenated into that single value, so this breaks as soon as the consumer has more than one partition, not only when multiple flusher processes are enabled. The value also changes on every rebalance (high cardinality) and can exceed backend tag-length limits. wait_produce uses the key shards while the other metrics use shard, so they would not group together even after the value is fixed. The unhealthy counter already tags one shard id; the produce metrics should do the same, or use a bounded process index, and must not embed commas. The same comma-joined string is also set as the Sentry tag sentry_spans_buffer_shards."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "medium",
+   "category": "bug",
+   "title": "test_basic wait after advancing drift is a no-op",
+   "body": "test_basic monkeypatches time.sleep to a no-op so the flusher does not block, then calls time.sleep(0.1) after setting current_drift to 9000, with a comment that this gives the flusher time to process. That call uses the same patched time.sleep, so it returns immediately and does not wait. step.join() sets SpanFlusher.stopped before it waits for the worker; if the worker has not yet observed the advanced drift and produced, it leaves its loop and the (msg,) = messages assertion fails. The synchronization added to fix that race does not run. Save the original time.sleep before monkeypatching and wait on that saved function (the flusher looks up time.sleep at call time, so it will still see the no-op), and only then join."
+  }
+ ],
+ "finding_count": 4
+}

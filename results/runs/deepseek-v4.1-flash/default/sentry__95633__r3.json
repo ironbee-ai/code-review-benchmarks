@@ -1,0 +1,135 @@
+{
+ "run_id": "deepseek-v4.1-flash__default__sentry__95633__r3",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T18:53:13Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 215,
+    "output": 32393,
+    "reasoning": 31352,
+    "cache_read": 32640,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01956597,
+   "latency_ms": 135980,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 4362,
+   "raw_usage": {
+    "completion_tokens": 32393,
+    "prompt_tokens": 32855,
+    "total_tokens": 65248,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 31352,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 32640,
+     "video_tokens": 0
+    },
+    "cost": 0.01956597,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01956597,
+     "upstream_inference_prompt_cost": 0.00013017,
+     "upstream_inference_completions_cost": 0.0194358
+    }
+   },
+   "started_at": "2026-10-18T18:53:13Z",
+   "first_chunk_ms": 1063,
+   "first_text_ms": 132171,
+   "response_id": "gen-1792349593-tGIhCByjogwrSrR1ft1I",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 215,
+  "output": 32393,
+  "cache_read": 32640,
+  "cache_write": 0,
+  "reasoning": 31352
+ },
+ "cost_reported": 0.01956597,
+ "latency_ms": 135980,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Queues are unbounded and poll() provides no backpressure\", \"body\": \"Each work queue is created as `queue.Queue()` with no `maxsize`, and `SimpleQueueProcessingStrategy.poll()` (line 327) only emits metrics; neither `submit()` nor `poll()` ever blocks. Arroyo's StreamProcessor pulls from Kafka and calls `submit()` as fast as it can, relying on the strategy to push back, so there is nothing limiting how many WorkItems can accumulate in memory. If one group (the exact slow-subscription case this PR is meant to address) backs up, its queue grows without bound while the consumer keeps reading, leading to unbounded memory growth / OOM. The class docstring's claim 'Natural backpressure when queues fill up' is false because the queues never fill and submit never blocks. Use a bounded queue with a blocking put (or make submit/poll block once total in-flight exceeds a limit).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 317, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"submit() swallows exceptions and commits the offset, silently dropping messages\", \"body\": \"The broad `except Exception` in `SimpleQueueProcessingStrategy.submit` wraps the decoder, the grouping function, and the enqueue. On any exception it calls `add_offset` + `complete_offset`, which marks the offset as processed so the commit thread will commit it, even though the message was never handled. The most realistic trigger is `grouping_fn` (i.e. `ResultsStrategyFactory.build_payload_grouping_key`) raising on a malformed/partial result: that message is then discarded with only a log line and its offset is committed, bypassing any DLQ or retry. This differs from the batched/serial modes where a grouping failure propagates. The message should not be treated as successfully processed (e.g. add to DLQ / let the error propagate) rather than being committed away.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Error-handling test asserts the opposite of its intent and passes only vacuously\", \"body\": \"`test_thread_queue_parallel_error_handling` is documented as 'errors in processing don't block offset commits', but it asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`, i.e. that commits are blocked. That contradicts the implementation: `OrderedQueueWorker.run` calls `complete_offset` in a `finally` block even when `result_processor` raises, so both offsets (100 and 101) become committable and WILL be committed. The test only passes because it breaks out after ~0.2s while the commit loop (`_commit_loop`) fires every 1.0s, so `len(committed_offsets) == 0` happens to hold \u2014 it is both flaky (slow CI where >1s elapses before the assertion makes it fail) and does not actually test error handling. It should wait deterministically for a commit (like the other tests) and assert the correct behavior.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 188, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"FilteredPayload reaches a decoder that asserts against it; the skip path is only reached via exception\", \"body\": \"`decode_payload` starts with `assert not isinstance(payload, FilteredPayload)`, but the new `SimpleQueueProcessingStrategy.submit` passes every message's payload (`self.decoder(message.payload)`) to it unconditionally. When a `FilteredPayload` message arrives, the assertion raises `AssertionError`, which is only 'handled' by the new catch-all in `submit` (logging an error per message); the intended `if result is None: complete and return` skip path is never used for filtered messages because `decode_payload` never returns for them. Under `python -O` the assert is stripped and `payload.value` on a FilteredPayload raises `AttributeError` instead (also swallowed). The test `test_handles_invalid_messages` exercises this by sending a FilteredPayload, so it is validating the exception-swallowing fallback rather than the intended skip logic. `SimpleQueueProcessingStrategy.submit` should check for `FilteredPayload` explicitly (or `decode_payload` should return None for it) before calling the codec.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "perf",
+   "title": "Queues are unbounded and poll() provides no backpressure",
+   "body": "Each work queue is created as `queue.Queue()` with no `maxsize`, and `SimpleQueueProcessingStrategy.poll()` (line 327) only emits metrics; neither `submit()` nor `poll()` ever blocks. Arroyo's StreamProcessor pulls from Kafka and calls `submit()` as fast as it can, relying on the strategy to push back, so there is nothing limiting how many WorkItems can accumulate in memory. If one group (the exact slow-subscription case this PR is meant to address) backs up, its queue grows without bound while the consumer keeps reading, leading to unbounded memory growth / OOM. The class docstring's claim 'Natural backpressure when queues fill up' is false because the queues never fill and submit never blocks. Use a bounded queue with a blocking put (or make submit/poll block once total in-flight exceeds a limit)."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 317,
+   "severity": "medium",
+   "category": "data",
+   "title": "submit() swallows exceptions and commits the offset, silently dropping messages",
+   "body": "The broad `except Exception` in `SimpleQueueProcessingStrategy.submit` wraps the decoder, the grouping function, and the enqueue. On any exception it calls `add_offset` + `complete_offset`, which marks the offset as processed so the commit thread will commit it, even though the message was never handled. The most realistic trigger is `grouping_fn` (i.e. `ResultsStrategyFactory.build_payload_grouping_key`) raising on a malformed/partial result: that message is then discarded with only a log line and its offset is committed, bypassing any DLQ or retry. This differs from the batched/serial modes where a grouping failure propagates. The message should not be treated as successfully processed (e.g. add to DLQ / let the error propagate) rather than being committed away."
+  },
+  {
+   "index": 2,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Error-handling test asserts the opposite of its intent and passes only vacuously",
+   "body": "`test_thread_queue_parallel_error_handling` is documented as 'errors in processing don't block offset commits', but it asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`, i.e. that commits are blocked. That contradicts the implementation: `OrderedQueueWorker.run` calls `complete_offset` in a `finally` block even when `result_processor` raises, so both offsets (100 and 101) become committable and WILL be committed. The test only passes because it breaks out after ~0.2s while the commit loop (`_commit_loop`) fires every 1.0s, so `len(committed_offsets) == 0` happens to hold \u2014 it is both flaky (slow CI where >1s elapses before the assertion makes it fail) and does not actually test error handling. It should wait deterministically for a commit (like the other tests) and assert the correct behavior."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 188,
+   "severity": "low",
+   "category": "bug",
+   "title": "FilteredPayload reaches a decoder that asserts against it; the skip path is only reached via exception",
+   "body": "`decode_payload` starts with `assert not isinstance(payload, FilteredPayload)`, but the new `SimpleQueueProcessingStrategy.submit` passes every message's payload (`self.decoder(message.payload)`) to it unconditionally. When a `FilteredPayload` message arrives, the assertion raises `AssertionError`, which is only 'handled' by the new catch-all in `submit` (logging an error per message); the intended `if result is None: complete and return` skip path is never used for filtered messages because `decode_payload` never returns for them. Under `python -O` the assert is stripped and `payload.value` on a FilteredPayload raises `AttributeError` instead (also swallowed). The test `test_handles_invalid_messages` exercises this by sending a FilteredPayload, so it is validating the exception-swallowing fallback rather than the intended skip logic. `SimpleQueueProcessingStrategy.submit` should check for `FilteredPayload` explicitly (or `decode_payload` should return None for it) before calling the codec."
+  }
+ ],
+ "finding_count": 4
+}

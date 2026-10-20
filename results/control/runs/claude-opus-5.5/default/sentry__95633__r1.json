@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-opus-5.5__default__sentry__95633__r1",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-17T19:21:36Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 133774,
+  "sha": "0c1aca4d252b66ef",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system_neutral.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51160,
+    "output": 3138,
+    "reasoning": 1202,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 30124,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5330,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51160,
+    "output_tokens": 3138,
+    "output_tokens_details": {
+     "thinking_tokens": 1202
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T19:21:36Z",
+   "first_chunk_ms": 2417,
+   "first_text_ms": 13527,
+   "response_id": "msg_bdrk_5q6pbifek7lgmlrgb5ebk3dansuxoirk4b5v4g32oxk6jz7rdm5q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51160,
+  "output": 3138,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 1202
+ },
+ "cost_reported": null,
+ "latency_ms": 30124,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"high\", \"title\": \"Shared queue pool is shut down on rebalance, so later messages are skipped and committed\", \"body\": \"`ResultsStrategyFactory` creates one `FixedQueuePool` in `__init__` and passes it to every strategy built by `create_with_partitions`. On a partition revoke, arroyo calls `close()`/`join()` on the old strategy, and `close()` calls `self.queue_pool.shutdown()`. That stops all workers and shuts down every queue.\\n\\nOn reassignment, `create_with_partitions` hands the same dead pool to the new strategy (the `assert self.queue_pool is not None` passes). Each `work_queue.put()` then raises `queue.ShutDown`. The broad `except` in `submit()` catches it, logs it, and marks the offset complete.\\n\\nResult: after the first rebalance, every message is silently dropped and its offset committed, so uptime results are permanently lost. The pool's lifetime should belong to the factory, or each strategy should get its own pool. The tracker state for revoked partitions (`last_committed`, outstanding offsets) should also be cleared.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 287, \"severity\": \"high\", \"title\": \"Arroyo commit callback invoked from a background thread\", \"body\": \"`_commit_loop` runs on its own daemon thread and calls `self.commit_function(...)`, which wraps arroyo's `Commit` callback. That callback is meant to be called from the strategy's `submit`/`poll` on the StreamProcessor thread. It mutates the processor's staged offsets and consumer state without any locking.\\n\\nCalling it concurrently with the main loop is a data race on the consumer/commit state. It can also fire after the partition was revoked, staging offsets for partitions the consumer no longer owns.\\n\\nCommittable offsets should be computed here, but the actual commit should happen in `poll()` on the main thread.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"title\": \"Unbounded queues, no backpressure\", \"body\": \"Each `queue.Queue()` is created without `maxsize`, and `submit()` never raises `MessageRejected`. The class docstring promises \\\"Natural backpressure when queues fill up\\\", but nothing implements it.\\n\\nIf one group's queue is slow (the exact scenario this PR targets), the consumer keeps pulling messages from Kafka and buffering them in memory without limit. That can lead to OOM, and the outstanding offset sets grow without bound as well.\\n\\nUse bounded queues and raise `MessageRejected` when a queue, or the total backlog, is full.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 89, \"severity\": \"medium\", \"title\": \"Commits stall forever on non-contiguous Kafka offsets\", \"body\": \"`get_committable_offsets` walks every integer from `last_committed+1` and stops at the first offset not in `all_offsets`. Kafka offsets are not guaranteed contiguous: transactional control markers and log compaction leave gaps.\\n\\nWhen that happens, the missing offset is never added, so the loop breaks there on every pass. Commits for that partition stop permanently and memory grows.\\n\\nThe logic should compute the highest offset below the minimum outstanding offset among those actually seen, rather than requiring every integer to be present.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 336, \"severity\": \"medium\", \"title\": \"close() stops committing before draining, and drops queued work\", \"body\": \"`close()` sets `shutdown_event` and joins the commit thread first, then shuts down the pool. Offsets completed during the drain are therefore never committed.\\n\\nThe pool's `shutdown()` also sets `worker.shutdown = True` before shutting down the queues. Each worker exits its loop after the current item, so the remaining queued items are abandoned rather than drained.\\n\\n`join(timeout)` ignores its timeout, and the internal joins can block for up to 5s \u00d7 (1 + num_queues), which may exceed arroyo's join timeout and hold up rebalances. The pool should drain, then do a final commit, then stop.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 132, \"severity\": \"low\", \"title\": \"queue.ShutDown / Queue.shutdown require Python 3.13\", \"body\": \"`queue.ShutDown` and `Queue.shutdown()` were added in Python 3.13. On any older runtime, the `except queue.ShutDown` clause raises `AttributeError` when evaluated, and `shutdown()` fails (that error is swallowed by the broad except). Confirm the deployed interpreter version, or use a sentinel-based shutdown instead.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1928, \"severity\": \"low\", \"title\": \"Error-handling test asserts no commit, contradicting both docstring and implementation\", \"body\": \"`test_thread_queue_parallel_error_handling` says errors shouldn't block commits for other messages. However, it asserts `test_partition not in committed_offsets`.\\n\\nThe worker marks offsets complete even when processing raises, so the 1s commit loop will commit offset 102. The test only passes if it finishes before the commit thread wakes up, which makes it timing-dependent and flaky. It also asserts the wrong behavior.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "high",
+   "category": null,
+   "title": "Shared queue pool is shut down on rebalance, so later messages are skipped and committed",
+   "body": "`ResultsStrategyFactory` creates one `FixedQueuePool` in `__init__` and passes it to every strategy built by `create_with_partitions`. On a partition revoke, arroyo calls `close()`/`join()` on the old strategy, and `close()` calls `self.queue_pool.shutdown()`. That stops all workers and shuts down every queue.\n\nOn reassignment, `create_with_partitions` hands the same dead pool to the new strategy (the `assert self.queue_pool is not None` passes). Each `work_queue.put()` then raises `queue.ShutDown`. The broad `except` in `submit()` catches it, logs it, and marks the offset complete.\n\nResult: after the first rebalance, every message is silently dropped and its offset committed, so uptime results are permanently lost. The pool's lifetime should belong to the factory, or each strategy should get its own pool. The tracker state for revoked partitions (`last_committed`, outstanding offsets) should also be cleared."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 287,
+   "severity": "high",
+   "category": null,
+   "title": "Arroyo commit callback invoked from a background thread",
+   "body": "`_commit_loop` runs on its own daemon thread and calls `self.commit_function(...)`, which wraps arroyo's `Commit` callback. That callback is meant to be called from the strategy's `submit`/`poll` on the StreamProcessor thread. It mutates the processor's staged offsets and consumer state without any locking.\n\nCalling it concurrently with the main loop is a data race on the consumer/commit state. It can also fire after the partition was revoked, staging offsets for partitions the consumer no longer owns.\n\nCommittable offsets should be computed here, but the actual commit should happen in `poll()` on the main thread."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": null,
+   "title": "Unbounded queues, no backpressure",
+   "body": "Each `queue.Queue()` is created without `maxsize`, and `submit()` never raises `MessageRejected`. The class docstring promises \"Natural backpressure when queues fill up\", but nothing implements it.\n\nIf one group's queue is slow (the exact scenario this PR targets), the consumer keeps pulling messages from Kafka and buffering them in memory without limit. That can lead to OOM, and the outstanding offset sets grow without bound as well.\n\nUse bounded queues and raise `MessageRejected` when a queue, or the total backlog, is full."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 89,
+   "severity": "medium",
+   "category": null,
+   "title": "Commits stall forever on non-contiguous Kafka offsets",
+   "body": "`get_committable_offsets` walks every integer from `last_committed+1` and stops at the first offset not in `all_offsets`. Kafka offsets are not guaranteed contiguous: transactional control markers and log compaction leave gaps.\n\nWhen that happens, the missing offset is never added, so the loop breaks there on every pass. Commits for that partition stop permanently and memory grows.\n\nThe logic should compute the highest offset below the minimum outstanding offset among those actually seen, rather than requiring every integer to be present."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 336,
+   "severity": "medium",
+   "category": null,
+   "title": "close() stops committing before draining, and drops queued work",
+   "body": "`close()` sets `shutdown_event` and joins the commit thread first, then shuts down the pool. Offsets completed during the drain are therefore never committed.\n\nThe pool's `shutdown()` also sets `worker.shutdown = True` before shutting down the queues. Each worker exits its loop after the current item, so the remaining queued items are abandoned rather than drained.\n\n`join(timeout)` ignores its timeout, and the internal joins can block for up to 5s \u00d7 (1 + num_queues), which may exceed arroyo's join timeout and hold up rebalances. The pool should drain, then do a final commit, then stop."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 132,
+   "severity": "low",
+   "category": null,
+   "title": "queue.ShutDown / Queue.shutdown require Python 3.13",
+   "body": "`queue.ShutDown` and `Queue.shutdown()` were added in Python 3.13. On any older runtime, the `except queue.ShutDown` clause raises `AttributeError` when evaluated, and `shutdown()` fails (that error is swallowed by the broad except). Confirm the deployed interpreter version, or use a sentinel-based shutdown instead."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1928,
+   "severity": "low",
+   "category": null,
+   "title": "Error-handling test asserts no commit, contradicting both docstring and implementation",
+   "body": "`test_thread_queue_parallel_error_handling` says errors shouldn't block commits for other messages. However, it asserts `test_partition not in committed_offsets`.\n\nThe worker marks offsets complete even when processing raises, so the 1s commit loop will commit offset 102. The test only passes if it finishes before the commit thread wakes up, which makes it timing-dependent and flaky. It also asserts the wrong behavior."
+  }
+ ],
+ "finding_count": 7
+}

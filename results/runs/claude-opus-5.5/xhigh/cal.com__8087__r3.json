@@ -1,0 +1,131 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__cal.com__8087__r3",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:46:21Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 63584,
+    "output": 11874,
+    "reasoning": 9980,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 117044,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5061,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 63584,
+    "output_tokens": 11874,
+    "output_tokens_details": {
+     "thinking_tokens": 9980
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:46:21Z",
+   "first_chunk_ms": 8651,
+   "first_text_ms": 101421,
+   "response_id": "msg_bdrk_445lp7u4uujltj7m5awewzd34xug2q2db6b5xmxgpuzneke5p3wa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 63584,
+  "output": 11874,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9980
+ },
+ "cost_reported": null,
+ "latency_ms": 117044,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "```json\n{\"findings\": [{\"file\": \"packages/app-store/index.ts\", \"line\": 3, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"import() calls run eagerly at module load, so nothing is lazy-loaded\", \"body\": \"Each property value is `import(\\\"./xxx\\\")`, and these calls run as soon as `packages/app-store/index.ts` is evaluated. Any route that pulls in `@calcom/app-store` therefore still starts loading all 28 app packages on cold start. Such routes include anything going through `videoClient`, `getCalendar`, `handlePayment`, `deletePayment` or `handleCancelBooking`.\\n\\nThe PR's goal of async, on-demand loading of apps is not achieved. Instead of reducing work, the change adds `await` overhead to every lookup.\\n\\nThere is a second effect. If an app module fails to load and nobody happens to await that specific entry yet, the rejection is an unhandled promise rejection at startup. On Node 15+ that can terminate the process.\\n\\nFix: store thunks, e.g. `applecalendar: () => import(\\\"./applecalendar\\\")`, and call them at the lookup site, e.g. `await appStore[key]?.()`. Callers would need to handle missing keys.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"async forEach makes the surrounding try/catch dead; getCalendar errors become unhandled rejections\", \"body\": \"The callback was changed to `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...) ... })`. `forEach` ignores the returned promises.\\n\\nBefore this PR, an exception from `getCalendar` was thrown synchronously and caught and logged by the enclosing `try { ... } catch`. Examples are `new CalendarService(credential)` failing on a malformed or undecryptable key, or an unsupported type. Now any such error rejects a promise nobody observes. It surfaces as an unhandled promise rejection instead of being logged, and on Node 15+ that may crash the process.\\n\\nThe calendar and video deletions are also never awaited, so `Reschedule` returns before they finish.\\n\\nFix: use `await Promise.all(bookingRefsFiltered.map(async (ref) => ...))` inside the try block, or `Promise.allSettled` with per-item logging.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"async forEach makes the surrounding try/catch dead; getCalendar errors become unhandled rejections\", \"body\": \"This file has the same change as the vital reschedule: `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...) })` inside a `try/catch`.\\n\\nBecause `forEach` discards the async callbacks' promises, an error thrown while resolving or constructing the calendar service is no longer caught by the `catch` block. Previously it was thrown synchronously and logged. Now it becomes an unhandled promise rejection.\\n\\nThe deletions also run fire-and-forget, so the function returns `true` before they complete.\\n\\nFix: replace with `await Promise.all(bookingRefsFiltered.map(async ...))` (or `allSettled`) inside the try.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"requestReschedule: async forEach swallows getCalendar failures into unhandled rejections\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); return calendar?.deleteEvent(...) })` discards every callback promise.\\n\\nBefore this PR, a synchronous failure in `getCalendar` (e.g. a CalendarService constructor throwing on a bad credential) failed the tRPC mutation with an error. Now it is an unobserved promise rejection: the mutation reports success, and the process gets an unhandled rejection.\\n\\nThe calendar and video deletions are also not awaited before the mutation sends emails and webhooks and returns. In serverless execution they may never complete.\\n\\nFix: use `await Promise.all(bookingRefsFiltered.map(async ...))`, or `allSettled` with logging if failures should not block the reschedule.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"getCalendarCredentials creates calendar promises that are discarded for non-'calendar' variants\", \"body\": \"`getCalendar(credential)` now returns a Promise. It is still invoked for every credential of every `_calendar` app, before the `app.variant === \\\"calendar\\\"` check. For apps whose variant is not \\\"calendar\\\" (e.g. `*_other_calendar` CRMs), the promise is created and thrown away. If it rejects (e.g. the service constructor throws on the stored key), nobody handles it and it becomes an unhandled promise rejection.\\n\\nThe exported return shape also changed: `calendar` is now a `Promise<Calendar | null>` instead of a `Calendar | null`. Any consumer other than `getConnectedCalendars` that uses `item.calendar` directly will silently break.\\n\\nFix: only call `getCalendar` inside the `variant === \\\"calendar\\\"` branch, or resolve it lazily inside `getConnectedCalendars`.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/index.ts",
+   "line": 3,
+   "severity": "medium",
+   "category": "perf",
+   "title": "import() calls run eagerly at module load, so nothing is lazy-loaded",
+   "body": "Each property value is `import(\"./xxx\")`, and these calls run as soon as `packages/app-store/index.ts` is evaluated. Any route that pulls in `@calcom/app-store` therefore still starts loading all 28 app packages on cold start. Such routes include anything going through `videoClient`, `getCalendar`, `handlePayment`, `deletePayment` or `handleCancelBooking`.\n\nThe PR's goal of async, on-demand loading of apps is not achieved. Instead of reducing work, the change adds `await` overhead to every lookup.\n\nThere is a second effect. If an app module fails to load and nobody happens to await that specific entry yet, the rejection is an unhandled promise rejection at startup. On Node 15+ that can terminate the process.\n\nFix: store thunks, e.g. `applecalendar: () => import(\"./applecalendar\")`, and call them at the lookup site, e.g. `await appStore[key]?.()`. Callers would need to handle missing keys."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "async forEach makes the surrounding try/catch dead; getCalendar errors become unhandled rejections",
+   "body": "The callback was changed to `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...) ... })`. `forEach` ignores the returned promises.\n\nBefore this PR, an exception from `getCalendar` was thrown synchronously and caught and logged by the enclosing `try { ... } catch`. Examples are `new CalendarService(credential)` failing on a malformed or undecryptable key, or an unsupported type. Now any such error rejects a promise nobody observes. It surfaces as an unhandled promise rejection instead of being logged, and on Node 15+ that may crash the process.\n\nThe calendar and video deletions are also never awaited, so `Reschedule` returns before they finish.\n\nFix: use `await Promise.all(bookingRefsFiltered.map(async (ref) => ...))` inside the try block, or `Promise.allSettled` with per-item logging."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "async forEach makes the surrounding try/catch dead; getCalendar errors become unhandled rejections",
+   "body": "This file has the same change as the vital reschedule: `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...) })` inside a `try/catch`.\n\nBecause `forEach` discards the async callbacks' promises, an error thrown while resolving or constructing the calendar service is no longer caught by the `catch` block. Previously it was thrown synchronously and logged. Now it becomes an unhandled promise rejection.\n\nThe deletions also run fire-and-forget, so the function returns `true` before they complete.\n\nFix: replace with `await Promise.all(bookingRefsFiltered.map(async ...))` (or `allSettled`) inside the try."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "medium",
+   "category": "bug",
+   "title": "requestReschedule: async forEach swallows getCalendar failures into unhandled rejections",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); return calendar?.deleteEvent(...) })` discards every callback promise.\n\nBefore this PR, a synchronous failure in `getCalendar` (e.g. a CalendarService constructor throwing on a bad credential) failed the tRPC mutation with an error. Now it is an unobserved promise rejection: the mutation reports success, and the process gets an unhandled rejection.\n\nThe calendar and video deletions are also not awaited before the mutation sends emails and webhooks and returns. In serverless execution they may never complete.\n\nFix: use `await Promise.all(bookingRefsFiltered.map(async ...))`, or `allSettled` with logging if failures should not block the reschedule."
+  },
+  {
+   "index": 4,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "bug",
+   "title": "getCalendarCredentials creates calendar promises that are discarded for non-'calendar' variants",
+   "body": "`getCalendar(credential)` now returns a Promise. It is still invoked for every credential of every `_calendar` app, before the `app.variant === \"calendar\"` check. For apps whose variant is not \"calendar\" (e.g. `*_other_calendar` CRMs), the promise is created and thrown away. If it rejects (e.g. the service constructor throws on the stored key), nobody handles it and it becomes an unhandled promise rejection.\n\nThe exported return shape also changed: `calendar` is now a `Promise<Calendar | null>` instead of a `Calendar | null`. Any consumer other than `getConnectedCalendars` that uses `item.calendar` directly will silently break.\n\nFix: only call `getCalendar` inside the `variant === \"calendar\"` branch, or resolve it lazily inside `getConnectedCalendars`."
+  }
+ ],
+ "finding_count": 5
+}

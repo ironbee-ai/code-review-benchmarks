@@ -1,0 +1,156 @@
+{
+ "run_id": "grok-4.7__default__grafana__97529__r3",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:42:33Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 37192,
+    "output": 20148,
+    "reasoning": 18795,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.195848,
+   "latency_ms": 273486,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 6067,
+   "raw_usage": {
+    "completion_tokens": 20148,
+    "prompt_tokens": 38344,
+    "total_tokens": 58492,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 18795,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.195848,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.195848,
+     "upstream_inference_prompt_cost": 0.07496,
+     "upstream_inference_completions_cost": 0.120888
+    }
+   },
+   "started_at": "2026-10-18T12:42:33Z",
+   "first_chunk_ms": 2626,
+   "first_text_ms": 259421,
+   "response_id": "gen-1792327353-1ftKPgbFSYr9fdHuorBI",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 37192,
+  "output": 20148,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 18795
+ },
+ "cost_reported": 0.195848,
+ "latency_ms": 273486,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 98, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"BuildIndex no longer excludes concurrent builds of the same key\", \"body\": \"BuildIndex used to hold cacheMu for the whole build, which serialized bleve.New and cache publication. The lock is now taken only to publish b.cache[key] at the end, and nothing single-flights a key. getOrCreateIndex still does GetIndex then build with no per-key lock, so two searches or watch events for a missing namespace (indexes below InitMinCount, or any key created after startup) both pass the cache miss and call BuildIndex together. For file indexes both call bleve.New on the same directory and race the index files; for memory indexes both succeed. The slower build then overwrites b.cache[key], so the cached index can be the staler one, the other index is leaked and never closed, and callers that already received the losing index keep searching a copy that will not receive later watch updates.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Parallel index init races on shared err and counter\", \"body\": \"init now actually builds many namespaces at once (errgroup plus the BuildIndex lock removal). Every worker does totalBatchesIndexed++ and err = s.build(...) on the same outer variables with no mutex or atomic. That is a data race: a failed build can return another worker's nil error, so group.Wait can succeed and the process starts with a missing index, or a successful worker can return another worker's error and fail startup. The namespaced_indexed span attribute is also racy and can be wrong. Each worker needs its own err variable, and the counter must be atomic or updated after Wait.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 203, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Startup index watch cursor skips writes made during the build\", \"body\": \"build returns the resource version of the list snapshot and documents that watchers must apply every event after that RV, but init discards both return values and only then calls WatchWriteEvents. That helper records the latest RV at call time and the SQL poller emits only history rows after that cursor. With a long startup build \u2014 the path this PR moved onto process start \u2014 and with namespaces built in parallel, an index finished early misses every write committed after its list and before the slowest build finishes. Those writes are never replayed, so the search index stays permanently stale. The watch must start from each build's returned RV (or from the RV captured before listing), not from a single cursor taken after all builds.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 209, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Search watch goroutine panics when the event channel closes\", \"body\": \"After index build, init starts a goroutine that does v := <-events and always calls handleEvent. watchctx is context.Background(), not the server's cancellable context, so server.Stop cannot stop it. SQL WatchWriteEvents closes the channel when the backend stops, and server.Stop calls lifecycle.Stop (the SQL backend implements LifecycleHooks) before cancelling the server context. A closed channel yields a nil event; handleEvent immediately reads evt.Type and panics, crashing the process. Because Init now always runs from NewResourceServer, every storage-server shutdown hits this. The loop must exit on !ok and must use the server context. The same unbounded read exists in initWatcher.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Failed constructor Init leaks watchers and never cancels its context\", \"body\": \"NewResourceServer calls s.Init and, on error, returns nil without s.cancel() or Stop. Init can already have run lifecycle.Init (opening the DB) and search.init, which starts the background WatchWriteEvents poller and the handleEvent goroutine, before a later step such as initWatcher fails. Callers only receive the error, so they have no server handle to Stop, the cancellable context is abandoned, and those goroutines run until process exit. On the search-watch path a later backend stop then panics, as described above. The error path needs to cancel and stop anything Init already started before returning.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 310, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Server watch now starts only after the full index build\", \"body\": \"Init used to call initWatcher before search.init. It now builds every search index first and only then starts the server broadcaster's WatchWriteEvents. That poller does not replay history; it starts at whatever the latest RV is when it is called. Writes committed during the startup index build (other HA replicas; WatchWriteEvents is documented to observe remote writes) are therefore never pushed to the broadcaster. A client that reconnects with Since set to the last RV it saw misses those events. Previously the broadcaster poller was already running for the whole index build, so those events were captured. Start the server watcher before the long index build, or replay from the RV observed before the build.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Postgres storage-server integration test is skipped instead of fixed\", \"body\": \"TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer is the integration test that constructs and runs the storage-server target. This PR makes NewResourceServer block on full unified-storage Init (DB plus index build) during that construction, then skips the test whenever GRAFANA_TEST_DB=postgres, with a TODO that it fails in Drone and works locally. CI no longer exercises storage-server startup on postgres, so a postgres-specific failure in the new eager Init path \u2014 the behavior this PR adds \u2014 will not fail the build.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 98,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "BuildIndex no longer excludes concurrent builds of the same key",
+   "body": "BuildIndex used to hold cacheMu for the whole build, which serialized bleve.New and cache publication. The lock is now taken only to publish b.cache[key] at the end, and nothing single-flights a key. getOrCreateIndex still does GetIndex then build with no per-key lock, so two searches or watch events for a missing namespace (indexes below InitMinCount, or any key created after startup) both pass the cache miss and call BuildIndex together. For file indexes both call bleve.New on the same directory and race the index files; for memory indexes both succeed. The slower build then overwrites b.cache[key], so the cached index can be the staler one, the other index is leaked and never closed, and callers that already received the losing index keep searching a copy that will not receive later watch updates."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Parallel index init races on shared err and counter",
+   "body": "init now actually builds many namespaces at once (errgroup plus the BuildIndex lock removal). Every worker does totalBatchesIndexed++ and err = s.build(...) on the same outer variables with no mutex or atomic. That is a data race: a failed build can return another worker's nil error, so group.Wait can succeed and the process starts with a missing index, or a successful worker can return another worker's error and fail startup. The namespaced_indexed span attribute is also racy and can be wrong. Each worker needs its own err variable, and the counter must be atomic or updated after Wait."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 203,
+   "severity": "high",
+   "category": "data",
+   "title": "Startup index watch cursor skips writes made during the build",
+   "body": "build returns the resource version of the list snapshot and documents that watchers must apply every event after that RV, but init discards both return values and only then calls WatchWriteEvents. That helper records the latest RV at call time and the SQL poller emits only history rows after that cursor. With a long startup build \u2014 the path this PR moved onto process start \u2014 and with namespaces built in parallel, an index finished early misses every write committed after its list and before the slowest build finishes. Those writes are never replayed, so the search index stays permanently stale. The watch must start from each build's returned RV (or from the RV captured before listing), not from a single cursor taken after all builds."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 209,
+   "severity": "high",
+   "category": "bug",
+   "title": "Search watch goroutine panics when the event channel closes",
+   "body": "After index build, init starts a goroutine that does v := <-events and always calls handleEvent. watchctx is context.Background(), not the server's cancellable context, so server.Stop cannot stop it. SQL WatchWriteEvents closes the channel when the backend stops, and server.Stop calls lifecycle.Stop (the SQL backend implements LifecycleHooks) before cancelling the server context. A closed channel yields a nil event; handleEvent immediately reads evt.Type and panics, crashing the process. Because Init now always runs from NewResourceServer, every storage-server shutdown hits this. The loop must exit on !ok and must use the server context. The same unbounded read exists in initWatcher."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Failed constructor Init leaks watchers and never cancels its context",
+   "body": "NewResourceServer calls s.Init and, on error, returns nil without s.cancel() or Stop. Init can already have run lifecycle.Init (opening the DB) and search.init, which starts the background WatchWriteEvents poller and the handleEvent goroutine, before a later step such as initWatcher fails. Callers only receive the error, so they have no server handle to Stop, the cancellable context is abandoned, and those goroutines run until process exit. On the search-watch path a later backend stop then panics, as described above. The error path needs to cancel and stop anything Init already started before returning."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 310,
+   "severity": "medium",
+   "category": "data",
+   "title": "Server watch now starts only after the full index build",
+   "body": "Init used to call initWatcher before search.init. It now builds every search index first and only then starts the server broadcaster's WatchWriteEvents. That poller does not replay history; it starts at whatever the latest RV is when it is called. Writes committed during the startup index build (other HA replicas; WatchWriteEvents is documented to observe remote writes) are therefore never pushed to the broadcaster. A client that reconnects with Since set to the last RV it saw misses those events. Previously the broadcaster poller was already running for the whole index build, so those events were captured. Start the server watcher before the long index build, or replay from the RV observed before the build."
+  },
+  {
+   "index": 6,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Postgres storage-server integration test is skipped instead of fixed",
+   "body": "TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer is the integration test that constructs and runs the storage-server target. This PR makes NewResourceServer block on full unified-storage Init (DB plus index build) during that construction, then skips the test whenever GRAFANA_TEST_DB=postgres, with a TODO that it fails in Drone and works locally. CI no longer exercises storage-server startup on postgres, so a postgres-specific failure in the new eager Init path \u2014 the behavior this PR adds \u2014 will not fail the build."
+  }
+ ],
+ "finding_count": 7
+}

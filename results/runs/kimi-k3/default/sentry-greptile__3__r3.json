@@ -1,0 +1,131 @@
+{
+ "run_id": "kimi-k3__default__sentry-greptile__3__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry-greptile__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+ "repeat": 3,
+ "started_at": "2026-10-18T13:55:25Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 88660,
+  "sha": "d62ec561fe1b4a7e",
+  "patch_only": [
+   "sentry-repo",
+   "src/sentry/search/events/datasets/discover.py",
+   "src/sentry/testutils/factories.py",
+   "tests/snuba/api/endpoints/test_organization_events_stats.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 20494,
+    "output": 17934,
+    "reasoning": 16864,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 716360,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4635,
+   "raw_usage": {
+    "completion_tokens": 17934,
+    "prompt_tokens": 20494,
+    "total_tokens": 38428,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 16864,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T13:55:25Z",
+   "first_chunk_ms": 5642,
+   "first_text_ms": 680658,
+   "response_id": "chatcmpl-mkibseufuuefxkbcrv4gkiayl7eaoow34d7ctafunjo4pget7ufa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 20494,
+  "output": 17934,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 16864
+ },
+ "cost_reported": null,
+ "latency_ms": 716360,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"sentry-repo\", \"line\": 1, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Accidental nested git submodule of the repo itself committed\", \"body\": \"This PR adds a file `sentry-repo` containing a gitlink (`Subproject commit a5d29095...` \u2014 the base commit of this same repository) with no corresponding `.gitmodules` entry. This is clearly an accidental artifact of local testing: any checkout flow that initializes submodules will fail with `fatal: No url found for submodule path 'sentry-repo' in .gitmodules`, and the stray gitlink pollutes the tree. It should be removed from the commit.\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 220, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Upsampling eligibility check uses outer `dataset`/request query instead of the scoped dataset and effective query\", \"body\": \"Inside `_get_event_stats`, `is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request)` passes `dataset` \u2014 the closure variable chosen once in `get()` \u2014 instead of the `scoped_dataset` argument that is actually queried, and the helper's `_is_error_focused_query` inspects `request.GET['query']` rather than the `query` argument passed into `_get_event_stats`. In the dashboard-widget split path (`get_event_stats_factory`), which only runs when the outer dataset is `metrics_performance`/`metrics_enhanced_performance`, `_should_apply_sample_weight_transform` therefore always returns False, so the errors-only subquery (`(<query>) AND !event.type:transaction` run against the discover dataset) is never upsampled: allowlisted projects silently get raw counts instead of sample-weighted counts there. Conversely, any future caller that swaps `scoped_dataset` or rewrites `query` (the split path already does both) gets a transform decision computed against the wrong dataset and wrong query text. The check should use `scoped_dataset` and the effective `query`.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 137, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Substring match for 'event.type:error' also matches negations and quoted strings\", \"body\": \"`_is_error_focused_query` does a raw substring test: `\\\"event.type:error\\\" in query`. This also matches negated filters such as `!event.type:error` (a query that explicitly excludes errors) and quoted search values like `message:\\\"event.type:error\\\"`, and it treats mixed queries like `event.type:error OR event.type:transaction` as purely error-focused. For such discover queries on fully allowlisted projects, `count()` is rewritten to `upsampled_count()` (sum of sample_weight) even though the result set contains non-error events that have no sample_weight, so the returned counts are NULL or undercounted relative to the real totals. The check should parse the query or at minimum reject matches that are negated or inside quotes.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1046, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"upsampled_count drops rows with NULL sample_weight, silently undercounting\", \"body\": \"The new `upsampled_count` aggregate is `toInt64(sum(sample_weight))`. ClickHouse `sum()` ignores NULLs, so any error row whose `sample_weight` is NULL contributes nothing at all \u2014 not even 1. That covers errors ingested before a project was added to the `issues.client_error_sampling.project_allowlist` (still inside retention) and errors stored without an `error_sampling.client_sample_rate` context \u2014 the PR's own test-factory change only sets `sample_rate` when that context is present, demonstrating such rows exist. The result is that upsampled counts for allowlisted projects can be lower than the true event count, with no indication to the user. Wrapping the column, e.g. `sum(ifNull(sample_weight, 1))`, would make unsampled rows count as 1.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 67, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Cache-invalidation helper is never called, so allowlist changes are stale for up to 60s with no escape hatch\", \"body\": \"`invalidate_upsampling_cache` is added with a docstring saying it 'should be called when the allowlist configuration changes', but nothing in this PR or elsewhere calls it \u2014 there is no hook on the `issues.client_error_sampling.project_allowlist` option. As shipped, edits to the allowlist take up to the 60-second cache TTL to take effect and there is no way to force invalidation, while the dead function implies an invalidation path that does not exist. Either wire it into the option-change path or remove it.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "sentry-repo",
+   "line": 1,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Accidental nested git submodule of the repo itself committed",
+   "body": "This PR adds a file `sentry-repo` containing a gitlink (`Subproject commit a5d29095...` \u2014 the base commit of this same repository) with no corresponding `.gitmodules` entry. This is clearly an accidental artifact of local testing: any checkout flow that initializes submodules will fail with `fatal: No url found for submodule path 'sentry-repo' in .gitmodules`, and the stray gitlink pollutes the tree. It should be removed from the commit."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 220,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Upsampling eligibility check uses outer `dataset`/request query instead of the scoped dataset and effective query",
+   "body": "Inside `_get_event_stats`, `is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request)` passes `dataset` \u2014 the closure variable chosen once in `get()` \u2014 instead of the `scoped_dataset` argument that is actually queried, and the helper's `_is_error_focused_query` inspects `request.GET['query']` rather than the `query` argument passed into `_get_event_stats`. In the dashboard-widget split path (`get_event_stats_factory`), which only runs when the outer dataset is `metrics_performance`/`metrics_enhanced_performance`, `_should_apply_sample_weight_transform` therefore always returns False, so the errors-only subquery (`(<query>) AND !event.type:transaction` run against the discover dataset) is never upsampled: allowlisted projects silently get raw counts instead of sample-weighted counts there. Conversely, any future caller that swaps `scoped_dataset` or rewrites `query` (the split path already does both) gets a transform decision computed against the wrong dataset and wrong query text. The check should use `scoped_dataset` and the effective `query`."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 137,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Substring match for 'event.type:error' also matches negations and quoted strings",
+   "body": "`_is_error_focused_query` does a raw substring test: `\"event.type:error\" in query`. This also matches negated filters such as `!event.type:error` (a query that explicitly excludes errors) and quoted search values like `message:\"event.type:error\"`, and it treats mixed queries like `event.type:error OR event.type:transaction` as purely error-focused. For such discover queries on fully allowlisted projects, `count()` is rewritten to `upsampled_count()` (sum of sample_weight) even though the result set contains non-error events that have no sample_weight, so the returned counts are NULL or undercounted relative to the real totals. The check should parse the query or at minimum reject matches that are negated or inside quotes."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1046,
+   "severity": "medium",
+   "category": "data",
+   "title": "upsampled_count drops rows with NULL sample_weight, silently undercounting",
+   "body": "The new `upsampled_count` aggregate is `toInt64(sum(sample_weight))`. ClickHouse `sum()` ignores NULLs, so any error row whose `sample_weight` is NULL contributes nothing at all \u2014 not even 1. That covers errors ingested before a project was added to the `issues.client_error_sampling.project_allowlist` (still inside retention) and errors stored without an `error_sampling.client_sample_rate` context \u2014 the PR's own test-factory change only sets `sample_rate` when that context is present, demonstrating such rows exist. The result is that upsampled counts for allowlisted projects can be lower than the true event count, with no indication to the user. Wrapping the column, e.g. `sum(ifNull(sample_weight, 1))`, would make unsampled rows count as 1."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 67,
+   "severity": "low",
+   "category": "bug",
+   "title": "Cache-invalidation helper is never called, so allowlist changes are stale for up to 60s with no escape hatch",
+   "body": "`invalidate_upsampling_cache` is added with a docstring saying it 'should be called when the allowlist configuration changes', but nothing in this PR or elsewhere calls it \u2014 there is no hook on the `issues.client_error_sampling.project_allowlist` option. As shipped, edits to the allowlist take up to the 60-second cache TTL to take effect and there is no way to force invalidation, while the dead function implies an invalidation path that does not exist. Either wire it into the option-change path or remove it."
+  }
+ ],
+ "finding_count": 5
+}

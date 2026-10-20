@@ -1,0 +1,162 @@
+{
+ "run_id": "minimax-m3__low__grafana__79265__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:39:30Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29614,
+    "output": 12756,
+    "reasoning": 11399,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02421906,
+   "latency_ms": 49568,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5958,
+   "raw_usage": {
+    "completion_tokens": 12756,
+    "prompt_tokens": 30075,
+    "total_tokens": 42831,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 11399,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.02421906,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02421906,
+     "upstream_inference_prompt_cost": 0.00891186,
+     "upstream_inference_completions_cost": 0.0153072
+    }
+   },
+   "started_at": "2026-10-17T20:39:30Z",
+   "first_chunk_ms": 1889,
+   "first_text_ms": 45044,
+   "response_id": "gen-1792269570-7pX652IcXMYcVzQj6rRI",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29614,
+  "output": 12756,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 11399
+ },
+ "cost_reported": 0.02421906,
+ "latency_ms": 49568,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 110, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Device limit can be exceeded under concurrent load (TOCTOU)\", \"body\": \"In CreateOrUpdateDevice, the active device count is read with CountDevices and then, based on that single read, either an UPDATE or an INSERT path is taken. There is no row-level lock, advisory lock, or transactional serialization between the count and the subsequent write. Under concurrent requests from different device IDs, two goroutines can both observe count == limit-1, both fall through to the INSERT path, and the resulting row count exceeds the configured AnonymousDeviceLimit. The whole point of this PR is the limit; it must hold under concurrency. Fix by serializing the check+write (e.g. transaction with SELECT ... FOR UPDATE on a sentinel row, an advisory lock, or pushing the limit enforcement into a single atomic SQL statement).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Anonymous auth now blocks on DB write and request context cancellation\", \"body\": \"Previously TagDevice ran in a goroutine on a fresh context.WithTimeout(context.Background(), 2*time.Minute) so anonymous authentication never waited on, nor could be aborted by, the DB. The new code calls TagDevice(ctx, ...) synchronously, using the request context. Consequences: (1) every anonymous auth now incurs at least one DB round-trip (CountDevices, plus UPDATE or INSERT) before the identity is returned, (2) if the client disconnects mid-request the request context is cancelled and the tag DB write fails with context.Canceled, (3) any DB slowness or transient error directly delays/fails anonymous logins. The goroutine-and-detached-context design existed precisely to decouple auth from the side-effect DB write. The limit check needed to make auth decisions could be done as a separate read-only query while still keeping the write detached; or the limit check could run in the goroutine and short-circuit a follow-up call.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Panic recovery was removed from the anonymous tag path\", \"body\": \"The previous goroutine wrapped the TagDevice call in `defer func() { if err := recover(); err != nil { a.log.Warn(...) } }()`. The new synchronous implementation has no panic recovery, so any panic in tagDeviceUI, CreateOrUpdateDevice, or a sqlstore helper will now propagate out of Anonymous.Authenticate and into the request handler. Panics from DB drivers/serializers are not common but they do happen, and losing this safety net in the auth hot path is a regression in robustness.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 78, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Returning devices whose entry is expired are wrongly rejected as 'limit reached'\", \"body\": \"updateDevice issues `UPDATE anon_device SET ... WHERE device_id = ? AND updated_at BETWEEN ? AND ?`, where the BETWEEN range is `device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration)` to `device.UpdatedAt.UTC().Add(time.Minute)` (i.e. the last 30 days). CountDevices uses the same window, so any device whose updated_at is older than 30 days is NOT counted in the active device count. But the UPDATE WHERE clause filters out that exact row, returning 0 rowsAffected and surfacing ErrDeviceLimitReached. Effect: a returning user whose anon_device row is between 30 and 61 days old (the cleanup interval is 61 days) is denied authentication even though, by the counting rule, there is 'room' for them. The intent of the limit appears to be 'only NEW device_ids are limited; existing device_ids are always updatable'. Match on device_id alone, or look the device up first, before deciding to reject.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Race condition between count check and insert is not exercised\", \"body\": \"TestIntegrationBeyondDeviceLimit calls CreateOrUpdateDevice twice sequentially and checks the second one errors. The TOCTOU race between CountDevices and the subsequent INSERT (which can let the limit be exceeded under concurrency) is not covered. Add a test that fans out many concurrent CreateOrUpdateDevice calls with distinct DeviceIDs against a small deviceLimit and asserts the final CountDevices is <= deviceLimit.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Returning-device behavior at the limit and expired-device behavior are untested\", \"body\": \"Two important behaviors of the new limit are not covered: (1) an existing device whose ID is already in the table should still be updatable when CountDevices == deviceLimit (the happy-path 'returning user' case), and (2) a device whose updated_at is older than the 30-day window but whose row has not yet been cleaned up should still be allowed back. Case (2) currently returns ErrDeviceLimitReached (see related bug finding) and has no test to catch it. Add tests for both scenarios.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"medium\", \"category\": \"doc_defect\", \"title\": \"New auth.anonymous.device_limit option has no documentation update\", \"body\": \"The PR introduces a new user-facing configuration option `auth.anonymous.device_limit` (read in readAuthSettings) and surfaces it to the frontend as `anonymousDeviceLimit` / `AnonymousDeviceLimit`. The PR description leaves the docs checklist unchecked and the diff contains no documentation changes (no conf/defaults.ini updates, no What's New entry, no docs/ changes). Operators have no way to learn the option exists, its semantics, the default (0 = unlimited), or the behavior when the limit is reached.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 110,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Device limit can be exceeded under concurrent load (TOCTOU)",
+   "body": "In CreateOrUpdateDevice, the active device count is read with CountDevices and then, based on that single read, either an UPDATE or an INSERT path is taken. There is no row-level lock, advisory lock, or transactional serialization between the count and the subsequent write. Under concurrent requests from different device IDs, two goroutines can both observe count == limit-1, both fall through to the INSERT path, and the resulting row count exceeds the configured AnonymousDeviceLimit. The whole point of this PR is the limit; it must hold under concurrency. Fix by serializing the check+write (e.g. transaction with SELECT ... FOR UPDATE on a sentinel row, an advisory lock, or pushing the limit enforcement into a single atomic SQL statement)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "high",
+   "category": "perf",
+   "title": "Anonymous auth now blocks on DB write and request context cancellation",
+   "body": "Previously TagDevice ran in a goroutine on a fresh context.WithTimeout(context.Background(), 2*time.Minute) so anonymous authentication never waited on, nor could be aborted by, the DB. The new code calls TagDevice(ctx, ...) synchronously, using the request context. Consequences: (1) every anonymous auth now incurs at least one DB round-trip (CountDevices, plus UPDATE or INSERT) before the identity is returned, (2) if the client disconnects mid-request the request context is cancelled and the tag DB write fails with context.Canceled, (3) any DB slowness or transient error directly delays/fails anonymous logins. The goroutine-and-detached-context design existed precisely to decouple auth from the side-effect DB write. The limit check needed to make auth decisions could be done as a separate read-only query while still keeping the write detached; or the limit check could run in the goroutine and short-circuit a follow-up call."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Panic recovery was removed from the anonymous tag path",
+   "body": "The previous goroutine wrapped the TagDevice call in `defer func() { if err := recover(); err != nil { a.log.Warn(...) } }()`. The new synchronous implementation has no panic recovery, so any panic in tagDeviceUI, CreateOrUpdateDevice, or a sqlstore helper will now propagate out of Anonymous.Authenticate and into the request handler. Panics from DB drivers/serializers are not common but they do happen, and losing this safety net in the auth hot path is a regression in robustness."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 78,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Returning devices whose entry is expired are wrongly rejected as 'limit reached'",
+   "body": "updateDevice issues `UPDATE anon_device SET ... WHERE device_id = ? AND updated_at BETWEEN ? AND ?`, where the BETWEEN range is `device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration)` to `device.UpdatedAt.UTC().Add(time.Minute)` (i.e. the last 30 days). CountDevices uses the same window, so any device whose updated_at is older than 30 days is NOT counted in the active device count. But the UPDATE WHERE clause filters out that exact row, returning 0 rowsAffected and surfacing ErrDeviceLimitReached. Effect: a returning user whose anon_device row is between 30 and 61 days old (the cleanup interval is 61 days) is denied authentication even though, by the counting rule, there is 'room' for them. The intent of the limit appears to be 'only NEW device_ids are limited; existing device_ids are always updatable'. Match on device_id alone, or look the device up first, before deciding to reject."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Race condition between count check and insert is not exercised",
+   "body": "TestIntegrationBeyondDeviceLimit calls CreateOrUpdateDevice twice sequentially and checks the second one errors. The TOCTOU race between CountDevices and the subsequent INSERT (which can let the limit be exceeded under concurrency) is not covered. Add a test that fans out many concurrent CreateOrUpdateDevice calls with distinct DeviceIDs against a small deviceLimit and asserts the final CountDevices is <= deviceLimit."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Returning-device behavior at the limit and expired-device behavior are untested",
+   "body": "Two important behaviors of the new limit are not covered: (1) an existing device whose ID is already in the table should still be updatable when CountDevices == deviceLimit (the happy-path 'returning user' case), and (2) a device whose updated_at is older than the 30-day window but whose row has not yet been cleaned up should still be allowed back. Case (2) currently returns ErrDeviceLimitReached (see related bug finding) and has no test to catch it. Add tests for both scenarios."
+  },
+  {
+   "index": 6,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "New auth.anonymous.device_limit option has no documentation update",
+   "body": "The PR introduces a new user-facing configuration option `auth.anonymous.device_limit` (read in readAuthSettings) and surfaces it to the frontend as `anonymousDeviceLimit` / `AnonymousDeviceLimit`. The PR description leaves the docs checklist unchecked and the diff contains no documentation changes (no conf/defaults.ini updates, no What's New entry, no docs/ changes). Operators have no way to learn the option exists, its semantics, the default (0 = unlimited), or the behavior when the limit is reached."
+  }
+ ],
+ "finding_count": 7
+}

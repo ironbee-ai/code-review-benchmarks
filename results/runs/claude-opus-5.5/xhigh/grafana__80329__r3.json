@@ -1,0 +1,129 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__grafana__80329__r3",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__80329",
+ "golden_url": "https://github.com/grafana/grafana/pull/80329",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:54:20Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 65677,
+  "sha": "8d83e49cfc512854",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 32543,
+    "output": 5927,
+    "reasoning": 4415,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 57377,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4136,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 32543,
+    "output_tokens": 5927,
+    "output_tokens_details": {
+     "thinking_tokens": 4415
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:54:20Z",
+   "first_chunk_ms": 4037,
+   "first_text_ms": 44187,
+   "response_id": "msg_bdrk_ysuna65tlpinsqxg6i5xj4yazqxvmatgamfgwkdu55rj7ytpf5hq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 32543,
+  "output": 5927,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4415
+ },
+ "cost_reported": null,
+ "latency_ms": 57377,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 534, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Debug logging left in at Error level, dumping full ID lists on every batch\", \"body\": \"Every batch in the three cleanup loops logs twice with `r.log.Error` (lines 534, 537, 554, 557, 576, 579), including the complete `ids` slice and the SQL condition. This happens on every run even when nothing is deleted (count 0), so each cleanup cycle emits at least 6+ error-level log lines per annotation type. With a large batch size (the new test uses 32767) each line carries tens of thousands of IDs.\\n\\nThe `\\\"err\\\", err` field on the 'to clean' lines is always nil at that point, which suggests these are leftover debug statements. In production this floods error logs, triggers log-based error alerting and wastes CPU and I/O. They should be removed or lowered to Debug without the ID payload.\"}, {\"file\": \"pkg/services/cleanup/cleanup.go\", \"line\": 77, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cleanup interval changed from 10 minutes to 1 minute (unrelated, likely debug leftover)\", \"body\": \"The ticker for the whole CleanUpService was changed from 10 minutes to 1 minute. The PR description does not mention or justify this.\\n\\nThe interval is coupled to `clean()`'s 9-minute timeout, which was sized to fit inside the 10-minute tick. With a 1-minute tick, a long-running cleanup is followed immediately by the buffered tick, so cleanup can run almost continuously.\\n\\nThe change also affects every cleanup job, not just annotations: temp files, snapshots, dashboard versions, images, invites, short URLs and query history. They now run 10x more often on every Grafana instance (there is no server lock here), which significantly increases database load in HA setups. This should be reverted.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 615, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Bound-parameter IN list can exceed MySQL/Postgres placeholder limits for large batch sizes\", \"body\": \"The old implementation used a subquery with no bind parameters. The new `deleteByIDs` binds one `?` per ID on every non-SQLite database. MySQL and Postgres both cap prepared statement placeholders at 65535.\\n\\nAny user who sets `annotation_cleanup_job_batch_size` above 65535 will now get a 'too many placeholders' error on every cleanup run, and annotations will stop being cleaned. Before this change, such a setting worked.\\n\\nOnly SQLite has the inline-values fallback. The batch should be chunked per dialect limit, or the IDs inlined as integers for all dialects (they are int64, so inlining is safe).\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 611, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Quadratic string building for inline ID list\", \"body\": \"On the SQLite large-batch path, the IN list is built with `values = fmt.Sprintf(\\\"%s, %d\\\", values, v)` in a loop. Each iteration copies the whole accumulated string, so building N IDs is O(N\u00b2).\\n\\nWith the batch size used in the new test (32767 IDs, roughly 200KB of text), this copies several gigabytes and creates heavy GC pressure on every batch. A `strings.Builder` or `strings.Join` over `strconv.FormatInt` results makes this linear.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/cleanup_test.go\", \"line\": 120, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Per-subtest cleanup registered after data creation, so failures leak rows into later subtests\", \"body\": \"`t.Cleanup` that deletes annotation and annotation_tag rows is registered only after `createTestAnnotations` and the two count assertions. All of these use `require`, which calls `FailNow`.\\n\\nIf insertion or an initial count assertion fails, or if a previous subtest left rows behind, the cleanup is never registered. The rows then remain in the shared DB. Every subsequent subtest then fails its initial count assertion and does not register cleanup either, which cascades failures and hides the original cause. Registering `t.Cleanup` before inserting data avoids this.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 534,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Debug logging left in at Error level, dumping full ID lists on every batch",
+   "body": "Every batch in the three cleanup loops logs twice with `r.log.Error` (lines 534, 537, 554, 557, 576, 579), including the complete `ids` slice and the SQL condition. This happens on every run even when nothing is deleted (count 0), so each cleanup cycle emits at least 6+ error-level log lines per annotation type. With a large batch size (the new test uses 32767) each line carries tens of thousands of IDs.\n\nThe `\"err\", err` field on the 'to clean' lines is always nil at that point, which suggests these are leftover debug statements. In production this floods error logs, triggers log-based error alerting and wastes CPU and I/O. They should be removed or lowered to Debug without the ID payload."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/cleanup/cleanup.go",
+   "line": 77,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cleanup interval changed from 10 minutes to 1 minute (unrelated, likely debug leftover)",
+   "body": "The ticker for the whole CleanUpService was changed from 10 minutes to 1 minute. The PR description does not mention or justify this.\n\nThe interval is coupled to `clean()`'s 9-minute timeout, which was sized to fit inside the 10-minute tick. With a 1-minute tick, a long-running cleanup is followed immediately by the buffered tick, so cleanup can run almost continuously.\n\nThe change also affects every cleanup job, not just annotations: temp files, snapshots, dashboard versions, images, invites, short URLs and query history. They now run 10x more often on every Grafana instance (there is no server lock here), which significantly increases database load in HA setups. This should be reverted."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 615,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Bound-parameter IN list can exceed MySQL/Postgres placeholder limits for large batch sizes",
+   "body": "The old implementation used a subquery with no bind parameters. The new `deleteByIDs` binds one `?` per ID on every non-SQLite database. MySQL and Postgres both cap prepared statement placeholders at 65535.\n\nAny user who sets `annotation_cleanup_job_batch_size` above 65535 will now get a 'too many placeholders' error on every cleanup run, and annotations will stop being cleaned. Before this change, such a setting worked.\n\nOnly SQLite has the inline-values fallback. The batch should be chunked per dialect limit, or the IDs inlined as integers for all dialects (they are int64, so inlining is safe)."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 611,
+   "severity": "low",
+   "category": "perf",
+   "title": "Quadratic string building for inline ID list",
+   "body": "On the SQLite large-batch path, the IN list is built with `values = fmt.Sprintf(\"%s, %d\", values, v)` in a loop. Each iteration copies the whole accumulated string, so building N IDs is O(N\u00b2).\n\nWith the batch size used in the new test (32767 IDs, roughly 200KB of text), this copies several gigabytes and creates heavy GC pressure on every batch. A `strings.Builder` or `strings.Join` over `strconv.FormatInt` results makes this linear."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/annotations/annotationsimpl/cleanup_test.go",
+   "line": 120,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Per-subtest cleanup registered after data creation, so failures leak rows into later subtests",
+   "body": "`t.Cleanup` that deletes annotation and annotation_tag rows is registered only after `createTestAnnotations` and the two count assertions. All of these use `require`, which calls `FailNow`.\n\nIf insertion or an initial count assertion fails, or if a previous subtest left rows behind, the cleanup is never registered. The rows then remain in the shared DB. Every subsequent subtest then fails its initial count assertion and does not register cleanup either, which cascades failures and hides the original cause. Registering `t.Cleanup` before inserting data avoids this."
+  }
+ ],
+ "finding_count": 5
+}

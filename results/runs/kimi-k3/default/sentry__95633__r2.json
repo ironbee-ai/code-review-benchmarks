@@ -1,0 +1,137 @@
+{
+ "run_id": "kimi-k3__default__sentry__95633__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T22:42:23Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30263,
+    "output": 23564,
+    "reasoning": 22193,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 932128,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6474,
+   "raw_usage": {
+    "completion_tokens": 23564,
+    "prompt_tokens": 30263,
+    "total_tokens": 53827,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 22193,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T22:42:23Z",
+   "first_chunk_ms": 6584,
+   "first_text_ms": 889603,
+   "response_id": "chatcmpl-vsazh43hwvkrkhspy5dhp6mc5tgolcohslzzciji3pw4ve75ds3a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30263,
+  "output": 23564,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 22193
+ },
+ "cost_reported": null,
+ "latency_ms": 932128,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Strategy close() destroys the factory-owned shared queue pool, breaking the consumer after any rebalance\", \"body\": \"SimpleQueueProcessingStrategy.close() (also reached via terminate() and join()) calls self.queue_pool.shutdown(), but the FixedQueuePool is owned by ResultsStrategyFactory: it is created once in the factory's __init__ and the same instance is passed to every strategy produced by create_with_partitions(). Arroyo's StreamProcessor calls close()+join() on the strategy at every partition revocation/rebalance and then builds a new strategy from the same factory. After the first rebalance the pool's queues have been shut down (queue.Queue.shutdown()) and all worker threads have exited, so every subsequent queue_pool.submit() raises queue.ShutDown from work_queue.put(); that exception is swallowed by SimpleQueueProcessingStrategy.submit's except clause, which marks the offset complete so it is committed even though the message was never processed. Net effect: after any routine consumer-group event (deploy, scaling, assignment change) a consumer in thread-queue-parallel mode silently drops all results until the process is restarted. The pool lifecycle should belong only to the factory (strategy.close() should stop just its own commit thread), or the factory should create a fresh pool in create_with_partitions().\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 320, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"submit()'s catch-all marks offsets complete for messages that were never processed\", \"body\": \"In SimpleQueueProcessingStrategy.submit, the broad `except Exception` handler records the message's offset via add_offset + complete_offset, making it committable even though the message was never handed to a worker. Skipping is intentional for undecodable payloads, but those are already handled by decode_payload returning None; this catch-all also fires for real failures \u2014 grouping_fn raising, or work_queue.put raising queue.ShutDown once the pool has been shut down (after a rebalance, or during shutdown with in-flight submits). In those cases the offset is committed and the result is silently lost instead of being left uncommitted so it can be re-consumed. Only the intentional skip path (decoder returned None) should complete the offset; unexpected exceptions from grouping/submission should propagate or leave the offset outstanding so the message is retried.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Queues are unbounded, so the advertised 'natural backpressure' does not exist\", \"body\": \"FixedQueuePool creates plain queue.Queue() instances with no maxsize, so they are unbounded. The class and strategy docstrings advertise 'Natural backpressure when queues fill up', but an unbounded queue never fills: if workers fall behind on slow results (the exact problem this PR is meant to mitigate), submit() never blocks and the consumer keeps reading from Kafka and buffering WorkItem objects \u2014 each retaining the full original Kafka message \u2014 in memory without limit. Under sustained lag this grows memory unboundedly and can OOM the consumer, and it defeats the offset-based flow control since offsets are only committed after processing. Give the queues a maxsize (or otherwise cap in-flight items) so put() blocks and provides real backpressure.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 234, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"FixedQueuePool.shutdown sets worker shutdown flags before draining, so queued items are abandoned\", \"body\": \"FixedQueuePool.shutdown() first sets worker.shutdown = True for every worker and only then calls q.shutdown(immediate=False). OrderedQueueWorker.run loops on `while not self.shutdown`, so a worker that finishes its current item after the flag is set exits its loop immediately, abandoning any items still in its queue \u2014 the immediate=False 'drain remaining items' semantics never take effect because no worker is left to read them. Those messages were already fetched from Kafka; their offsets simply never get committed and they will be reprocessed on restart, but the shutdown is not actually graceful as written. Shut the queues down first (immediate=False) so workers drain and then exit via queue.ShutDown, and only use the flag as a backstop.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts the opposite of its stated behavior and is flaky\", \"body\": \"test_thread_queue_parallel_error_handling asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`, i.e. that nothing was committed. Its docstring says it verifies that 'errors in processing don't block offset commits', and the implementation under test completes the offset in the worker's finally block even when result_processor raises, so the commit thread will commit offset 102 on its next ~1s tick. The test only passes because it usually finishes before the commit thread's first 1s tick; under a slow CI worker the commit can land inside the polling window (which sleeps an extra 0.2s after processing completes) and the assertion fails intermittently, and regardless the test validates the opposite of the documented behavior. It should wait for and assert that the commit advances past both messages (offset 102) despite the processing error.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 200, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_stats_reporting races with workers draining the queue\", \"body\": \"In test_stats_reporting, the test submits 10 items to a pool whose workers process each item in microseconds, then immediately asserts stats['total_items'] > 0. Whether anything is still queued at that point is a race between the submitting thread and the three worker threads; on a fast machine the workers can drain all 10 items before get_stats() runs, making this assertion fail intermittently. The test should hold items in the queue with an explicit blocking condition in the processor before asserting non-zero depth, or drop that assertion.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "high",
+   "category": "bug",
+   "title": "Strategy close() destroys the factory-owned shared queue pool, breaking the consumer after any rebalance",
+   "body": "SimpleQueueProcessingStrategy.close() (also reached via terminate() and join()) calls self.queue_pool.shutdown(), but the FixedQueuePool is owned by ResultsStrategyFactory: it is created once in the factory's __init__ and the same instance is passed to every strategy produced by create_with_partitions(). Arroyo's StreamProcessor calls close()+join() on the strategy at every partition revocation/rebalance and then builds a new strategy from the same factory. After the first rebalance the pool's queues have been shut down (queue.Queue.shutdown()) and all worker threads have exited, so every subsequent queue_pool.submit() raises queue.ShutDown from work_queue.put(); that exception is swallowed by SimpleQueueProcessingStrategy.submit's except clause, which marks the offset complete so it is committed even though the message was never processed. Net effect: after any routine consumer-group event (deploy, scaling, assignment change) a consumer in thread-queue-parallel mode silently drops all results until the process is restarted. The pool lifecycle should belong only to the factory (strategy.close() should stop just its own commit thread), or the factory should create a fresh pool in create_with_partitions()."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 320,
+   "severity": "medium",
+   "category": "data",
+   "title": "submit()'s catch-all marks offsets complete for messages that were never processed",
+   "body": "In SimpleQueueProcessingStrategy.submit, the broad `except Exception` handler records the message's offset via add_offset + complete_offset, making it committable even though the message was never handed to a worker. Skipping is intentional for undecodable payloads, but those are already handled by decode_payload returning None; this catch-all also fires for real failures \u2014 grouping_fn raising, or work_queue.put raising queue.ShutDown once the pool has been shut down (after a rebalance, or during shutdown with in-flight submits). In those cases the offset is committed and the result is silently lost instead of being left uncommitted so it can be re-consumed. Only the intentional skip path (decoder returned None) should complete the offset; unexpected exceptions from grouping/submission should propagate or leave the offset outstanding so the message is retried."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Queues are unbounded, so the advertised 'natural backpressure' does not exist",
+   "body": "FixedQueuePool creates plain queue.Queue() instances with no maxsize, so they are unbounded. The class and strategy docstrings advertise 'Natural backpressure when queues fill up', but an unbounded queue never fills: if workers fall behind on slow results (the exact problem this PR is meant to mitigate), submit() never blocks and the consumer keeps reading from Kafka and buffering WorkItem objects \u2014 each retaining the full original Kafka message \u2014 in memory without limit. Under sustained lag this grows memory unboundedly and can OOM the consumer, and it defeats the offset-based flow control since offsets are only committed after processing. Give the queues a maxsize (or otherwise cap in-flight items) so put() blocks and provides real backpressure."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 234,
+   "severity": "low",
+   "category": "bug",
+   "title": "FixedQueuePool.shutdown sets worker shutdown flags before draining, so queued items are abandoned",
+   "body": "FixedQueuePool.shutdown() first sets worker.shutdown = True for every worker and only then calls q.shutdown(immediate=False). OrderedQueueWorker.run loops on `while not self.shutdown`, so a worker that finishes its current item after the flag is set exits its loop immediately, abandoning any items still in its queue \u2014 the immediate=False 'drain remaining items' semantics never take effect because no worker is left to read them. Those messages were already fetched from Kafka; their offsets simply never get committed and they will be reprocessed on restart, but the shutdown is not actually graceful as written. Shut the queues down first (immediate=False) so workers drain and then exit via queue.ShutDown, and only use the flag as a backstop."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts the opposite of its stated behavior and is flaky",
+   "body": "test_thread_queue_parallel_error_handling asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`, i.e. that nothing was committed. Its docstring says it verifies that 'errors in processing don't block offset commits', and the implementation under test completes the offset in the worker's finally block even when result_processor raises, so the commit thread will commit offset 102 on its next ~1s tick. The test only passes because it usually finishes before the commit thread's first 1s tick; under a slow CI worker the commit can land inside the polling window (which sleeps an extra 0.2s after processing completes) and the assertion fails intermittently, and regardless the test validates the opposite of the documented behavior. It should wait for and assert that the commit advances past both messages (offset 102) despite the processing error."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 200,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_stats_reporting races with workers draining the queue",
+   "body": "In test_stats_reporting, the test submits 10 items to a pool whose workers process each item in microseconds, then immediately asserts stats['total_items'] > 0. Whether anything is still queued at that point is a race between the submitting thread and the three worker threads; on a fast machine the workers can drain all 10 items before get_stats() runs, making this assertion fail intermittently. The test should hold items in the queue with an explicit blocking condition in the processor before asserting non-zero depth, or drop that assertion."
+  }
+ ],
+ "finding_count": 6
+}

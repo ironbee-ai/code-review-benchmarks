@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-sonnet-5__default__sentry__95633__r1",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-18T21:25:07Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 28145,
+    "reasoning": 25712,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 282198,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6783,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 28145,
+    "output_tokens_details": {
+     "thinking_tokens": 25712
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:25:07Z",
+   "first_chunk_ms": 2345,
+   "first_text_ms": 260777,
+   "response_id": "msg_bdrk_xmyec2wrs5huratdo4k24nwt24rvrxvrpchqq2d5lklo3rtlbkaa",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 28145,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 25712
+ },
+ "cost_reported": null,
+ "latency_ms": 282198,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 335, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"close()/terminate() tear down the shared, persistent FixedQueuePool, breaking processing after any rebalance\", \"body\": \"SimpleQueueProcessingStrategy.close() (line 335-338) and terminate() (line 340-342) both call self.queue_pool.shutdown(), which permanently stops all worker threads and shuts down all underlying queue.Queue objects. However, queue_pool is the SAME object that lives on ResultsStrategyFactory (created once in __init__, see result_consumer.py) and is intended to persist across the whole lifetime of the consumer process - it is only supposed to be torn down once via ResultsStrategyFactory.shutdown(). In Arroyo, create_with_partitions() is invoked on every partition assignment change (rebalance), and the previous strategy instance's close()/join() are called first. That means on the very first rebalance, the shared queue_pool's workers/queues are shut down for good, while factory.queue_pool still points at this now-dead pool. The next strategy created by create_thread_queue_parallel_worker() reuses this dead queue_pool. When submit() then calls work_queue.put(work_item) on a queue that has been shut down, queue.ShutDown is raised, caught by the broad except Exception in SimpleQueueProcessingStrategy.submit(), which force-marks the offset as added+completed without ever having it processed. The net effect: after the first rebalance, uptime results stop being processed entirely while Kafka offsets keep advancing normally (silent data loss, no lag/alerting signal).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 242, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Sequential worker joins in shutdown() can block for minutes\", \"body\": \"FixedQueuePool.shutdown() (lines 231-243) iterates over all workers sequentially and calls worker.join(timeout=5.0) for each one. With the default num_queues=20, if several workers are slow to exit (e.g. stuck in a long-running result_processor call), the overall shutdown can block for up to num_queues * 5 seconds (100s by default) before returning. Combined with the fact that this shutdown path is invoked from strategy close()/terminate() on every rebalance (see related finding), this can cause the whole consumer to stall far beyond typical graceful-shutdown/rebalance timeouts, risking forced kills by orchestration and loss of the ability to commit final offsets.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Queues are unbounded, contradicting the documented backpressure guarantee\", \"body\": \"FixedQueuePool creates each worker queue as queue.Queue() with no maxsize (line 185), yet the class docstring (around line 253, 'Natural backpressure when queues fill up') and SimpleQueueProcessingStrategy's docstring both claim backpressure is provided. Because the queues are unbounded, a single slow/stuck group can cause its queue to grow without limit while submit() keeps accepting and enqueuing new items, risking unbounded memory growth instead of the advertised backpressure. This undermines the stated goal of isolating a slow item's impact.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 132, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"Relies on Python 3.13-only queue.Queue.shutdown()/queue.ShutDown API\", \"body\": \"queue.Queue.shutdown() and the queue.ShutDown exception were only added in Python 3.13. OrderedQueueWorker.run() catches queue.ShutDown (lines 132-133, 142-143) and FixedQueuePool.shutdown() calls q.shutdown(immediate=False) (line 238) to unblock worker threads. If the project's supported/runtime Python version is older than 3.13, q.shutdown() will raise AttributeError (caught and merely logged at line 238-240), but the workers will then never receive a ShutDown signal and will remain blocked forever on work_queue.get(), so worker.join(timeout=5.0) will always time out without the thread actually stopping. This silently defeats the entire graceful-shutdown mechanism on any Python version prior to 3.13.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 344, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"join(timeout) ignores the caller-supplied timeout\", \"body\": \"SimpleQueueProcessingStrategy.join(timeout) (lines 344-345) ignores the timeout parameter entirely and always calls self.close(), which itself uses hardcoded internal timeouts (5.0s for the commit thread plus up to 5.0s per worker in queue_pool.shutdown()). Callers (e.g. Arroyo's StreamProcessor, which is configured with join_timeout) expect join() to respect the requested deadline for bounding shutdown time; ignoring it can make the strategy's shutdown take substantially longer than what was configured, breaking the ProcessingStrategy contract.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 88, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"get_committable_offsets does an O(n) scan under a lock on every tick, scaling with backlog size\", \"body\": \"get_committable_offsets() (lines 67-98) iterates offset-by-offset from last_committed+1 to max_offset while holding the per-partition lock, and this runs every second from the commit loop. If one group backlogs its queue (the exact scenario this PR intends to tolerate), the gap between last_committed and max_offset for that partition grows large, making this scan increasingly expensive and holding the partition lock longer each tick - which blocks add_offset()/complete_offset() calls from worker threads processing unrelated groups on the same partition, partially reintroducing the contention the queue-based design was meant to avoid.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1686, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test exercises strategy close()/recreate across a simulated rebalance\", \"body\": \"All of the new thread-queue-parallel tests (test_thread_queue_parallel, test_thread_queue_parallel_preserves_order, etc.) build a single strategy via factory.create_with_partitions() and only ever call factory.shutdown() at the end; none of them call consumer.close() (or terminate()) and then call factory.create_with_partitions() again to simulate a Kafka rebalance and continue processing more messages. This is exactly the scenario where the shared FixedQueuePool gets torn down by SimpleQueueProcessingStrategy.close()/terminate() (see related finding), so the test suite does not catch that the thread-queue-parallel mode becomes non-functional after the first rebalance.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "critical",
+   "category": "bug",
+   "title": "close()/terminate() tear down the shared, persistent FixedQueuePool, breaking processing after any rebalance",
+   "body": "SimpleQueueProcessingStrategy.close() (line 335-338) and terminate() (line 340-342) both call self.queue_pool.shutdown(), which permanently stops all worker threads and shuts down all underlying queue.Queue objects. However, queue_pool is the SAME object that lives on ResultsStrategyFactory (created once in __init__, see result_consumer.py) and is intended to persist across the whole lifetime of the consumer process - it is only supposed to be torn down once via ResultsStrategyFactory.shutdown(). In Arroyo, create_with_partitions() is invoked on every partition assignment change (rebalance), and the previous strategy instance's close()/join() are called first. That means on the very first rebalance, the shared queue_pool's workers/queues are shut down for good, while factory.queue_pool still points at this now-dead pool. The next strategy created by create_thread_queue_parallel_worker() reuses this dead queue_pool. When submit() then calls work_queue.put(work_item) on a queue that has been shut down, queue.ShutDown is raised, caught by the broad except Exception in SimpleQueueProcessingStrategy.submit(), which force-marks the offset as added+completed without ever having it processed. The net effect: after the first rebalance, uptime results stop being processed entirely while Kafka offsets keep advancing normally (silent data loss, no lag/alerting signal)."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 242,
+   "severity": "high",
+   "category": "perf",
+   "title": "Sequential worker joins in shutdown() can block for minutes",
+   "body": "FixedQueuePool.shutdown() (lines 231-243) iterates over all workers sequentially and calls worker.join(timeout=5.0) for each one. With the default num_queues=20, if several workers are slow to exit (e.g. stuck in a long-running result_processor call), the overall shutdown can block for up to num_queues * 5 seconds (100s by default) before returning. Combined with the fact that this shutdown path is invoked from strategy close()/terminate() on every rebalance (see related finding), this can cause the whole consumer to stall far beyond typical graceful-shutdown/rebalance timeouts, risking forced kills by orchestration and loss of the ability to commit final offsets."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Queues are unbounded, contradicting the documented backpressure guarantee",
+   "body": "FixedQueuePool creates each worker queue as queue.Queue() with no maxsize (line 185), yet the class docstring (around line 253, 'Natural backpressure when queues fill up') and SimpleQueueProcessingStrategy's docstring both claim backpressure is provided. Because the queues are unbounded, a single slow/stuck group can cause its queue to grow without limit while submit() keeps accepting and enqueuing new items, risking unbounded memory growth instead of the advertised backpressure. This undermines the stated goal of isolating a slow item's impact."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 132,
+   "severity": "medium",
+   "category": "api",
+   "title": "Relies on Python 3.13-only queue.Queue.shutdown()/queue.ShutDown API",
+   "body": "queue.Queue.shutdown() and the queue.ShutDown exception were only added in Python 3.13. OrderedQueueWorker.run() catches queue.ShutDown (lines 132-133, 142-143) and FixedQueuePool.shutdown() calls q.shutdown(immediate=False) (line 238) to unblock worker threads. If the project's supported/runtime Python version is older than 3.13, q.shutdown() will raise AttributeError (caught and merely logged at line 238-240), but the workers will then never receive a ShutDown signal and will remain blocked forever on work_queue.get(), so worker.join(timeout=5.0) will always time out without the thread actually stopping. This silently defeats the entire graceful-shutdown mechanism on any Python version prior to 3.13."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 344,
+   "severity": "medium",
+   "category": "api",
+   "title": "join(timeout) ignores the caller-supplied timeout",
+   "body": "SimpleQueueProcessingStrategy.join(timeout) (lines 344-345) ignores the timeout parameter entirely and always calls self.close(), which itself uses hardcoded internal timeouts (5.0s for the commit thread plus up to 5.0s per worker in queue_pool.shutdown()). Callers (e.g. Arroyo's StreamProcessor, which is configured with join_timeout) expect join() to respect the requested deadline for bounding shutdown time; ignoring it can make the strategy's shutdown take substantially longer than what was configured, breaking the ProcessingStrategy contract."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 88,
+   "severity": "low",
+   "category": "perf",
+   "title": "get_committable_offsets does an O(n) scan under a lock on every tick, scaling with backlog size",
+   "body": "get_committable_offsets() (lines 67-98) iterates offset-by-offset from last_committed+1 to max_offset while holding the per-partition lock, and this runs every second from the commit loop. If one group backlogs its queue (the exact scenario this PR intends to tolerate), the gap between last_committed and max_offset for that partition grows large, making this scan increasingly expensive and holding the partition lock longer each tick - which blocks add_offset()/complete_offset() calls from worker threads processing unrelated groups on the same partition, partially reintroducing the contention the queue-based design was meant to avoid."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1686,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test exercises strategy close()/recreate across a simulated rebalance",
+   "body": "All of the new thread-queue-parallel tests (test_thread_queue_parallel, test_thread_queue_parallel_preserves_order, etc.) build a single strategy via factory.create_with_partitions() and only ever call factory.shutdown() at the end; none of them call consumer.close() (or terminate()) and then call factory.create_with_partitions() again to simulate a Kafka rebalance and continue processing more messages. This is exactly the scenario where the shared FixedQueuePool gets torn down by SimpleQueueProcessingStrategy.close()/terminate() (see related finding), so the test suite does not catch that the thread-queue-parallel mode becomes non-functional after the first rebalance."
+  }
+ ],
+ "finding_count": 7
+}

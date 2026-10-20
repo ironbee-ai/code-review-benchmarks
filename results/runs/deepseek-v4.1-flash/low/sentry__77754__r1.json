@@ -1,0 +1,133 @@
+{
+ "run_id": "deepseek-v4.1-flash__low__sentry__77754__r1",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 1,
+ "started_at": "2026-10-18T18:22:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19153,
+    "output": 7945,
+    "reasoning": 7075,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.007640334,
+   "latency_ms": 36835,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 3472,
+   "raw_usage": {
+    "completion_tokens": 7945,
+    "prompt_tokens": 19281,
+    "total_tokens": 27226,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 7075,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.007640334,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.007640334,
+     "upstream_inference_prompt_cost": 0.002873334,
+     "upstream_inference_completions_cost": 0.004767
+    }
+   },
+   "started_at": "2026-10-18T18:22:57Z",
+   "first_chunk_ms": 1491,
+   "first_text_ms": 32957,
+   "response_id": "gen-1792347777-wauz27bKtLPnwjfMY5wB",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19153,
+  "output": 7945,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 7075
+ },
+ "cost_reported": 0.007640334,
+ "latency_ms": 36835,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 18, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Dataclass default for `queued` is evaluated once at import, not per instance\", \"body\": \"`queued: datetime = timezone.now()` is a plain dataclass default, so `timezone.now()` is executed a single time when the module is imported. Every `AssignmentSource` ever constructed (via `from_integration`, `from_dict`, or directly) therefore carries the same process-start timestamp instead of the moment the assignment was queued. Any staleness/TTL/dedup logic that is supposed to read `queued` will be silently wrong. This should be `field(default_factory=timezone.now)` (import `field` from dataclasses). The accompanying test `test_to_dict` only asserts `queued is not None`, so it does not catch this.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 34, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`from_dict` swallows all parse errors, silently disabling the cycle guard\", \"body\": \"`from_dict` catches `ValueError`/`TypeError` and returns `None`. Callers (`sync_assignee_outbound` at tasks/sync_assignee_outbound.py:53-56) then pass `None` into `should_sync`, which treats it as \\\"no source\\\" and proceeds with the outbound sync. If the serialized `assignment_source_dict` is ever malformed or has an unexpected key (e.g., schema drift after the `queued` datetime round-trips), the round-trip silently degrades to no guard at all, re-introducing the very sync loop this PR is meant to fix, with no log or metric to signal it. Consider logging/metrics on failure or making the failure explicit rather than silently returning None.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 28, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"`to_dict` puts a raw datetime into Celery task kwargs\", \"body\": \"`to_dict()` uses `asdict`, which returns `queued` as a `datetime` object, and `sync_group_assignee_outbound` passes this dict straight into `sync_assignee_outbound.apply_async(kwargs={...})` (integrations/utils/sync.py:136-144). Celery serializes task kwargs with JSON by default; a raw `datetime` is not JSON-serializable, so `apply_async` can raise at publish time, breaking outbound assignee sync for all integrations. Even under a pickle serializer, `from_dict` rehydrates with `cls(**input_dict)` without any type coercion, so `queued` would be a `str` after a JSON round-trip and the field's type contract is violated. `queued` is not actually used by `should_sync` (only `integration_id` is compared), so it should either be excluded from the serialized payload or explicitly (de)serialized.\"}, {\"file\": \"tests/sentry/models/test_groupassignee.py\", \"line\": 221, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test that other integrations still receive the outbound update\", \"body\": \"The PR's stated behavior is that only the originating integration is suppressed while \\\"other integrations still propagate changes outward.\\\" The new `test_assignee_sync_outbound_assign_with_matching_source_integration` only asserts the negative case (`mock_sync_assignee_outbound.assert_not_called()` for the source integration). There is no test with two linked integrations verifying that the non-source integration's outbound sync is still invoked, so a regression where the new `sync_source` guard over-suppresses (e.g., comparing wrong id) would go undetected.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Dataclass default for `queued` is evaluated once at import, not per instance",
+   "body": "`queued: datetime = timezone.now()` is a plain dataclass default, so `timezone.now()` is executed a single time when the module is imported. Every `AssignmentSource` ever constructed (via `from_integration`, `from_dict`, or directly) therefore carries the same process-start timestamp instead of the moment the assignment was queued. Any staleness/TTL/dedup logic that is supposed to read `queued` will be silently wrong. This should be `field(default_factory=timezone.now)` (import `field` from dataclasses). The accompanying test `test_to_dict` only asserts `queued is not None`, so it does not catch this."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 34,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`from_dict` swallows all parse errors, silently disabling the cycle guard",
+   "body": "`from_dict` catches `ValueError`/`TypeError` and returns `None`. Callers (`sync_assignee_outbound` at tasks/sync_assignee_outbound.py:53-56) then pass `None` into `should_sync`, which treats it as \"no source\" and proceeds with the outbound sync. If the serialized `assignment_source_dict` is ever malformed or has an unexpected key (e.g., schema drift after the `queued` datetime round-trips), the round-trip silently degrades to no guard at all, re-introducing the very sync loop this PR is meant to fix, with no log or metric to signal it. Consider logging/metrics on failure or making the failure explicit rather than silently returning None."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 28,
+   "severity": "medium",
+   "category": "data",
+   "title": "`to_dict` puts a raw datetime into Celery task kwargs",
+   "body": "`to_dict()` uses `asdict`, which returns `queued` as a `datetime` object, and `sync_group_assignee_outbound` passes this dict straight into `sync_assignee_outbound.apply_async(kwargs={...})` (integrations/utils/sync.py:136-144). Celery serializes task kwargs with JSON by default; a raw `datetime` is not JSON-serializable, so `apply_async` can raise at publish time, breaking outbound assignee sync for all integrations. Even under a pickle serializer, `from_dict` rehydrates with `cls(**input_dict)` without any type coercion, so `queued` would be a `str` after a JSON round-trip and the field's type contract is violated. `queued` is not actually used by `should_sync` (only `integration_id` is compared), so it should either be excluded from the serialized payload or explicitly (de)serialized."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/models/test_groupassignee.py",
+   "line": 221,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test that other integrations still receive the outbound update",
+   "body": "The PR's stated behavior is that only the originating integration is suppressed while \"other integrations still propagate changes outward.\" The new `test_assignee_sync_outbound_assign_with_matching_source_integration` only asserts the negative case (`mock_sync_assignee_outbound.assert_not_called()` for the source integration). There is no test with two linked integrations verifying that the non-source integration's outbound sync is still invoked, so a regression where the new `sync_source` guard over-suppresses (e.g., comparing wrong id) would go undetected."
+  }
+ ],
+ "finding_count": 4
+}

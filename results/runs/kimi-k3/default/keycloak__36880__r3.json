@@ -1,0 +1,135 @@
+{
+ "run_id": "kimi-k3__default__keycloak__36880__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "keycloak__36880",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/36880",
+ "repeat": 3,
+ "started_at": "2026-10-18T13:14:59Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 195247,
+  "sha": "333d87aa5ad74bfa",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 43954,
+    "output": 43998,
+    "reasoning": 42391,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 2102340,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7664,
+   "raw_usage": {
+    "completion_tokens": 43998,
+    "prompt_tokens": 43954,
+    "total_tokens": 87952,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 42391,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T13:14:59Z",
+   "first_chunk_ms": 5680,
+   "first_text_ms": 2034468,
+   "response_id": "chatcmpl-q2ozjysheddw66iyqxdgyns2rvyfwrjk3rupuyktpajpv4verhrq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 43954,
+  "output": 43998,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 42391
+ },
+ "cost_reported": null,
+ "latency_ms": 2102340,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\", \"line\": 193, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"UnsupportedOperationException in setPermissionsEnabled/isPermissionsEnabled breaks client deletion and the client management-permissions endpoint\", \"body\": \"ClientPermissionsV2 throws UnsupportedOperationException from setPermissionsEnabled (line 193), isPermissionsEnabled (line 188), getPermissions, resource(), etc. These methods are reachable in normal operation: (1) AdminPermissions.registerListener handles ClientModel.ClientRemovedEvent by calling management(session, realm).clients().setPermissionsEnabled(client, false). This PR makes MgmtPermissionsV2.clients() return ClientPermissionsV2, and the newly added Profile.isFeatureEnabled(ADMIN_FINE_GRAINED_AUTHZ) guard passes when V2 is enabled (the V2 feature pulls in V1), so every client removal on a server with the V2 feature enabled throws from the synchronous provider-event listener, rolling back the transaction \u2014 deleting a client fails with a 500 (and realm deletion, which removes all its clients, fails too). (2) The admin REST endpoint GET/PUT /admin/realms/{realm}/clients/{id}/management/permissions calls isPermissionsEnabled/getPermissions/setPermissionsEnabled (ClientResource's ManagementPermissionReference handling), so it now returns 500, breaking the admin console's client permissions handling under V2. Either implement these methods for V2 (e.g., on removal, clean up the client's FGAP resource and its policies) or make the listener and endpoints skip them gracefully. There is no test covering client deletion with the V2 feature enabled.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\", \"line\": 92, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"canMapRoles/canMapCompositeRoles/canMapClientScopeRoles lost the canManage(client) fallback, blocking manage-clients admins\", \"body\": \"In V1 ClientPermissions these methods are implemented as 'if (canManage(client)) return true; return hasPermission(...)'. The new V2 overrides only call hasPermission(client, MAP_ROLES / MAP_ROLES_COMPOSITE / MAP_ROLES_CLIENT_SCOPE) and drop the canManage short-circuit. Because AdminPermissions.evaluator returns MgmtPermissionsV2 for every realm when the V2 profile feature is enabled, an administrator holding the realm 'manage-clients' role \u2014 who can currently map client roles \u2014 will get 403 from the role-mapping endpoints (RoleMapperResource checks canMapRoles etc.) unless an explicit FGAP map-roles permission exists. It also breaks the intended transitivity that a MANAGE permission implies map-roles, which Users V2 explicitly supports (UserResourceTypeEvaluationTest.testTransitiveUserPermissions asserts role mapping works with only the manage scope; note canView(ClientScopeModel) in this same file does include MANAGE). The three overrides should include canManage(client) (or include the MANAGE scope in the evaluated scopes, as the Users V2 implementation does via varargs).\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\", \"line\": 219, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Possible NPE when the 'Clients' resource-type resource is missing\", \"body\": \"In hasPermission(ClientModel client, String scope), when no per-client resource exists, the code does resource = AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, CLIENTS_RESOURCE_TYPE) and immediately calls authz.getStoreFactory().getPolicyStore().findByResource(server, resource) without a null check. getResourceTypeResource returns null when the schema is not supported for the realm (e.g., admin permissions disabled on the realm while the admin-permissions client still exists) and when the 'Clients' resource simply does not exist \u2014 which is the case for realms that enabled admin permissions before this change, because init() early-returns when the client already exists. The result is a NullPointerException and a 500 on ordinary admin operations such as viewing or updating a client for any caller without the manage-clients role. The sibling method hasPermission(String) correctly returns false when the resource is null; this path should do the same.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java\", \"line\": 138, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"getClientsWithPermission queries findByType(\\\"Clients\\\") but per-client resources are created without a type\", \"body\": \"getClientsWithPermission iterates resourceStore.findByType(server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE, ...) to find per-client resources. However, per-client resources are created in AdminPermissionsSchema.getOrCreateResource via resourceStore.create(resourceServer, name, owner) and setType is never called on them \u2014 only the all-type resources created in init() get a type (and removeOrphanResources discriminates per-object resources by name rather than type precisely because their type is unset). Since findByType matches on the resource's type column, per-client resources are never returned here: callers holding only per-client permissions get an empty set from partial client listing, and if the all-type resource matches, its name \u2014 the literal string \\\"Clients\\\", which is not a client id \u2014 is added to the returned set. Either set the resource type when creating per-client resources (V1 ClientPermissions.resource() sets type \\\"kc.client.resource\\\") or resolve per-client resource names from the permissions/policies the way the Users V2 flow does.\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\", \"line\": 226, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"No upgrade path: realms that already enabled admin permissions never receive the new Clients scopes and resource\", \"body\": \"init() creates the schema scopes and the all-type resources only when the admin-permissions client does not exist yet, and returns immediately if it does. Realms that enabled admin permissions (V2) before this change already have that client, so they never get the new scopes (configure, map-roles-client-scope, map-roles-composite) or the \\\"Clients\\\" resource-type resource. In such realms, creating a Clients permission fails in getOrCreateResource with ModelException(\\\"No scopes found.\\\") when it looks up the missing scopes, and permission evaluation falls into the getResourceTypeResource() == null path in ClientPermissionsV2.hasPermission. A migration or repair step that adds newly introduced scopes and resource-type resources to existing admin-permissions resource servers is needed.\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java\", \"line\": 310, \"severity\": \"low\", \"category\": \"api\", \"title\": \"getResourceName has no Clients branch and returns null display names for Clients resources\", \"body\": \"getResourceName only resolves display names for the Users resource type and otherwise falls through to resource.getDisplayName(). Resources created for the admin-permissions schema (the all-type \\\"Clients\\\" resource and per-client resources) never have a display name set, so permission/resource representations for Clients resources come back with null names, and there is no \\\"All clients\\\" equivalent of the existing \\\"All users\\\" label. Add a CLIENTS branch that resolves the client (e.g., returning its clientId) for per-client resources and \\\"All clients\\\" for the type resource.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 193,
+   "severity": "high",
+   "category": "bug",
+   "title": "UnsupportedOperationException in setPermissionsEnabled/isPermissionsEnabled breaks client deletion and the client management-permissions endpoint",
+   "body": "ClientPermissionsV2 throws UnsupportedOperationException from setPermissionsEnabled (line 193), isPermissionsEnabled (line 188), getPermissions, resource(), etc. These methods are reachable in normal operation: (1) AdminPermissions.registerListener handles ClientModel.ClientRemovedEvent by calling management(session, realm).clients().setPermissionsEnabled(client, false). This PR makes MgmtPermissionsV2.clients() return ClientPermissionsV2, and the newly added Profile.isFeatureEnabled(ADMIN_FINE_GRAINED_AUTHZ) guard passes when V2 is enabled (the V2 feature pulls in V1), so every client removal on a server with the V2 feature enabled throws from the synchronous provider-event listener, rolling back the transaction \u2014 deleting a client fails with a 500 (and realm deletion, which removes all its clients, fails too). (2) The admin REST endpoint GET/PUT /admin/realms/{realm}/clients/{id}/management/permissions calls isPermissionsEnabled/getPermissions/setPermissionsEnabled (ClientResource's ManagementPermissionReference handling), so it now returns 500, breaking the admin console's client permissions handling under V2. Either implement these methods for V2 (e.g., on removal, clean up the client's FGAP resource and its policies) or make the listener and endpoints skip them gracefully. There is no test covering client deletion with the V2 feature enabled."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 92,
+   "severity": "high",
+   "category": "bug",
+   "title": "canMapRoles/canMapCompositeRoles/canMapClientScopeRoles lost the canManage(client) fallback, blocking manage-clients admins",
+   "body": "In V1 ClientPermissions these methods are implemented as 'if (canManage(client)) return true; return hasPermission(...)'. The new V2 overrides only call hasPermission(client, MAP_ROLES / MAP_ROLES_COMPOSITE / MAP_ROLES_CLIENT_SCOPE) and drop the canManage short-circuit. Because AdminPermissions.evaluator returns MgmtPermissionsV2 for every realm when the V2 profile feature is enabled, an administrator holding the realm 'manage-clients' role \u2014 who can currently map client roles \u2014 will get 403 from the role-mapping endpoints (RoleMapperResource checks canMapRoles etc.) unless an explicit FGAP map-roles permission exists. It also breaks the intended transitivity that a MANAGE permission implies map-roles, which Users V2 explicitly supports (UserResourceTypeEvaluationTest.testTransitiveUserPermissions asserts role mapping works with only the manage scope; note canView(ClientScopeModel) in this same file does include MANAGE). The three overrides should include canManage(client) (or include the MANAGE scope in the evaluated scopes, as the Users V2 implementation does via varargs)."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 219,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Possible NPE when the 'Clients' resource-type resource is missing",
+   "body": "In hasPermission(ClientModel client, String scope), when no per-client resource exists, the code does resource = AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, CLIENTS_RESOURCE_TYPE) and immediately calls authz.getStoreFactory().getPolicyStore().findByResource(server, resource) without a null check. getResourceTypeResource returns null when the schema is not supported for the realm (e.g., admin permissions disabled on the realm while the admin-permissions client still exists) and when the 'Clients' resource simply does not exist \u2014 which is the case for realms that enabled admin permissions before this change, because init() early-returns when the client already exists. The result is a NullPointerException and a 500 on ordinary admin operations such as viewing or updating a client for any caller without the manage-clients role. The sibling method hasPermission(String) correctly returns false when the resource is null; this path should do the same."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/ClientPermissionsV2.java",
+   "line": 138,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getClientsWithPermission queries findByType(\"Clients\") but per-client resources are created without a type",
+   "body": "getClientsWithPermission iterates resourceStore.findByType(server, AdminPermissionsSchema.CLIENTS_RESOURCE_TYPE, ...) to find per-client resources. However, per-client resources are created in AdminPermissionsSchema.getOrCreateResource via resourceStore.create(resourceServer, name, owner) and setType is never called on them \u2014 only the all-type resources created in init() get a type (and removeOrphanResources discriminates per-object resources by name rather than type precisely because their type is unset). Since findByType matches on the resource's type column, per-client resources are never returned here: callers holding only per-client permissions get an empty set from partial client listing, and if the all-type resource matches, its name \u2014 the literal string \"Clients\", which is not a client id \u2014 is added to the returned set. Either set the resource type when creating per-client resources (V1 ClientPermissions.resource() sets type \"kc.client.resource\") or resolve per-client resource names from the permissions/policies the way the Users V2 flow does."
+  },
+  {
+   "index": 4,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 226,
+   "severity": "medium",
+   "category": "data",
+   "title": "No upgrade path: realms that already enabled admin permissions never receive the new Clients scopes and resource",
+   "body": "init() creates the schema scopes and the all-type resources only when the admin-permissions client does not exist yet, and returns immediately if it does. Realms that enabled admin permissions (V2) before this change already have that client, so they never get the new scopes (configure, map-roles-client-scope, map-roles-composite) or the \"Clients\" resource-type resource. In such realms, creating a Clients permission fails in getOrCreateResource with ModelException(\"No scopes found.\") when it looks up the missing scopes, and permission evaluation falls into the getResourceTypeResource() == null path in ClientPermissionsV2.hasPermission. A migration or repair step that adds newly introduced scopes and resource-type resources to existing admin-permissions resource servers is needed."
+  },
+  {
+   "index": 5,
+   "file": "server-spi-private/src/main/java/org/keycloak/authorization/AdminPermissionsSchema.java",
+   "line": 310,
+   "severity": "low",
+   "category": "api",
+   "title": "getResourceName has no Clients branch and returns null display names for Clients resources",
+   "body": "getResourceName only resolves display names for the Users resource type and otherwise falls through to resource.getDisplayName(). Resources created for the admin-permissions schema (the all-type \"Clients\" resource and per-client resources) never have a display name set, so permission/resource representations for Clients resources come back with null names, and there is no \"All clients\" equivalent of the existing \"All users\" label. Add a CLIENTS branch that resolves the client (e.g., returning its clientId) for per-client resources and \"All clients\" for the type resource."
+  }
+ ],
+ "finding_count": 6
+}

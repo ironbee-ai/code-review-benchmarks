@@ -1,0 +1,137 @@
+{
+ "run_id": "kimi-k3__xhigh__cal.com__7232__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 3,
+ "started_at": "2026-10-18T14:31:45Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70338,
+    "output": 11803,
+    "reasoning": 10381,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 473032,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6259,
+   "raw_usage": {
+    "completion_tokens": 11803,
+    "prompt_tokens": 70338,
+    "total_tokens": 82141,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 10381,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T14:31:45Z",
+   "first_chunk_ms": 33391,
+   "first_text_ms": 428059,
+   "response_id": "chatcmpl-4pprkeolerc7ncs5slnxatfsvqdty4georpjrdwysnkupixczdua",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70338,
+  "output": 11803,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 10381
+ },
+ "cost_reported": null,
+ "latency_ms": 473032,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 56, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"One failing SendGrid cancel aborts cancellation of all remaining reminders, and the failure is swallowed\", \"body\": \"The new cancellation block wraps the entire `for (const reminder of remindersToCancel)` loop in a single try/catch. If any single `client.request` to SendGrid throws (e.g., a 404 for a batch_id that was already removed, a rate limit, or a transient network error) or any `prisma.workflowReminder.delete` rejects (e.g., the row was concurrently deleted), the loop exits immediately and every reminder after the failing one is never cancelled at SendGrid and never deleted. The catch only does `console.log` and the handler still returns 200, so there is no alerting or retry signal. A single poisoned row (e.g., a stale cancelled reminder whose batch no longer exists) will therefore block cancellation of all other cancelled reminders on every cron run until their scheduledDate passes \u2014 at which point SendGrid sends the emails anyway, re-creating the exact bug this PR is meant to fix. Error handling should be per-reminder (try/catch inside the loop) so one failure cannot starve the rest.\"}, {\"file\": \"packages/features/bookings/lib/handleNewBooking.ts\", \"line\": 968, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Reschedule path bypasses the new deferred-cancellation mechanism and uses the SendGrid endpoint with the 100-pending-cancellation cap\", \"body\": \"In the reschedule flow, old booking email reminders are cancelled via `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)` with `immediateDelete = true`. That path (emailReminderManager.ts) calls SendGrid's `POST /v3/user/scheduled_sends` with `status: cancel` immediately \u2014 the very endpoint whose 100 pending-cancellations limit is the documented root cause of issue #7225 \u2014 and then returns without setting `cancelled: true` or deleting the row. If the SendGrid call fails (cap reached, transient error), the error is only logged and the WorkflowReminder row is left in the DB with `cancelled = null`, so the cron job in scheduleEmailReminders (which only processes `cancelled: true` rows) will never cancel it and the reminder email will still be sent for the rescheduled booking. The PR title explicitly claims to fix reminders for rescheduled bookings, but this path has no fallback. It should use the same deferred mechanism (set `cancelled: true`, let the cron cancel within the 1-hour window) as the booking-cancellation paths.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 486, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Reminder cancellation calls are fire-and-forget async calls that may never complete before the response\", \"body\": \"The reminder-cancellation loops call the async functions `deleteScheduledEmailReminder` / `deleteScheduledSMSReminder` inside `forEach` without awaiting them (same pattern also in handleNewBooking.ts:966, trpc/server/routers/viewer/bookings.tsx:488, and trpc/server/routers/viewer/workflows.tsx:212, 376, 519, 574). With this PR the critical effect of these calls is a database write \u2014 setting `cancelled: true` \u2014 because the cron job only cancels SendGrid sends for rows with that flag. In a serverless environment the function can be frozen as soon as the response is sent, so the un-awaited `prisma.workflowReminder.update` may never execute; the reminder then keeps `cancelled = null`, the cron never cancels it, and the email is still sent \u2014 silently reintroducing the bug intermittently. The old code at least awaited the reminder deletions via `Promise.all(remindersToDelete)`; that awaiting was removed in this PR. Use `for...of` with `await` or collect the promises and `await Promise.all(...)`.\"}, {\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 213, \"severity\": \"low\", \"category\": \"data\", \"title\": \"immediateDelete path cancels at SendGrid but leaves the WorkflowReminder row in the database\", \"body\": \"When `immediateDelete` is true, `deleteScheduledEmailReminder` issues the SendGrid cancel request and returns early without deleting the WorkflowReminder row. In the handleNewBooking reschedule path nothing else cleans those rows up (there is no cascade, since the old booking and its reminders are kept), so stale rows with `scheduled = true`, a live `referenceId`, and `cancelled = null` accumulate until the cron's past-scheduledDate cleanup eventually removes them. Besides the data hygiene issue, this also means that if the SendGrid call fails there is no marker on the row that would let the cron retry the cancellation.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 57, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"SendGrid cancellations are awaited sequentially in the cron loop\", \"body\": \"Each `await client.request(...)` to SendGrid is performed sequentially inside the `for` loop over `remindersToCancel`. On a busy instance with a large backlog of cancelled reminders (which is exactly the situation that motivated this fix), hundreds of serialized HTTP calls at ~100-300ms each can exceed the serverless function timeout, terminating the run mid-loop and leaving the remaining reminders uncancelled (and, per the outer try/catch, without any failure signal). The requests should be batched/parallelized (e.g., with a concurrency limit) so the cron reliably finishes within its execution window.\"}, {\"file\": \"packages/prisma/schema.prisma\", \"line\": 644, \"severity\": \"low\", \"category\": \"data\", \"title\": \"New `cancelled` column is nullable with no default instead of `Boolean @default(false)`\", \"body\": \"The migration adds `\\\"cancelled\\\" BOOLEAN` with no default and no NOT NULL, and the schema declares `cancelled Boolean?`. This creates a tri-state field (null/false/true) where the code only ever distinguishes `true` from everything else, and all existing rows remain NULL forever. It should be a non-nullable `Boolean @default(false)` (migration: `ADD COLUMN \\\"cancelled\\\" BOOLEAN NOT NULL DEFAULT false`) to keep the data model unambiguous and consistent with the rest of the schema's boolean flags.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 56,
+   "severity": "high",
+   "category": "bug",
+   "title": "One failing SendGrid cancel aborts cancellation of all remaining reminders, and the failure is swallowed",
+   "body": "The new cancellation block wraps the entire `for (const reminder of remindersToCancel)` loop in a single try/catch. If any single `client.request` to SendGrid throws (e.g., a 404 for a batch_id that was already removed, a rate limit, or a transient network error) or any `prisma.workflowReminder.delete` rejects (e.g., the row was concurrently deleted), the loop exits immediately and every reminder after the failing one is never cancelled at SendGrid and never deleted. The catch only does `console.log` and the handler still returns 200, so there is no alerting or retry signal. A single poisoned row (e.g., a stale cancelled reminder whose batch no longer exists) will therefore block cancellation of all other cancelled reminders on every cron run until their scheduledDate passes \u2014 at which point SendGrid sends the emails anyway, re-creating the exact bug this PR is meant to fix. Error handling should be per-reminder (try/catch inside the loop) so one failure cannot starve the rest."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 968,
+   "severity": "high",
+   "category": "bug",
+   "title": "Reschedule path bypasses the new deferred-cancellation mechanism and uses the SendGrid endpoint with the 100-pending-cancellation cap",
+   "body": "In the reschedule flow, old booking email reminders are cancelled via `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)` with `immediateDelete = true`. That path (emailReminderManager.ts) calls SendGrid's `POST /v3/user/scheduled_sends` with `status: cancel` immediately \u2014 the very endpoint whose 100 pending-cancellations limit is the documented root cause of issue #7225 \u2014 and then returns without setting `cancelled: true` or deleting the row. If the SendGrid call fails (cap reached, transient error), the error is only logged and the WorkflowReminder row is left in the DB with `cancelled = null`, so the cron job in scheduleEmailReminders (which only processes `cancelled: true` rows) will never cancel it and the reminder email will still be sent for the rescheduled booking. The PR title explicitly claims to fix reminders for rescheduled bookings, but this path has no fallback. It should use the same deferred mechanism (set `cancelled: true`, let the cron cancel within the 1-hour window) as the booking-cancellation paths."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 486,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Reminder cancellation calls are fire-and-forget async calls that may never complete before the response",
+   "body": "The reminder-cancellation loops call the async functions `deleteScheduledEmailReminder` / `deleteScheduledSMSReminder` inside `forEach` without awaiting them (same pattern also in handleNewBooking.ts:966, trpc/server/routers/viewer/bookings.tsx:488, and trpc/server/routers/viewer/workflows.tsx:212, 376, 519, 574). With this PR the critical effect of these calls is a database write \u2014 setting `cancelled: true` \u2014 because the cron job only cancels SendGrid sends for rows with that flag. In a serverless environment the function can be frozen as soon as the response is sent, so the un-awaited `prisma.workflowReminder.update` may never execute; the reminder then keeps `cancelled = null`, the cron never cancels it, and the email is still sent \u2014 silently reintroducing the bug intermittently. The old code at least awaited the reminder deletions via `Promise.all(remindersToDelete)`; that awaiting was removed in this PR. Use `for...of` with `await` or collect the promises and `await Promise.all(...)`."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "low",
+   "category": "data",
+   "title": "immediateDelete path cancels at SendGrid but leaves the WorkflowReminder row in the database",
+   "body": "When `immediateDelete` is true, `deleteScheduledEmailReminder` issues the SendGrid cancel request and returns early without deleting the WorkflowReminder row. In the handleNewBooking reschedule path nothing else cleans those rows up (there is no cascade, since the old booking and its reminders are kept), so stale rows with `scheduled = true`, a live `referenceId`, and `cancelled = null` accumulate until the cron's past-scheduledDate cleanup eventually removes them. Besides the data hygiene issue, this also means that if the SendGrid call fails there is no marker on the row that would let the cron retry the cancellation."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 57,
+   "severity": "low",
+   "category": "perf",
+   "title": "SendGrid cancellations are awaited sequentially in the cron loop",
+   "body": "Each `await client.request(...)` to SendGrid is performed sequentially inside the `for` loop over `remindersToCancel`. On a busy instance with a large backlog of cancelled reminders (which is exactly the situation that motivated this fix), hundreds of serialized HTTP calls at ~100-300ms each can exceed the serverless function timeout, terminating the run mid-loop and leaving the remaining reminders uncancelled (and, per the outer try/catch, without any failure signal). The requests should be batched/parallelized (e.g., with a concurrency limit) so the cron reliably finishes within its execution window."
+  },
+  {
+   "index": 5,
+   "file": "packages/prisma/schema.prisma",
+   "line": 644,
+   "severity": "low",
+   "category": "data",
+   "title": "New `cancelled` column is nullable with no default instead of `Boolean @default(false)`",
+   "body": "The migration adds `\"cancelled\" BOOLEAN` with no default and no NOT NULL, and the schema declares `cancelled Boolean?`. This creates a tri-state field (null/false/true) where the code only ever distinguishes `true` from everything else, and all existing rows remain NULL forever. It should be a non-nullable `Boolean @default(false)` (migration: `ADD COLUMN \"cancelled\" BOOLEAN NOT NULL DEFAULT false`) to keep the data model unambiguous and consistent with the rest of the schema's boolean flags."
+  }
+ ],
+ "finding_count": 6
+}

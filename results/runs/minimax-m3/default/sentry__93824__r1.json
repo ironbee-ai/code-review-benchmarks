@@ -1,0 +1,146 @@
+{
+ "run_id": "minimax-m3__default__sentry__93824__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 1,
+ "started_at": "2026-10-16T13:41:07Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25363,
+    "output": 16749,
+    "reasoning": 14868,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02771538,
+   "latency_ms": 100287,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 7842
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25363,
+  "output": 16749,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 14868
+ },
+ "cost_reported": 0.02771538,
+ "latency_ms": 100287,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 254, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Restarted process is killed but never joined, leaking zombies\", \"body\": \"In `_ensure_processes_alive`, when a flusher process is unhealthy the code calls `process.kill()` and then immediately calls `self._create_process_for_shards(process_index, shards)` to spawn a replacement. The killed process is never `join()`ed and never `close()`d. With `MAX_PROCESS_RESTARTS = 10` and any reasonable churn (e.g. SIGKILL exit codes, transient Redis issues during deployment), up to 10 `spawn`-context children can be left as zombies holding PIDs and OS resources until the parent exits. Repeated restarts during the consumer's lifetime will gradually leak OS resources. The fix is to `process.join(timeout=...)` (and ideally `process.close()`) after `kill()` before reassigning `self.processes[process_index]`.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 337, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"join() breaks out of loop on deadline, leaving later processes unterminated\", \"body\": \"In `SpanFlusher.join`, the iteration `for process_index, process in self.processes.items():` calls `break` as soon as the supplied `timeout` is exhausted. Any processes whose entries come after the one currently being inspected are never visited and never `terminate()`d. With N flusher processes and a short join deadline, the surviving subprocesses keep running after the consumer has been declared shut down; their Kafka producers and Redis state are not cleanly closed, which can leave pending produces (`producer_futures`) unresolved and produce duplicate or partial segments on the buffered-segments topic if the broker accepts the late flush. The loop must iterate over every process and just skip the wait portion (but still call `process.terminate()`) when the deadline has passed.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 127, \"severity\": \"low\", \"category\": \"style\", \"title\": \"Dead helper `_create_process_for_shard` is never invoked\", \"body\": \"The method `_create_process_for_shard(self, shard)` is defined (lines 127\u2013132) but is not called from anywhere in the module or tests. It will be flagged by static analyzers as unused and is leftover scaffolding. (Not a runtime bug, but a maintainer should remove it before merging.)\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 30, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Docstring claims one process per shard, but implementation caps processes\", \"body\": \"The class docstring says \\\"Creates one process per shard for parallel processing\\\", but `__init__` actually creates `min(max_processes, len(buffer.assigned_shards))` processes and shards are shared across processes via round-robin when `max_processes < len(shards)`. This is misleading and contradicts both the new `--flusher-processes` CLI option (which defaults to 1) and the test `test_flusher_processes_limit` that exercises sharing. The docstring should describe the actual pooling behavior.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 283, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Backpressure metric lost the shard/process dimension\", \"body\": \"Pre-refactor, the backpressure metric was emitted via `metrics.incr(\\\"spans.buffer.flusher.backpressure\\\")` from a single flusher. After the refactor, the same metric is emitted from inside a loop over `self.process_backpressure_since.values()`, but no `tags` are attached. There is now no way to tell from metrics which flusher process (or shard group) is causing the consumer to be paused. The other flusher metrics in the file (e.g. `spans.buffer.flusher_unhealthy`, `spans.buffer.flusher.produce`) are correctly tagged with `{shard|shards}`. The backpressure metric should be tagged similarly, e.g. `tags={\\\"process_index\\\": process_index}` or `{\\\"shards\\\": shard_tag}`, so operators can attribute stalls.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 289, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Any single flusher process hitting backpressure halts the entire consumer\", \"body\": \"In `submit`, the backpressure check raises `MessageRejected` if **any** of `self.process_backpressure_since.values()` is non-zero past the threshold. Because shards are partitioned round-robin across processes, a single problematic shard (or hot key on one shard) can stall the whole consumer even when other processes are healthy and keeping up. The pre-refactor behavior only had a single flusher, so this regression doesn't surface there. Consider aggregating backpressure over the whole pool (e.g. require a majority of processes to be in backpressure, or check that `drift` has grown large) so a straggler doesn't take down throughput.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 93, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Per-process SpansBuffer in subprocesses can race with main-process writes\", \"body\": \"`_create_process_for_shards` constructs a brand-new `SpansBuffer(shards)` (`shard_buffer = SpansBuffer(shards)`) and pickles it into the spawned subprocess. The main consumer thread, however, was given a separate `SpansBuffer(assigned_shards=[p.index for p in partitions])` in `factory.py` and writes incoming spans via `buffer.process_spans(...)` on that object. Although both buffers are stateless wrappers over Redis, each subprocess now opens its own Redis connection pool from a different PID, and the flush logic does `buffer.flush_segments(now=now)` / `buffer.record_stored_segments()` against its private buffer. Nothing in the diff confirms this design is safe (e.g. that keys TTLs are observed the same way, or that `any_shard_at_limit`/`get_memory_info` look at the correct Redis instances consistently). The single-process version relied on one shared buffer; the refactor should validate or call out this assumption explicitly so a future change to `SpansBuffer` doesn't quietly break cross-process semantics.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 85, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_flusher_processes_limit does not verify shard partitioning or end-to-end flushing\", \"body\": \"The new test only asserts `len(flusher.processes) == 2`, `flusher.max_processes == 2`, `flusher.num_processes == 2`, and that the shards total 4. It does not verify that (a) each shard is assigned to exactly one process (no duplicates / no missing shards), (b) the round-robin ordering is stable, (c) when `flusher_processes > len(assigned_shards)` the pool is capped, or (d) that spans sent to the consumer are actually flushed and emitted via `produce_to_pipe` for each process group. Without (d), a regression where one of the new per-process flushers silently stops emitting would not be caught. Without (a), a bug where every shard is assigned to `process_index=0` would still pass.\"}, {\"file\": \"src/sentry/spans/consumers/process/factory.py\", \"line\": 41, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"`flusher_processes` declared `int | None` but only ever set to a CLI int\", \"body\": \"`ProcessSpansStrategyFactory.__init__` declares `flusher_processes: int | None = None` and `SpanFlusher.__init__` declares `max_processes: int | None = None`. Both fall back to `len(buffer.assigned_shards)` via `max_processes or len(...)`, where `or` would also coerce `0` to the fallback. If an operator ever passes `--flusher-processes 0` (deliberately to disable flushers, or via a config that defaults to 0), `0 or len(shards)` evaluates to `len(shards)`, silently spawning processes anyway. Either change `or` to a strict `is None` check or document that 0 is not a valid value.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 254,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Restarted process is killed but never joined, leaking zombies",
+   "body": "In `_ensure_processes_alive`, when a flusher process is unhealthy the code calls `process.kill()` and then immediately calls `self._create_process_for_shards(process_index, shards)` to spawn a replacement. The killed process is never `join()`ed and never `close()`d. With `MAX_PROCESS_RESTARTS = 10` and any reasonable churn (e.g. SIGKILL exit codes, transient Redis issues during deployment), up to 10 `spawn`-context children can be left as zombies holding PIDs and OS resources until the parent exits. Repeated restarts during the consumer's lifetime will gradually leak OS resources. The fix is to `process.join(timeout=...)` (and ideally `process.close()`) after `kill()` before reassigning `self.processes[process_index]`."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 337,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "join() breaks out of loop on deadline, leaving later processes unterminated",
+   "body": "In `SpanFlusher.join`, the iteration `for process_index, process in self.processes.items():` calls `break` as soon as the supplied `timeout` is exhausted. Any processes whose entries come after the one currently being inspected are never visited and never `terminate()`d. With N flusher processes and a short join deadline, the surviving subprocesses keep running after the consumer has been declared shut down; their Kafka producers and Redis state are not cleanly closed, which can leave pending produces (`producer_futures`) unresolved and produce duplicate or partial segments on the buffered-segments topic if the broker accepts the late flush. The loop must iterate over every process and just skip the wait portion (but still call `process.terminate()`) when the deadline has passed."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "style",
+   "title": "Dead helper `_create_process_for_shard` is never invoked",
+   "body": "The method `_create_process_for_shard(self, shard)` is defined (lines 127\u2013132) but is not called from anywhere in the module or tests. It will be flagged by static analyzers as unused and is leftover scaffolding. (Not a runtime bug, but a maintainer should remove it before merging.)"
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 30,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Docstring claims one process per shard, but implementation caps processes",
+   "body": "The class docstring says \"Creates one process per shard for parallel processing\", but `__init__` actually creates `min(max_processes, len(buffer.assigned_shards))` processes and shards are shared across processes via round-robin when `max_processes < len(shards)`. This is misleading and contradicts both the new `--flusher-processes` CLI option (which defaults to 1) and the test `test_flusher_processes_limit` that exercises sharing. The docstring should describe the actual pooling behavior."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 283,
+   "severity": "low",
+   "category": "data",
+   "title": "Backpressure metric lost the shard/process dimension",
+   "body": "Pre-refactor, the backpressure metric was emitted via `metrics.incr(\"spans.buffer.flusher.backpressure\")` from a single flusher. After the refactor, the same metric is emitted from inside a loop over `self.process_backpressure_since.values()`, but no `tags` are attached. There is now no way to tell from metrics which flusher process (or shard group) is causing the consumer to be paused. The other flusher metrics in the file (e.g. `spans.buffer.flusher_unhealthy`, `spans.buffer.flusher.produce`) are correctly tagged with `{shard|shards}`. The backpressure metric should be tagged similarly, e.g. `tags={\"process_index\": process_index}` or `{\"shards\": shard_tag}`, so operators can attribute stalls."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 289,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Any single flusher process hitting backpressure halts the entire consumer",
+   "body": "In `submit`, the backpressure check raises `MessageRejected` if **any** of `self.process_backpressure_since.values()` is non-zero past the threshold. Because shards are partitioned round-robin across processes, a single problematic shard (or hot key on one shard) can stall the whole consumer even when other processes are healthy and keeping up. The pre-refactor behavior only had a single flusher, so this regression doesn't surface there. Consider aggregating backpressure over the whole pool (e.g. require a majority of processes to be in backpressure, or check that `drift` has grown large) so a straggler doesn't take down throughput."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 93,
+   "severity": "medium",
+   "category": "data",
+   "title": "Per-process SpansBuffer in subprocesses can race with main-process writes",
+   "body": "`_create_process_for_shards` constructs a brand-new `SpansBuffer(shards)` (`shard_buffer = SpansBuffer(shards)`) and pickles it into the spawned subprocess. The main consumer thread, however, was given a separate `SpansBuffer(assigned_shards=[p.index for p in partitions])` in `factory.py` and writes incoming spans via `buffer.process_spans(...)` on that object. Although both buffers are stateless wrappers over Redis, each subprocess now opens its own Redis connection pool from a different PID, and the flush logic does `buffer.flush_segments(now=now)` / `buffer.record_stored_segments()` against its private buffer. Nothing in the diff confirms this design is safe (e.g. that keys TTLs are observed the same way, or that `any_shard_at_limit`/`get_memory_info` look at the correct Redis instances consistently). The single-process version relied on one shared buffer; the refactor should validate or call out this assumption explicitly so a future change to `SpansBuffer` doesn't quietly break cross-process semantics."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 85,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_flusher_processes_limit does not verify shard partitioning or end-to-end flushing",
+   "body": "The new test only asserts `len(flusher.processes) == 2`, `flusher.max_processes == 2`, `flusher.num_processes == 2`, and that the shards total 4. It does not verify that (a) each shard is assigned to exactly one process (no duplicates / no missing shards), (b) the round-robin ordering is stable, (c) when `flusher_processes > len(assigned_shards)` the pool is capped, or (d) that spans sent to the consumer are actually flushed and emitted via `produce_to_pipe` for each process group. Without (d), a regression where one of the new per-process flushers silently stops emitting would not be caught. Without (a), a bug where every shard is assigned to `process_index=0` would still pass."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/spans/consumers/process/factory.py",
+   "line": 41,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "`flusher_processes` declared `int | None` but only ever set to a CLI int",
+   "body": "`ProcessSpansStrategyFactory.__init__` declares `flusher_processes: int | None = None` and `SpanFlusher.__init__` declares `max_processes: int | None = None`. Both fall back to `len(buffer.assigned_shards)` via `max_processes or len(...)`, where `or` would also coerce `0` to the fallback. If an operator ever passes `--flusher-processes 0` (deliberately to disable flushers, or via a config that defaults to 0), `0 or len(shards)` evaluates to `len(shards)`, silently spawning processes anyway. Either change `or` to a strict `is None` check or document that 0 is not a valid value."
+  }
+ ],
+ "finding_count": 9,
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ }
+}

@@ -1,0 +1,151 @@
+{
+ "run_id": "grok-4.7__xhigh__cal.com__7232__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 2,
+ "started_at": "2026-10-17T22:26:22Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 74591,
+    "output": 45983,
+    "reasoning": 44586,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.425656,
+   "latency_ms": 699163,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 6585,
+   "raw_usage": {
+    "completion_tokens": 45983,
+    "prompt_tokens": 75743,
+    "total_tokens": 121726,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 44586,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.425656,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.425656,
+     "upstream_inference_prompt_cost": 0.149758,
+     "upstream_inference_completions_cost": 0.275898
+    }
+   },
+   "started_at": "2026-10-17T22:26:22Z",
+   "first_chunk_ms": 50388,
+   "first_text_ms": 687482,
+   "response_id": "gen-1792275982-xkcDzRM3eklCGm7wt21r",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 74591,
+  "output": 45983,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 44586
+ },
+ "cost_reported": 0.425656,
+ "latency_ms": 699163,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 213, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"immediateDelete still hits SendGrid and never records cancellation\", \"body\": \"deleteScheduledEmailReminder's immediateDelete branch POSTs /v3/user/scheduled_sends with status cancel and then returns without setting WorkflowReminder.cancelled and without deleting the row. Reschedule in handleNewBooking.ts (the call that passes true), workflow deletion in workflows.tsx, and workflow-step deletion in workflows.tsx all use that branch. That reintroduces the failure this PR describes: each cancel stays in SendGrid's scheduled_sends list until the original send time, and once the pending-cancellation cap (stated as 100) is reached further cancels fail and the email is still sent. Failures are only logged inside the helper, and cancelled is never set, so the new cron cannot retry. Workflow and step deletion then cascade-delete the WorkflowReminder, which also removes any chance of a later retry; a bulk delete of more than 100 already-scheduled reminders therefore silently leaves the overflow emails queued. On reschedule the old booking is not deleted, so the row stays scheduled=true and cancelled=null: if the SendGrid call failed the old reminder is still delivered, and if it succeeded the stale row is only removed when scheduledDate passes.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 34, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cron deletes due reminders before withdrawing them from SendGrid\", \"body\": \"scheduleEmailReminders begins by deleteMany-ing every EMAIL WorkflowReminder whose scheduledDate is at or before now, and only afterward loads cancelled=true rows to POST a SendGrid cancel. Any cancelled reminder whose send time has already arrived is removed from the database and never cancelled at SendGrid, so the email is still delivered. With the job running every 15 minutes, a cancellation made after the last tick before scheduledDate (or any run that starts at or after the send time, including a delayed cron) always hits this path. The new cancel query cannot see those rows because they are already gone. SendGrid withdrawal for cancelled=true reminders has to run before this cleanup, and the cleanup must not delete cancelled rows that have not yet been cancelled at SendGrid.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 75, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"One SendGrid cancel error aborts the batch and drops successful deletes\", \"body\": \"The new cancel loop awaits every SendGrid POST inside a single try/catch, and only after the whole loop does it await the queued workflowReminder.delete calls. Prisma queries are lazy, so those deletes have not run yet. If any request throws (unknown or already-cancelled batch id, the pending-cancellation cap, a network error), the catch only logs and then the handler goes on to schedule other mail. None of the reminders already cancelled at SendGrid are deleted, and every reminder after the failure is skipped. Those rows stay cancelled=true and are retried on the next run. There is no orderBy and no per-item isolation, so one permanently failing row can be selected first every 15 minutes and block every other cancellation until scheduledDate passes. At that point the opening deleteMany removes the rows without a SendGrid cancel and the emails send. Each reminder needs its own error handling, and a successful cancel must be persisted immediately so it is not retried and cannot poison the queue.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 485, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Reminder cancellation is fire-and-forget after awaited deletes were removed\", \"body\": \"Cancel, reschedule, and workflow-update callers used to collect prisma.workflowReminder.deleteMany promises and await them before returning. That awaited delete is gone. They now call async deleteScheduledEmailReminder / deleteScheduledSMSReminder inside forEach and never await the promises: handleCancelBooking.ts around the new reminder loop, handleNewBooking.ts reschedule (the try/catch there cannot observe async failures), bookings.tsx requestReschedule, and the workflow update/delete paths in workflows.tsx. For an already-scheduled email, the cancelled=true update inside that floating call is the only signal the cron uses to withdraw the SendGrid batch. For an unscheduled email or SMS (no referenceId), the helper's row delete is the only thing stopping the reminder cron from sending it; scheduleEmailReminders schedules every scheduled=false email inside 72 hours and does not check booking status. On a serverless invocation those promises can be frozen when the handler returns, so the booking is cancelled but the reminder is still sent. The calls have to be awaited, and failures surfaced, before the handler finishes.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 464, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Paid cancellations return before workflow reminders are cancelled\", \"body\": \"In handleCancelBooking a paid booking is refunded and then returns 'Booking successfully cancelled' before the new reminder-cancellation loop. The booking status is already CANCELLED or REJECTED, but its WorkflowReminder rows are left untouched. Before/after-event workflow emails and SMS for paid bookings are therefore neither marked cancelled, deleted, nor withdrawn from SendGrid/Twilio, which is the same production failure this PR is fixing. The cancellation loop has to run on this path as well, and be awaited, before the early return.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 43, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No regression test for deferred cancellation of scheduled reminders\", \"body\": \"The description says the previous SendGrid cancel fix did not work in production, but this change adds no test for the replacement contract. Nothing asserts that booking cancel sets WorkflowReminder.cancelled instead of POSTing scheduled_sends immediately, that reschedule does not use the immediate SendGrid cancel, that the cron withdraws cancelled batches before deleting past-due rows, or that one failed cancel is retried without dropping the rest of the batch. Those are the paths that still send reminders for cancelled and rescheduled bookings, and they will regress silently without a test.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "high",
+   "category": "bug",
+   "title": "immediateDelete still hits SendGrid and never records cancellation",
+   "body": "deleteScheduledEmailReminder's immediateDelete branch POSTs /v3/user/scheduled_sends with status cancel and then returns without setting WorkflowReminder.cancelled and without deleting the row. Reschedule in handleNewBooking.ts (the call that passes true), workflow deletion in workflows.tsx, and workflow-step deletion in workflows.tsx all use that branch. That reintroduces the failure this PR describes: each cancel stays in SendGrid's scheduled_sends list until the original send time, and once the pending-cancellation cap (stated as 100) is reached further cancels fail and the email is still sent. Failures are only logged inside the helper, and cancelled is never set, so the new cron cannot retry. Workflow and step deletion then cascade-delete the WorkflowReminder, which also removes any chance of a later retry; a bulk delete of more than 100 already-scheduled reminders therefore silently leaves the overflow emails queued. On reschedule the old booking is not deleted, so the row stays scheduled=true and cancelled=null: if the SendGrid call failed the old reminder is still delivered, and if it succeeded the stale row is only removed when scheduledDate passes."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 34,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cron deletes due reminders before withdrawing them from SendGrid",
+   "body": "scheduleEmailReminders begins by deleteMany-ing every EMAIL WorkflowReminder whose scheduledDate is at or before now, and only afterward loads cancelled=true rows to POST a SendGrid cancel. Any cancelled reminder whose send time has already arrived is removed from the database and never cancelled at SendGrid, so the email is still delivered. With the job running every 15 minutes, a cancellation made after the last tick before scheduledDate (or any run that starts at or after the send time, including a delayed cron) always hits this path. The new cancel query cannot see those rows because they are already gone. SendGrid withdrawal for cancelled=true reminders has to run before this cleanup, and the cleanup must not delete cancelled rows that have not yet been cancelled at SendGrid."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 75,
+   "severity": "high",
+   "category": "bug",
+   "title": "One SendGrid cancel error aborts the batch and drops successful deletes",
+   "body": "The new cancel loop awaits every SendGrid POST inside a single try/catch, and only after the whole loop does it await the queued workflowReminder.delete calls. Prisma queries are lazy, so those deletes have not run yet. If any request throws (unknown or already-cancelled batch id, the pending-cancellation cap, a network error), the catch only logs and then the handler goes on to schedule other mail. None of the reminders already cancelled at SendGrid are deleted, and every reminder after the failure is skipped. Those rows stay cancelled=true and are retried on the next run. There is no orderBy and no per-item isolation, so one permanently failing row can be selected first every 15 minutes and block every other cancellation until scheduledDate passes. At that point the opening deleteMany removes the rows without a SendGrid cancel and the emails send. Each reminder needs its own error handling, and a successful cancel must be persisted immediately so it is not retried and cannot poison the queue."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reminder cancellation is fire-and-forget after awaited deletes were removed",
+   "body": "Cancel, reschedule, and workflow-update callers used to collect prisma.workflowReminder.deleteMany promises and await them before returning. That awaited delete is gone. They now call async deleteScheduledEmailReminder / deleteScheduledSMSReminder inside forEach and never await the promises: handleCancelBooking.ts around the new reminder loop, handleNewBooking.ts reschedule (the try/catch there cannot observe async failures), bookings.tsx requestReschedule, and the workflow update/delete paths in workflows.tsx. For an already-scheduled email, the cancelled=true update inside that floating call is the only signal the cron uses to withdraw the SendGrid batch. For an unscheduled email or SMS (no referenceId), the helper's row delete is the only thing stopping the reminder cron from sending it; scheduleEmailReminders schedules every scheduled=false email inside 72 hours and does not check booking status. On a serverless invocation those promises can be frozen when the handler returns, so the booking is cancelled but the reminder is still sent. The calls have to be awaited, and failures surfaced, before the handler finishes."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 464,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Paid cancellations return before workflow reminders are cancelled",
+   "body": "In handleCancelBooking a paid booking is refunded and then returns 'Booking successfully cancelled' before the new reminder-cancellation loop. The booking status is already CANCELLED or REJECTED, but its WorkflowReminder rows are left untouched. Before/after-event workflow emails and SMS for paid bookings are therefore neither marked cancelled, deleted, nor withdrawn from SendGrid/Twilio, which is the same production failure this PR is fixing. The cancellation loop has to run on this path as well, and be awaited, before the early return."
+  },
+  {
+   "index": 5,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 43,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No regression test for deferred cancellation of scheduled reminders",
+   "body": "The description says the previous SendGrid cancel fix did not work in production, but this change adds no test for the replacement contract. Nothing asserts that booking cancel sets WorkflowReminder.cancelled instead of POSTing scheduled_sends immediately, that reschedule does not use the immediate SendGrid cancel, that the cron withdraws cancelled batches before deleting past-due rows, or that one failed cancel is retried without dropping the rest of the batch. Those are the paths that still send reminders for cancelled and rescheduled bookings, and they will regress silently without a test."
+  }
+ ],
+ "finding_count": 6
+}

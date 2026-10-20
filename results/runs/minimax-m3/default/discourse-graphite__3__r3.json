@@ -1,0 +1,131 @@
+{
+ "run_id": "minimax-m3__default__discourse-graphite__3__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:12:11Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 17781,
+    "output": 13434,
+    "reasoning": 12556,
+    "cache_read": 462,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02148282,
+   "latency_ms": 71699,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 3934,
+   "raw_usage": {
+    "completion_tokens": 13434,
+    "prompt_tokens": 18243,
+    "total_tokens": 31677,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 12556,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 462,
+     "video_tokens": 0
+    },
+    "cost": 0.02148282,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02148282,
+     "upstream_inference_prompt_cost": 0.00536202,
+     "upstream_inference_completions_cost": 0.0161208
+    }
+   },
+   "started_at": "2026-10-18T12:12:11Z",
+   "first_chunk_ms": 1541,
+   "first_text_ms": 67327,
+   "response_id": "gen-1792325532-JQvwIpnGWCOStcOBX8IR",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 17781,
+  "output": 13434,
+  "cache_read": 462,
+  "cache_write": 0,
+  "reasoning": 12556
+ },
+ "cost_reported": 0.02148282,
+ "latency_ms": 71699,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 11, \"severity\": \"critical\", \"category\": \"concurrency\", \"title\": \"BlockedEmail.should_block? has a lost-update race condition\", \"body\": \"should_block? performs a non-atomic read-modify-write: it loads the record via `where(email: email).first`, increments match_count in Ruby memory, and saves. Under two concurrent requests for the same blocked email, both callers can read the same match_count, both increment it to N+1, and both write back, losing one increment. The persisted match_count will be smaller than the actual number of attempts, and last_match_at will lag behind the true last occurrence. The increment must be atomic (e.g., `record.increment!(:match_count)` plus `update_column(:last_match_at, Time.zone.now)`, or a single SQL UPDATE statement), and ideally wrapped in a single statement that does not depend on a previously read row.\"}, {\"file\": \"lib/validators/email_validator.rb\", \"line\": 13, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"EmailValidator triggers DB writes on every validation via BlockedEmail.should_block?\", \"body\": \"validate_each calls BlockedEmail.should_block?, which writes to the blocked_emails table (match_count and last_match_at) on every match. ActiveRecord typically runs validators multiple times during a single save: the controller calls `user.valid?` before save, ActiveRecord re-runs validations inside save, and re-runs them again on retries after uniqueness/format errors. Each blocked-email signup therefore inflates match_count several times and adds several UPDATE queries to the request path. Worse, calling `record.valid?` (without saving) still updates persisted state, which is surprising for a validator. Statistics tracking should be moved out of the validator (e.g., to an after_validation hook on User, or a Redis counter incremented only on actual save) so validation remains side-effect free and counters are not inflated.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"high\", \"category\": \"security\", \"title\": \"BlockedEmail lookup is case-sensitive, allowing blocklist bypass via email casing\", \"body\": \"`BlockedEmail.where(email: email).first` is a case-sensitive comparison, so a blocklist row stored as `bad@spamclub.com` will not match `BAD@spamclub.com`, `Bad@spamclub.com`, or any other case variant. This is inconsistent with the rest of the user-facing email code: User.find_by_username_or_email calls Email.downcase before lookup, the regex built in EmailValidator#email_in_restriction_setting? matches regardless of case, and email comparisons elsewhere in the codebase are case-insensitive. An attacker registering with a case-variant email bypasses the block entirely. The lookup should normalize (e.g., `BlockedEmail.where(email: email.downcase).first`) or emails should be lowercased on insert (with a citext/case-insensitive column), and the matching test should explicitly assert case-variant behavior.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 1, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"EmailValidator whitelist/blacklist logic is not covered by tests\", \"body\": \"The original User#email_validator implemented two branches (SiteSetting.email_domains_whitelist and SiteSetting.email_domains_blacklist) that were extracted into lib/validators/email_validator.rb. The new spec only stubs BlockedEmail.should_block? and never sets email_domains_whitelist or email_domains_blacklist, so the regex-based domain matching, the priority between the whitelist and the blacklist (if/elsif), and the email_in_restriction_setting? helper are completely untested. The .gsub('.', '\\\\.') escaping, the @-anchored regex, and the if/elsif precedence are non-trivial and easy to silently regress, so each branch (whitelist match, whitelist mismatch, blacklist match, blacklist mismatch, both unset) needs at least one explicit test.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 11,
+   "severity": "critical",
+   "category": "concurrency",
+   "title": "BlockedEmail.should_block? has a lost-update race condition",
+   "body": "should_block? performs a non-atomic read-modify-write: it loads the record via `where(email: email).first`, increments match_count in Ruby memory, and saves. Under two concurrent requests for the same blocked email, both callers can read the same match_count, both increment it to N+1, and both write back, losing one increment. The persisted match_count will be smaller than the actual number of attempts, and last_match_at will lag behind the true last occurrence. The increment must be atomic (e.g., `record.increment!(:match_count)` plus `update_column(:last_match_at, Time.zone.now)`, or a single SQL UPDATE statement), and ideally wrapped in a single statement that does not depend on a previously read row."
+  },
+  {
+   "index": 1,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "high",
+   "category": "perf",
+   "title": "EmailValidator triggers DB writes on every validation via BlockedEmail.should_block?",
+   "body": "validate_each calls BlockedEmail.should_block?, which writes to the blocked_emails table (match_count and last_match_at) on every match. ActiveRecord typically runs validators multiple times during a single save: the controller calls `user.valid?` before save, ActiveRecord re-runs validations inside save, and re-runs them again on retries after uniqueness/format errors. Each blocked-email signup therefore inflates match_count several times and adds several UPDATE queries to the request path. Worse, calling `record.valid?` (without saving) still updates persisted state, which is surprising for a validator. Statistics tracking should be moved out of the validator (e.g., to an after_validation hook on User, or a Redis counter incremented only on actual save) so validation remains side-effect free and counters are not inflated."
+  },
+  {
+   "index": 2,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "high",
+   "category": "security",
+   "title": "BlockedEmail lookup is case-sensitive, allowing blocklist bypass via email casing",
+   "body": "`BlockedEmail.where(email: email).first` is a case-sensitive comparison, so a blocklist row stored as `bad@spamclub.com` will not match `BAD@spamclub.com`, `Bad@spamclub.com`, or any other case variant. This is inconsistent with the rest of the user-facing email code: User.find_by_username_or_email calls Email.downcase before lookup, the regex built in EmailValidator#email_in_restriction_setting? matches regardless of case, and email comparisons elsewhere in the codebase are case-insensitive. An attacker registering with a case-variant email bypasses the block entirely. The lookup should normalize (e.g., `BlockedEmail.where(email: email.downcase).first`) or emails should be lowercased on insert (with a citext/case-insensitive column), and the matching test should explicitly assert case-variant behavior."
+  },
+  {
+   "index": 3,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 1,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "EmailValidator whitelist/blacklist logic is not covered by tests",
+   "body": "The original User#email_validator implemented two branches (SiteSetting.email_domains_whitelist and SiteSetting.email_domains_blacklist) that were extracted into lib/validators/email_validator.rb. The new spec only stubs BlockedEmail.should_block? and never sets email_domains_whitelist or email_domains_blacklist, so the regex-based domain matching, the priority between the whitelist and the blacklist (if/elsif), and the email_in_restriction_setting? helper are completely untested. The .gsub('.', '\\.') escaping, the @-anchored regex, and the if/elsif precedence are non-trivial and easy to silently regress, so each branch (whitelist match, whitelist mismatch, blacklist match, blacklist mismatch, both unset) needs at least one explicit test."
+  }
+ ],
+ "finding_count": 4
+}

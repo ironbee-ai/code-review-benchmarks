@@ -1,0 +1,137 @@
+{
+ "run_id": "kimi-k3__default__discourse-graphite__3__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:28:31Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 17990,
+    "output": 10368,
+    "reasoning": 9156,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 412090,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5552,
+   "raw_usage": {
+    "completion_tokens": 10368,
+    "prompt_tokens": 17990,
+    "total_tokens": 28358,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 9156,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T12:28:31Z",
+   "first_chunk_ms": 6645,
+   "first_text_ms": 368870,
+   "response_id": "chatcmpl-a7tvkzniz4oor2bldoagzuuz34uimh4a7muwzg6y3i4a4ord5tcq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 17990,
+  "output": 10368,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9156
+ },
+ "cost_reported": null,
+ "latency_ms": 412090,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"match_count is incremented twice per failed signup because should_block? has a side effect inside validation\", \"body\": \"BlockedEmail.should_block? writes to the database (match_count += 1, last_match_at = now, save) every time it runs, and it is invoked from EmailValidator, i.e. from user validation. UsersController#create (app/controllers/users_controller.rb) calls user.valid? on line 168 and then user.save on line 172, both of which run the full validation suite, so a single signup attempt with a blocked email increments match_count by 2 and updates last_match_at twice. Any other code path that calls valid? before save does the same. The match_count/last_match_at statistics (whose purpose is explicitly described in the specs) will therefore be wrong for the primary flow they were built for. The stats update should be separated from validation (e.g. done once in the controller when a block actually rejects the signup) or made idempotent per request. The specs call should_block? directly, so they never exercise this double-run.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Blocked-email lookup is case-sensitive, so blocks are trivially bypassed by changing letter case\", \"body\": \"BlockedEmail.should_block? does an exact-match lookup: BlockedEmail.where(email: email).first. Nothing downcases the user's email before validation \u2014 User.new_from_params assigns params[:email] verbatim and the User model never normalizes case (unlike change_email, which uses Email.downcase). A blocked address spammer@example.com will therefore not match Spammer@example.com or SPAMMER@EXAMPLE.COM, letting a blocked user register by simply varying case. The unique index added in the migration is case-sensitive as well, so variants can coexist in the table. The lookup should compare downcased emails (and ideally the column should be normalized on write).\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 274, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Any server email error (e.g. 'has already been taken') marks the address as rejected and mislabels it invalid\", \"body\": \"On account-creation failure the client pushes result.values.email into rejectedEmails whenever result.errors.email exists, and emailValidation then reports I18n.t('user.email.invalid') for that address. But errors.email is present for any email validation failure, not just blocking \u2014 most commonly the uniqueness validation (User validates :email, uniqueness: true), which produces 'has already been taken'. A user whose signup failed because the email is already registered (or who hits the ActiveRecord::StatementInvalid duplicate race after a retry) will see 'email is invalid' from then on and will be unable to re-validate that address for the rest of the session, with no hint that the real problem is a duplicate. The client should only track emails rejected specifically by the blocked-email rule (e.g. a dedicated error code from the server), not any email error.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"match_count increment is a non-atomic read-modify-write and record.save can silently fail\", \"body\": \"should_block? loads the record, does record.match_count += 1, then record.save. Two concurrent signup attempts against the same blocked email both read the same match_count and one increment is lost. Additionally, the return value of record.save is ignored, so if the save fails (e.g. a validation error from a concurrent change) the statistics are silently dropped while the block decision still proceeds. Use an atomic update (e.g. update_counters or UPDATE ... SET match_count = match_count + 1) for the stats bump.\"}, {\"file\": \"lib/validators/email_validator.rb\", \"line\": 13, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Blocked-email match statistics are not recorded when another email validation already failed\", \"body\": \"The blocked check is gated on record.errors[attribute].blank?, so BlockedEmail.should_block? is never called if the email already has an error from the presence/uniqueness validators (which run before this one in User) or from the domain whitelist/blacklist check above. That means a signup attempt using a blocked email that also trips another rule \u2014 for example re-registering an email that is both blocked and already taken \u2014 leaves no trace in match_count or last_match_at, undercounting abuse attempts. If the gate exists only to avoid duplicate error messages, the stats recording should still happen and only the errors.add should be conditional.\"}, {\"file\": \"app/controllers/users_controller.rb\", \"line\": 272, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"change_email does not check the blocked list before sending the authorization email\", \"body\": \"UsersController#change_email only checks that the new email is not already in use, then creates an email token and enqueues the authorize_email message. A logged-in user can therefore request an email change to a blocked address and have the system send mail to it; the block is only (silently) enforced later if EmailToken.confirm saves the user and triggers the model validation, at which point the email change fails with no feedback to the user. The blocked check should also run in change_email so the request is rejected up front with a clear error.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "medium",
+   "category": "data",
+   "title": "match_count is incremented twice per failed signup because should_block? has a side effect inside validation",
+   "body": "BlockedEmail.should_block? writes to the database (match_count += 1, last_match_at = now, save) every time it runs, and it is invoked from EmailValidator, i.e. from user validation. UsersController#create (app/controllers/users_controller.rb) calls user.valid? on line 168 and then user.save on line 172, both of which run the full validation suite, so a single signup attempt with a blocked email increments match_count by 2 and updates last_match_at twice. Any other code path that calls valid? before save does the same. The match_count/last_match_at statistics (whose purpose is explicitly described in the specs) will therefore be wrong for the primary flow they were built for. The stats update should be separated from validation (e.g. done once in the controller when a block actually rejects the signup) or made idempotent per request. The specs call should_block? directly, so they never exercise this double-run."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "medium",
+   "category": "security",
+   "title": "Blocked-email lookup is case-sensitive, so blocks are trivially bypassed by changing letter case",
+   "body": "BlockedEmail.should_block? does an exact-match lookup: BlockedEmail.where(email: email).first. Nothing downcases the user's email before validation \u2014 User.new_from_params assigns params[:email] verbatim and the User model never normalizes case (unlike change_email, which uses Email.downcase). A blocked address spammer@example.com will therefore not match Spammer@example.com or SPAMMER@EXAMPLE.COM, letting a blocked user register by simply varying case. The unique index added in the migration is case-sensitive as well, so variants can coexist in the table. The lookup should compare downcased emails (and ideally the column should be normalized on write)."
+  },
+  {
+   "index": 2,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 274,
+   "severity": "low",
+   "category": "bug",
+   "title": "Any server email error (e.g. 'has already been taken') marks the address as rejected and mislabels it invalid",
+   "body": "On account-creation failure the client pushes result.values.email into rejectedEmails whenever result.errors.email exists, and emailValidation then reports I18n.t('user.email.invalid') for that address. But errors.email is present for any email validation failure, not just blocking \u2014 most commonly the uniqueness validation (User validates :email, uniqueness: true), which produces 'has already been taken'. A user whose signup failed because the email is already registered (or who hits the ActiveRecord::StatementInvalid duplicate race after a retry) will see 'email is invalid' from then on and will be unable to re-validate that address for the rest of the session, with no hint that the real problem is a duplicate. The client should only track emails rejected specifically by the blocked-email rule (e.g. a dedicated error code from the server), not any email error."
+  },
+  {
+   "index": 3,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "match_count increment is a non-atomic read-modify-write and record.save can silently fail",
+   "body": "should_block? loads the record, does record.match_count += 1, then record.save. Two concurrent signup attempts against the same blocked email both read the same match_count and one increment is lost. Additionally, the return value of record.save is ignored, so if the save fails (e.g. a validation error from a concurrent change) the statistics are silently dropped while the block decision still proceeds. Use an atomic update (e.g. update_counters or UPDATE ... SET match_count = match_count + 1) for the stats bump."
+  },
+  {
+   "index": 4,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "low",
+   "category": "data",
+   "title": "Blocked-email match statistics are not recorded when another email validation already failed",
+   "body": "The blocked check is gated on record.errors[attribute].blank?, so BlockedEmail.should_block? is never called if the email already has an error from the presence/uniqueness validators (which run before this one in User) or from the domain whitelist/blacklist check above. That means a signup attempt using a blocked email that also trips another rule \u2014 for example re-registering an email that is both blocked and already taken \u2014 leaves no trace in match_count or last_match_at, undercounting abuse attempts. If the gate exists only to avoid duplicate error messages, the stats recording should still happen and only the errors.add should be conditional."
+  },
+  {
+   "index": 5,
+   "file": "app/controllers/users_controller.rb",
+   "line": 272,
+   "severity": "low",
+   "category": "bug",
+   "title": "change_email does not check the blocked list before sending the authorization email",
+   "body": "UsersController#change_email only checks that the new email is not already in use, then creates an email token and enqueues the authorize_email message. A logged-in user can therefore request an email change to a blocked address and have the system send mail to it; the block is only (silently) enforced later if EmailToken.confirm saves the user and triggers the model validation, at which point the email change fails with no feedback to the user. The blocked check should also run in change_email so the request is rejected up front with a clear error."
+  }
+ ],
+ "finding_count": 6
+}

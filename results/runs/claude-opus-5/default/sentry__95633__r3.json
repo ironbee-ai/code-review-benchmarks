@@ -1,0 +1,174 @@
+{
+ "run_id": "claude-opus-5__default__sentry__95633__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:27:15Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 11376,
+    "reasoning": 8204,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 146380,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 8949,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 11376,
+    "output_tokens_details": {
+     "thinking_tokens": 8204
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:27:15Z",
+   "first_chunk_ms": 2109,
+   "first_text_ms": 109241,
+   "response_id": "msg_bdrk_un4zx2f52uas67pgg2pl2opyqc3xz63ypkr5bddkrvbvvxyykzoq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 11376,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 8204
+ },
+ "cost_reported": null,
+ "latency_ms": 146380,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 247, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Queue pool is destroyed on strategy close and then reused after rebalance\", \"body\": \"`FixedQueuePool` is created once in `ResultsStrategyFactory.__init__`, but the per-assignment strategy's `close()`/`terminate()`/`join()` call `queue_pool.shutdown()`, which sets `worker.shutdown = True`, calls `queue.shutdown()` on every queue and joins the worker threads. Arroyo calls `close()`/`join()` on every partition revocation (rebalance), and then calls `create_with_partitions()` again for the new assignment. On that second call `assert self.queue_pool is not None` still passes, so a strategy is built around a pool whose worker threads are dead and whose queues are shut down: every `work_queue.put()` raises `queue.ShutDown`, which `SimpleQueueProcessingStrategy.submit` swallows in its generic `except Exception` handler and then marks the offset as completed. The consumer will therefore silently drop all messages while still committing their offsets after any rebalance. The pool must be created per assignment (or re-created in `create_with_partitions`) rather than shared across strategy lifetimes.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Unbounded queues mean no backpressure, contradicting the documented guarantee\", \"body\": \"Each queue is created as `queue.Queue()` with no `maxsize`, and `SimpleQueueProcessingStrategy.submit()` never raises `arroyo.processing.strategies.abstract.MessageRejected`. As a result the strategy accepts messages from the Kafka consumer as fast as they arrive regardless of worker progress: work items (which also retain the full `Message`/`KafkaPayload`) and their tracked offsets accumulate in memory without bound when a group's processing is slow, which is exactly the scenario this PR is meant to address. This also contradicts the class docstring (\\\"Natural backpressure when queues fill up\\\"). A bounded queue plus `MessageRejected` on `queue.Full` is needed for arroyo to actually throttle consumption.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 335, \"severity\": \"high\", \"category\": \"data\", \"title\": \"close() stops the commit thread before draining queues, losing committable offsets\", \"body\": \"`close()` sets `shutdown_event`, joins the commit thread, and only then calls `queue_pool.shutdown()`, which drains the remaining queued items (`shutdown(immediate=False)` lets queued work finish). Any item processed during that drain completes its offset after the only thread that commits offsets has already exited, so those offsets are never committed. On restart/rebalance all of that work is reprocessed. Additionally `join(timeout)` ignores the supplied timeout and just calls `close()`, so arroyo's shutdown deadline is not honoured. The order should be: stop accepting work, drain the queues, perform a final `get_committable_offsets()` + commit, then stop the commit thread.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 249, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Arroyo commit callback is invoked from a background thread\", \"body\": \"`commit_offsets` (passed as `commit_function`) is called from `SimpleQueueProcessingStrategy._commit_loop`, a separate daemon thread, while the arroyo `StreamProcessor` concurrently polls and commits on the main thread. The `Commit` callable given to `create_with_partitions` stages/commits offsets on the shared consumer state and is expected to be called from the processing (main) thread; calling it concurrently races with the processor's own offset staging/commit and with partition revocation (where it can raise `ConsumerError` for unassigned partitions, silently swallowed by the loop's `except Exception`). This can produce lost or incorrect offset commits. Offsets should be collected by the background workers and committed from `poll()`/`submit()` on the main thread instead.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 89, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"A single missing offset permanently blocks all commits for the partition\", \"body\": \"`get_committable_offsets()` walks offsets contiguously from `last_committed + 1` and `break`s on the first offset that is not present in `all_offsets`. Kafka offsets are not guaranteed to be contiguous as seen by a consumer (transactional/control records, compaction, or any message that never reaches `submit` because an upstream wrapper such as the DLQ/stale-message wrapper consumed it). If one offset in the sequence is never added, that partition can never advance its commit point: `all_offsets` grows without bound and the consumer group lag never decreases, causing full reprocessing of everything after the gap on restart. There needs to be a mechanism to advance past offsets that will never be seen (e.g. seed the committed position from the assignment and treat unknown offsets below the current max as done).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 317, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Generic exception handler in submit() drops messages and commits their offsets\", \"body\": \"`submit()` wraps decoding, grouping and enqueueing in one `try/except Exception`; on any failure (including a failing `grouping_fn`, a `FilteredPayload` payload which trips the `assert not isinstance(payload, FilteredPayload)` in `decode_payload`, or `queue.ShutDown` from a shut-down pool) it logs and then marks the offset as both added and completed. The message is silently discarded and its offset is committed, so the data is lost with no DLQ and no visible failure other than a log line. Expected non-processable cases (filtered payloads, decode failures) should be handled explicitly, and unexpected enqueue failures should either raise (so arroyo can DLQ/stop) rather than ack the offset.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1925, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts behaviour the implementation does not provide and is timing dependent\", \"body\": \"The test's docstring says errors should not block offset commits, yet it asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`. `OrderedQueueWorker.run` catches the processing exception and still calls `complete_offset` in its `finally`, so offsets 100 and 101 become committable and the commit loop (which ticks every ~1s) will commit them. The test only passes because it breaks out of the wait loop after a 0.2s sleep, before the first commit tick \u2014 i.e. it is flaky and encodes the opposite of the real behaviour. Either assert that failed messages are committed (documenting the at-most-once semantics) or implement and test actual retry/DLQ handling.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 106, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Distribution test depends on randomized string hashing\", \"body\": \"`test_different_groups_distributed` asserts that 20 group keys hash into exactly all 3 queues (`len(queue_indices) == 3`). `get_queue_for_group` uses `hash()` on a `str`, which is salted per interpreter run (PYTHONHASHSEED), so there is a small but non-zero chance (~0.1%) that one bucket receives no key and the test fails for unrelated reasons. Assert something weaker (e.g. `len(queue_indices) > 1`) or use a deterministic hash function.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 150, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Per-worker queue-depth gauge is emitted with identical tags from all workers\", \"body\": \"Every `OrderedQueueWorker` emits `remote_subscriptions.queue_worker.queue_depth` with only an `identifier` tag, so all N workers (20 by default) report the depth of their own queue under the same metric series. The values overwrite each other and the resulting gauge is meaningless for diagnosing a backed-up individual queue \u2014 which is the main failure mode this design is meant to surface. Add a `worker_id`/queue index tag or emit the max/aggregate from one place.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 138, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Worker transaction name hardcodes the \\\"monitors\\\" prefix\", \"body\": \"The sentry transaction created per work item is named `f\\\"monitors.{self.identifier}.worker_{self.worker_id}\\\"`, but this strategy is generic to remote subscriptions and is being enabled for the uptime consumer. Transactions for uptime results will be grouped under a `monitors.` namespace, making performance data misleading/hard to find.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 247,
+   "severity": "high",
+   "category": "bug",
+   "title": "Queue pool is destroyed on strategy close and then reused after rebalance",
+   "body": "`FixedQueuePool` is created once in `ResultsStrategyFactory.__init__`, but the per-assignment strategy's `close()`/`terminate()`/`join()` call `queue_pool.shutdown()`, which sets `worker.shutdown = True`, calls `queue.shutdown()` on every queue and joins the worker threads. Arroyo calls `close()`/`join()` on every partition revocation (rebalance), and then calls `create_with_partitions()` again for the new assignment. On that second call `assert self.queue_pool is not None` still passes, so a strategy is built around a pool whose worker threads are dead and whose queues are shut down: every `work_queue.put()` raises `queue.ShutDown`, which `SimpleQueueProcessingStrategy.submit` swallows in its generic `except Exception` handler and then marks the offset as completed. The consumer will therefore silently drop all messages while still committing their offsets after any rebalance. The pool must be created per assignment (or re-created in `create_with_partitions`) rather than shared across strategy lifetimes."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "bug",
+   "title": "Unbounded queues mean no backpressure, contradicting the documented guarantee",
+   "body": "Each queue is created as `queue.Queue()` with no `maxsize`, and `SimpleQueueProcessingStrategy.submit()` never raises `arroyo.processing.strategies.abstract.MessageRejected`. As a result the strategy accepts messages from the Kafka consumer as fast as they arrive regardless of worker progress: work items (which also retain the full `Message`/`KafkaPayload`) and their tracked offsets accumulate in memory without bound when a group's processing is slow, which is exactly the scenario this PR is meant to address. This also contradicts the class docstring (\"Natural backpressure when queues fill up\"). A bounded queue plus `MessageRejected` on `queue.Full` is needed for arroyo to actually throttle consumption."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "high",
+   "category": "data",
+   "title": "close() stops the commit thread before draining queues, losing committable offsets",
+   "body": "`close()` sets `shutdown_event`, joins the commit thread, and only then calls `queue_pool.shutdown()`, which drains the remaining queued items (`shutdown(immediate=False)` lets queued work finish). Any item processed during that drain completes its offset after the only thread that commits offsets has already exited, so those offsets are never committed. On restart/rebalance all of that work is reprocessed. Additionally `join(timeout)` ignores the supplied timeout and just calls `close()`, so arroyo's shutdown deadline is not honoured. The order should be: stop accepting work, drain the queues, perform a final `get_committable_offsets()` + commit, then stop the commit thread."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 249,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Arroyo commit callback is invoked from a background thread",
+   "body": "`commit_offsets` (passed as `commit_function`) is called from `SimpleQueueProcessingStrategy._commit_loop`, a separate daemon thread, while the arroyo `StreamProcessor` concurrently polls and commits on the main thread. The `Commit` callable given to `create_with_partitions` stages/commits offsets on the shared consumer state and is expected to be called from the processing (main) thread; calling it concurrently races with the processor's own offset staging/commit and with partition revocation (where it can raise `ConsumerError` for unassigned partitions, silently swallowed by the loop's `except Exception`). This can produce lost or incorrect offset commits. Offsets should be collected by the background workers and committed from `poll()`/`submit()` on the main thread instead."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 89,
+   "severity": "medium",
+   "category": "data",
+   "title": "A single missing offset permanently blocks all commits for the partition",
+   "body": "`get_committable_offsets()` walks offsets contiguously from `last_committed + 1` and `break`s on the first offset that is not present in `all_offsets`. Kafka offsets are not guaranteed to be contiguous as seen by a consumer (transactional/control records, compaction, or any message that never reaches `submit` because an upstream wrapper such as the DLQ/stale-message wrapper consumed it). If one offset in the sequence is never added, that partition can never advance its commit point: `all_offsets` grows without bound and the consumer group lag never decreases, causing full reprocessing of everything after the gap on restart. There needs to be a mechanism to advance past offsets that will never be seen (e.g. seed the committed position from the assignment and treat unknown offsets below the current max as done)."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 317,
+   "severity": "medium",
+   "category": "data",
+   "title": "Generic exception handler in submit() drops messages and commits their offsets",
+   "body": "`submit()` wraps decoding, grouping and enqueueing in one `try/except Exception`; on any failure (including a failing `grouping_fn`, a `FilteredPayload` payload which trips the `assert not isinstance(payload, FilteredPayload)` in `decode_payload`, or `queue.ShutDown` from a shut-down pool) it logs and then marks the offset as both added and completed. The message is silently discarded and its offset is committed, so the data is lost with no DLQ and no visible failure other than a log line. Expected non-processable cases (filtered payloads, decode failures) should be handled explicitly, and unexpected enqueue failures should either raise (so arroyo can DLQ/stop) rather than ack the offset."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1925,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts behaviour the implementation does not provide and is timing dependent",
+   "body": "The test's docstring says errors should not block offset commits, yet it asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`. `OrderedQueueWorker.run` catches the processing exception and still calls `complete_offset` in its `finally`, so offsets 100 and 101 become committable and the commit loop (which ticks every ~1s) will commit them. The test only passes because it breaks out of the wait loop after a 0.2s sleep, before the first commit tick \u2014 i.e. it is flaky and encodes the opposite of the real behaviour. Either assert that failed messages are committed (documenting the at-most-once semantics) or implement and test actual retry/DLQ handling."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 106,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Distribution test depends on randomized string hashing",
+   "body": "`test_different_groups_distributed` asserts that 20 group keys hash into exactly all 3 queues (`len(queue_indices) == 3`). `get_queue_for_group` uses `hash()` on a `str`, which is salted per interpreter run (PYTHONHASHSEED), so there is a small but non-zero chance (~0.1%) that one bucket receives no key and the test fails for unrelated reasons. Assert something weaker (e.g. `len(queue_indices) > 1`) or use a deterministic hash function."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 150,
+   "severity": "low",
+   "category": "bug",
+   "title": "Per-worker queue-depth gauge is emitted with identical tags from all workers",
+   "body": "Every `OrderedQueueWorker` emits `remote_subscriptions.queue_worker.queue_depth` with only an `identifier` tag, so all N workers (20 by default) report the depth of their own queue under the same metric series. The values overwrite each other and the resulting gauge is meaningless for diagnosing a backed-up individual queue \u2014 which is the main failure mode this design is meant to surface. Add a `worker_id`/queue index tag or emit the max/aggregate from one place."
+  },
+  {
+   "index": 9,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 138,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Worker transaction name hardcodes the \"monitors\" prefix",
+   "body": "The sentry transaction created per work item is named `f\"monitors.{self.identifier}.worker_{self.worker_id}\"`, but this strategy is generic to remote subscriptions and is being enabled for the uptime consumer. Transactions for uptime results will be grouped under a `monitors.` namespace, making performance data misleading/hard to find."
+  }
+ ],
+ "finding_count": 10
+}

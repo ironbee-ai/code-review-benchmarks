@@ -1,0 +1,128 @@
+{
+ "run_id": "kimi-k3__default__grafana__79265__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:51:39Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29323,
+    "output": 14553,
+    "reasoning": 13497,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 574425,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4803,
+   "raw_usage": {
+    "completion_tokens": 14553,
+    "prompt_tokens": 29323,
+    "total_tokens": 43876,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 13497,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T12:51:39Z",
+   "first_chunk_ms": 8087,
+   "first_text_ms": 539476,
+   "response_id": "chatcmpl-jti7a7hblcalqnqcrjmnvqsrhr5nty7ecmbsi5yx2uwhvlau6geq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29323,
+  "output": 14553,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 13497
+ },
+ "cost_reported": null,
+ "latency_ms": 574425,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Device limit is bypassed on retry because the local cache is populated before the store write succeeds\", \"body\": \"In tagDeviceUI, the device cache key is set (a.localCache.SetDefault(key, struct{}{}) at line 87) BEFORE calling a.anonStore.CreateOrUpdateDevice. When the device limit is reached, CreateOrUpdateDevice returns ErrDeviceLimitReached, so the first request from a new device is correctly rejected in the anonymous auth client (client.go returns the error). However, the cache entry remains for ~29 minutes (localcache.New(29*time.Minute, ...)). Any subsequent request from the same device hits the cache at line 83, tagDeviceUI returns nil without touching the store, and the anonymous authentication succeeds. The consequence is that the new configurable device limit is effectively unenforced: a blocked device only sees one failed request and then gets full anonymous access by simply retrying (e.g., refreshing the browser), with the block re-asserting only once per 29-minute cache-expiry window. The cache should only be populated after CreateOrUpdateDevice succeeds (or the key must be removed when it returns an error).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 110, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Check-then-act race between CountDevices and the insert allows exceeding the configured device limit\", \"body\": \"CreateOrUpdateDevice enforces the limit by first calling CountDevices and then, only if count < deviceLimit, executing the INSERT/upsert. The count and the insert are separate, non-transactional queries. Two concurrent anonymous requests for new devices can both observe count < deviceLimit and both insert, so the anon_device table ends up with more devices than the configured limit. Under concurrent anonymous traffic (e.g., a public dashboard link being opened by many clients at once, or multiple Grafana HA replicas), the limit is only a soft cap. Consider enforcing the limit atomically (e.g., a single statement with a subquery guard, a transaction with appropriate isolation, or an INSERT ... WHERE (SELECT COUNT(*) ...) < limit).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Device tagging moved from background goroutine into the synchronous auth path even when no limit is configured\", \"body\": \"Previously TagDevice ran in a goroutine with its own 2-minute timeout and a recover() guard, so anonymous authentication never blocked on the database write and a panic in tagging could not affect the request. This PR calls TagDevice synchronously in Authenticate for all deployments, including the default case where device_limit is unset (0) and the enforcement is not needed. On every local-cache miss (roughly once per 29 minutes per device) each anonymous request now waits for the COUNT + upsert round trips before an identity is returned, and a panic in the tagging path now propagates into request handling. Consider keeping the asynchronous path when the limit is disabled, or restoring the timeout/recover protection.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test for the allowed path (existing device updated when limit is reached) or for repeated rejection\", \"body\": \"TestIntegrationBeyondDeviceLimit only verifies that a brand-new device is rejected with ErrDeviceLimitReached once the limit is hit. Two important behaviors are untested: (1) that a device already present in anon_device is still successfully updated (updateDevice returns nil) when count >= deviceLimit \u2014 this is the intended happy path that keeps existing devices working, and a regression there would lock out legitimate users; (2) that a rejected device keeps being rejected on subsequent TagDevice/CreateOrUpdateDevice attempts \u2014 a test through AnonDeviceService.TagDevice would have caught the local-cache bypass where the second request from a blocked device succeeds.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New device_limit option is not documented in defaults.ini/sample.ini\", \"body\": \"The PR introduces cfg.AnonymousDeviceLimit read from key 'device_limit' in the [auth.anonymous] section, but it does not add the option to conf/defaults.ini or conf/sample.ini, where the other auth.anonymous options (enabled, org_name, org_role, hide_version) are documented with comments. As shipped, the setting is undiscoverable for administrators and its semantics (0 = unlimited, limit counted over devices active in the last 30 days) are undocumented.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Device limit is bypassed on retry because the local cache is populated before the store write succeeds",
+   "body": "In tagDeviceUI, the device cache key is set (a.localCache.SetDefault(key, struct{}{}) at line 87) BEFORE calling a.anonStore.CreateOrUpdateDevice. When the device limit is reached, CreateOrUpdateDevice returns ErrDeviceLimitReached, so the first request from a new device is correctly rejected in the anonymous auth client (client.go returns the error). However, the cache entry remains for ~29 minutes (localcache.New(29*time.Minute, ...)). Any subsequent request from the same device hits the cache at line 83, tagDeviceUI returns nil without touching the store, and the anonymous authentication succeeds. The consequence is that the new configurable device limit is effectively unenforced: a blocked device only sees one failed request and then gets full anonymous access by simply retrying (e.g., refreshing the browser), with the block re-asserting only once per 29-minute cache-expiry window. The cache should only be populated after CreateOrUpdateDevice succeeds (or the key must be removed when it returns an error)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 110,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Check-then-act race between CountDevices and the insert allows exceeding the configured device limit",
+   "body": "CreateOrUpdateDevice enforces the limit by first calling CountDevices and then, only if count < deviceLimit, executing the INSERT/upsert. The count and the insert are separate, non-transactional queries. Two concurrent anonymous requests for new devices can both observe count < deviceLimit and both insert, so the anon_device table ends up with more devices than the configured limit. Under concurrent anonymous traffic (e.g., a public dashboard link being opened by many clients at once, or multiple Grafana HA replicas), the limit is only a soft cap. Consider enforcing the limit atomically (e.g., a single statement with a subquery guard, a transaction with appropriate isolation, or an INSERT ... WHERE (SELECT COUNT(*) ...) < limit)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "low",
+   "category": "perf",
+   "title": "Device tagging moved from background goroutine into the synchronous auth path even when no limit is configured",
+   "body": "Previously TagDevice ran in a goroutine with its own 2-minute timeout and a recover() guard, so anonymous authentication never blocked on the database write and a panic in tagging could not affect the request. This PR calls TagDevice synchronously in Authenticate for all deployments, including the default case where device_limit is unset (0) and the enforcement is not needed. On every local-cache miss (roughly once per 29 minutes per device) each anonymous request now waits for the COUNT + upsert round trips before an identity is returned, and a panic in the tagging path now propagates into request handling. Consider keeping the asynchronous path when the limit is disabled, or restoring the timeout/recover protection."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test for the allowed path (existing device updated when limit is reached) or for repeated rejection",
+   "body": "TestIntegrationBeyondDeviceLimit only verifies that a brand-new device is rejected with ErrDeviceLimitReached once the limit is hit. Two important behaviors are untested: (1) that a device already present in anon_device is still successfully updated (updateDevice returns nil) when count >= deviceLimit \u2014 this is the intended happy path that keeps existing devices working, and a regression there would lock out legitimate users; (2) that a rejected device keeps being rejected on subsequent TagDevice/CreateOrUpdateDevice attempts \u2014 a test through AnonDeviceService.TagDevice would have caught the local-cache bypass where the second request from a blocked device succeeds."
+  },
+  {
+   "index": 4,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New device_limit option is not documented in defaults.ini/sample.ini",
+   "body": "The PR introduces cfg.AnonymousDeviceLimit read from key 'device_limit' in the [auth.anonymous] section, but it does not add the option to conf/defaults.ini or conf/sample.ini, where the other auth.anonymous options (enabled, org_name, org_role, hide_version) are documented with comments. As shipped, the setting is undiscoverable for administrators and its semantics (0 = unlimited, limit counted over devices active in the last 30 days) are undocumented."
+  }
+ ],
+ "finding_count": 5
+}

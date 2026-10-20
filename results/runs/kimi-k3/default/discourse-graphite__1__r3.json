@@ -1,0 +1,135 @@
+{
+ "run_id": "kimi-k3__default__discourse-graphite__1__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "discourse-graphite__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:14:05Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 28941,
+  "sha": "e6ad5d59c5fd0fac",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 7920,
+    "output": 23232,
+    "reasoning": 21857,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 866671,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5800,
+   "raw_usage": {
+    "completion_tokens": 23232,
+    "prompt_tokens": 7920,
+    "total_tokens": 31152,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 21857,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T12:14:05Z",
+   "first_chunk_ms": 14824,
+   "first_text_ms": 826834,
+   "response_id": "chatcmpl-snzrto5ftvqb76xqgqnl3lq764plhaexy54ekk4gfsyn7tzn5uya",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 7920,
+  "output": 23232,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 21857
+ },
+ "cost_reported": null,
+ "latency_ms": 866671,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 55, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Unsanitized `type` param flows into a shell command via the tempfile path (command injection)\", \"body\": \"`type` comes directly from `params` and is embedded into the download tempfile name (\\\"discourse-upload-#{type}\\\") at line 55. This PR then passes `tempfile.path` to `OptimizedImage.downsize` (line 67), and `OptimizedImage.convert_with` executes the instructions with backticks (`` `#{instructions.join(\\\" \\\")}` `` in optimized_image.rb) with no shell escaping. A caller who can use the API URL-upload branch (`is_api?` + `url` present, no file) can put shell metacharacters such as `$(...)` or backticks into `type`; hosting an image larger than `max_image_size_kb` at that URL makes the new downsize branch execute, running the injected command as the app server user. Previously this tempfile path never reached a shell, so this exposure is introduced by this PR. Validate `type` against a whitelist before using it in a filename, and/or stop interpolating paths into a shell string (use an argv-array form of exec instead of backticks).\"}, {\"file\": \"app/models/optimized_image.rb\", \"line\": 149, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"self.downsize is defined twice; the 4-argument version is dead and old callers silently misbehave\", \"body\": \"The file now defines `self.downsize` twice: lines 145-147 (`from, to, max_width, max_height, opts`) and lines 149-151 (`from, to, dimensions, opts`). Ruby keeps only the last definition, so the first method is dead code. Worse, any existing or plugin caller still using the old 4-argument form `downsize(from, to, width, height)` gets no arity error: the width is used verbatim as the ImageMagick geometry string (e.g. `-resize 1920\\\\>` with no height) and the height (an Integer) is used as `opts`, so `!!opts[:allow_animation]` in `optimize` raises TypeError (Integer#[] with a Symbol), which is not rescued because the rescue lives in `convert_with`. Remove the leftover 4-argument definition (or make it delegate to the new one correctly).\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 67, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Large animated GIFs are silently flattened to their first frame\", \"body\": \"The downsize call passes `tempfile.path` as `from`, and `OptimizedImage.optimize` only selects the animated (gifsicle) code path when `from =~ /\\\\.GIF$/i`. Upload tempfiles created by Rack (and the API download tempfile) do not carry the original file extension, so for normal composer uploads this check is always false and a large animated GIF is processed by `convert from[0] ...`, whose `[0]` selects only the first frame and writes a static image back over the user's original file \u2014 the animation is silently destroyed even when `allow_animation` is enabled. Additionally, even when the animated branch is reached, it is handed the geometry string \\\"80%\\\", but gifsicle's `--resize-fit` expects an explicit WxH geometry and does not accept percentages, so it would fail on every one of the 5 attempts (the loop also ignores `downsize`'s false return and just retries the identical command). Base the animation check on the original filename or content type rather than the tempfile path, and use gifsicle-compatible geometry.\"}, {\"file\": \"app/assets/javascripts/discourse/lib/utilities.js\", \"line\": 182, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Client upload size check hardcodes 10MB for all types, ignoring the per-type site settings\", \"body\": \"`validateUploadedFile` now caps every upload at `10 * 1024` KB instead of `Discourse.SiteSettings['max_' + type + '_size_kb']`. The server-side downsize added in this PR only applies to images; attachments are still validated against `max_attachment_size_kb`, so sites with a lower attachment limit now accept files client-side that the server then rejects (bad UX, wasted upload), and sites with a higher attachment limit (or `max_image_size_kb` above 10MB) now have legitimate uploads blocked client-side \u2014 a regression. The 413 error handler at line 246 likewise always reports a 10MB limit in the `file_too_large` message regardless of the actual configured limit. Keep the per-type setting for attachments and only raise the effective cap for images that the server can downsize.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 55, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"API URL-download cap hardcoded to 10MB and nil tempfile still dereferenced\", \"body\": \"For API uploads by URL the download limit was changed from the configured `SiteSetting.max_image_size_kb.kilobytes` to a fixed `10.megabytes`. This branch also serves non-image uploads, so attachments larger than 10MB can no longer be pulled via the API even when `max_attachment_size_kb` permits them. When the cap is exceeded the `rescue nil` leaves `tempfile` as nil, and line 72 then calls `tempfile.size`, raising NoMethodError instead of returning a clean error to the API client. Use the per-type size setting and handle the nil tempfile case explicitly.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 64, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the new auto-downsize behavior\", \"body\": \"The new downsize loop in `create_upload` (lines 64-70) \u2014 a retry loop that shells out to ImageMagick/gifsicle and mutates the uploaded file before `Upload.create_for` \u2014 ships without any spec coverage. There are no tests verifying that an over-limit image is downsized and accepted, that an image still over the limit after 5 attempts returns a clean validation error, or that animated GIFs keep their animation (they currently do not). Add controller/model specs covering these cases.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 55,
+   "severity": "high",
+   "category": "security",
+   "title": "Unsanitized `type` param flows into a shell command via the tempfile path (command injection)",
+   "body": "`type` comes directly from `params` and is embedded into the download tempfile name (\"discourse-upload-#{type}\") at line 55. This PR then passes `tempfile.path` to `OptimizedImage.downsize` (line 67), and `OptimizedImage.convert_with` executes the instructions with backticks (`` `#{instructions.join(\" \")}` `` in optimized_image.rb) with no shell escaping. A caller who can use the API URL-upload branch (`is_api?` + `url` present, no file) can put shell metacharacters such as `$(...)` or backticks into `type`; hosting an image larger than `max_image_size_kb` at that URL makes the new downsize branch execute, running the injected command as the app server user. Previously this tempfile path never reached a shell, so this exposure is introduced by this PR. Validate `type` against a whitelist before using it in a filename, and/or stop interpolating paths into a shell string (use an argv-array form of exec instead of backticks)."
+  },
+  {
+   "index": 1,
+   "file": "app/models/optimized_image.rb",
+   "line": 149,
+   "severity": "medium",
+   "category": "bug",
+   "title": "self.downsize is defined twice; the 4-argument version is dead and old callers silently misbehave",
+   "body": "The file now defines `self.downsize` twice: lines 145-147 (`from, to, max_width, max_height, opts`) and lines 149-151 (`from, to, dimensions, opts`). Ruby keeps only the last definition, so the first method is dead code. Worse, any existing or plugin caller still using the old 4-argument form `downsize(from, to, width, height)` gets no arity error: the width is used verbatim as the ImageMagick geometry string (e.g. `-resize 1920\\>` with no height) and the height (an Integer) is used as `opts`, so `!!opts[:allow_animation]` in `optimize` raises TypeError (Integer#[] with a Symbol), which is not rescued because the rescue lives in `convert_with`. Remove the leftover 4-argument definition (or make it delegate to the new one correctly)."
+  },
+  {
+   "index": 2,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 67,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Large animated GIFs are silently flattened to their first frame",
+   "body": "The downsize call passes `tempfile.path` as `from`, and `OptimizedImage.optimize` only selects the animated (gifsicle) code path when `from =~ /\\.GIF$/i`. Upload tempfiles created by Rack (and the API download tempfile) do not carry the original file extension, so for normal composer uploads this check is always false and a large animated GIF is processed by `convert from[0] ...`, whose `[0]` selects only the first frame and writes a static image back over the user's original file \u2014 the animation is silently destroyed even when `allow_animation` is enabled. Additionally, even when the animated branch is reached, it is handed the geometry string \"80%\", but gifsicle's `--resize-fit` expects an explicit WxH geometry and does not accept percentages, so it would fail on every one of the 5 attempts (the loop also ignores `downsize`'s false return and just retries the identical command). Base the animation check on the original filename or content type rather than the tempfile path, and use gifsicle-compatible geometry."
+  },
+  {
+   "index": 3,
+   "file": "app/assets/javascripts/discourse/lib/utilities.js",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Client upload size check hardcodes 10MB for all types, ignoring the per-type site settings",
+   "body": "`validateUploadedFile` now caps every upload at `10 * 1024` KB instead of `Discourse.SiteSettings['max_' + type + '_size_kb']`. The server-side downsize added in this PR only applies to images; attachments are still validated against `max_attachment_size_kb`, so sites with a lower attachment limit now accept files client-side that the server then rejects (bad UX, wasted upload), and sites with a higher attachment limit (or `max_image_size_kb` above 10MB) now have legitimate uploads blocked client-side \u2014 a regression. The 413 error handler at line 246 likewise always reports a 10MB limit in the `file_too_large` message regardless of the actual configured limit. Keep the per-type setting for attachments and only raise the effective cap for images that the server can downsize."
+  },
+  {
+   "index": 4,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 55,
+   "severity": "low",
+   "category": "bug",
+   "title": "API URL-download cap hardcoded to 10MB and nil tempfile still dereferenced",
+   "body": "For API uploads by URL the download limit was changed from the configured `SiteSetting.max_image_size_kb.kilobytes` to a fixed `10.megabytes`. This branch also serves non-image uploads, so attachments larger than 10MB can no longer be pulled via the API even when `max_attachment_size_kb` permits them. When the cap is exceeded the `rescue nil` leaves `tempfile` as nil, and line 72 then calls `tempfile.size`, raising NoMethodError instead of returning a clean error to the API client. Use the per-type size setting and handle the nil tempfile case explicitly."
+  },
+  {
+   "index": 5,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 64,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the new auto-downsize behavior",
+   "body": "The new downsize loop in `create_upload` (lines 64-70) \u2014 a retry loop that shells out to ImageMagick/gifsicle and mutates the uploaded file before `Upload.create_for` \u2014 ships without any spec coverage. There are no tests verifying that an over-limit image is downsized and accepted, that an image still over the limit after 5 attempts returns a clean validation error, or that animated GIFs keep their animation (they currently do not). Add controller/model specs covering these cases."
+  }
+ ],
+ "finding_count": 6
+}

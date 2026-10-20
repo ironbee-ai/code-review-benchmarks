@@ -1,0 +1,178 @@
+{
+ "run_id": "minimax-m3__low__grafana__97529__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:35:25Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33771,
+    "output": 12829,
+    "reasoning": 10708,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02553378,
+   "latency_ms": 59577,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 8980,
+   "raw_usage": {
+    "completion_tokens": 12829,
+    "prompt_tokens": 33899,
+    "total_tokens": 46728,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 10708,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.02553378,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02553378,
+     "upstream_inference_prompt_cost": 0.01013898,
+     "upstream_inference_completions_cost": 0.0153948
+    }
+   },
+   "started_at": "2026-10-17T11:35:25Z",
+   "first_chunk_ms": 2014,
+   "first_text_ms": 50062,
+   "response_id": "gen-1792236925-IGBTQi6VvW3gp6QwgotV",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33771,
+  "output": 12829,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 10708
+ },
+ "cost_reported": 0.02553378,
+ "latency_ms": 59577,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Race condition introduced by removing BuildIndex global lock\", \"body\": \"The diff removes `b.cacheMu.Lock()` at the start of `BuildIndex` and only acquires it around the final `b.cache[key] = idx` assignment. As a result, two concurrent calls for the same key can both pass through `GetIndex` (which takes only an RLock and returns nil for a missing entry) and concurrently execute `BuildIndex` for the same key. Both will then race on `b.cache[key] = idx` with last-writer-wins. At startup this is reachable whenever a gRPC request lands while `searchSupport.init` is still building a namespace, and at runtime it is reachable whenever a search request races with `getOrCreateIndex`. Previously the lock held for the whole build prevented this entirely; now the cache can contain stale indexes, and the second build allocates a whole new bleve index (potentially on disk under `b.opts.Root`) that is then orphaned. The fix in `getOrCreateIndex` only acquires the index after the build returns, so callers that retrieved the earlier index write to an index that is no longer the cached one. A per-key mutex, singleflight.Group, or sync.Map with double-checked loading is needed to make this safe.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 309, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Reordering search.init before initWatcher loses events written in the gap\", \"body\": \"The diff reorders `Init` to call `s.search.init(ctx)` first and then `s.initWatcher()`. Previously the broadcaster/stream was attached before the search index was built. `searchSupport.init` builds the index from a snapshot taken via `GetResourceStats`/`ListIterator` that returns when its last `ListIterator` completes. Any writes that hit the SQL backend between that point and when `s.initWatcher` starts (and calls `WatchWriteEvents` -> `listLatestRVs` to compute its `since`) are NOT in the search index snapshot AND are NOT yet visible to the watcher, so they are silently dropped from the search index. With the old order, the watcher (poller) was already running, so its `since` was at or after the build's last read RV. The fix is either to keep the original order or to pass an explicit `since` (the last RV read by `searchSupport.init`) into `initWatcher` so its polling starts at that RV.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"NewResourceServer now fails if init fails, breaking callers that relied on lazy init\", \"body\": \"`NewResourceServer` now calls `s.Init(ctx)` synchronously and returns `(nil, err)` on any init failure (lifecycle hook, search init, or watcher startup). Previously, init was deferred to the first RPC and a server object was always returned. Callers (e.g., the storage server module wiring) that construct the server, register it, and then serve traffic will now fail at construction time on any transient init failure. The PR description explicitly flags this as a question for the reviewer (\\\"Does anything else depend on initializing US lazily?\\\") but the chosen behavior change is significant: a slow/unhealthy database at startup, a corrupt bleve index directory, or any failure in `s.lifecycle.Init` / `s.search.init` will now prevent the storage server module from starting at all. Either keep the lazy path (with a context that isn't the per-RPC deadline) or ensure every caller of `NewResourceServer` is updated and tested for the eager-failure case.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"NewResourceServer leaks backend resources when Init fails\", \"body\": \"When `s.lifecycle.Init(ctx)` succeeds (which is what opens the SQL database connection in the SQL backend's `initLocked`) but a later step in `s.once.Do` (search init or `initWatcher`) fails, `NewResourceServer` returns `(nil, err)` without calling `s.Stop`. There is no `defer` to call `s.cancel()` or to call `s.lifecycle.Stop`. The SQL backend's database handle (`b.db`), open bleve file indices on disk under `b.opts.Root`, and any goroutines started during partial init are left running. A successful subsequent `NewResourceServer` call for the same backend then races against the leaked resources. Add a cleanup path on the failure branch.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Data race on outer `err` variable inside errgroup goroutine\", \"body\": \"Inside `searchSupport.init`, the errgroup goroutine does `_, _, err = s.build(...)` and then `return err`, where `err` is the outer named variable declared just above the `for` loop. With `group.SetLimit(s.initWorkers) > 1`, multiple goroutines write to the same outer `err` concurrently. The race is benign here because the goroutines also `return err` and `group.Wait()` is reassigned to `err` immediately after, but it is still a data race per the Go memory model and a race detector run will flag it. Use `_, _, buildErr := s.build(...)` and return `buildErr`.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 88, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"BuildIndex still discards the traced context\", \"body\": \"This PR's stated goal is to \\\"fix trace propagation by passing span contexts down\\\". `searchSupport.init`, `searchSupport.build`, and `backend.GetResourceStats` were all updated from `_, span := ...` to `ctx, span := ...` so the new context flows into downstream calls. `bleveBackend.BuildIndex` is the only other function touched in this PR that still uses `_, span := b.tracer.Start(ctx, tracingPrexfixBleve+\\\"BuildIndex\\\")`. The span exists but the returned context is dropped, which is the same bug the PR claims to fix. Apply the same `ctx, span :=` change here for consistency, even though the builder closure currently captures its own context from the caller.\"}, {\"file\": \"pkg/storage/unified/sql/backend.go\", \"line\": 126, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Trace propagation fix is incomplete in backend.go\", \"body\": \"The PR description says \\\"Fixes trace propagation by passing span contexts down\\\" and updates `GetResourceStats` from `_, span := ...` to `ctx, span := ...`. Other methods in the same file (`WriteEvent` at line 158, `ReadResource` at line 353, `ListIterator` at line 388, `poll` at line 664, `resourceVersionAtomicInc` at line 718) still use `_, span := b.tracer.Start(ctx, ...)`, discarding the returned context. Downstream DB calls made with the outer `ctx` (not the traced context) therefore do not appear as children of these spans. Either the fix is intentionally scoped (in which case the PR description is misleading) or these should all be updated to `ctx, span :=`.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Postgres support in the storage-server integration test is skipped rather than fixed\", \"body\": \"The diff adds a `t.Skip` for `dbType == \\\"postgres\\\"` with a TODO to fix the test. This PR changes the most fundamental part of the storage server lifecycle (where initialization runs) but provides no new test coverage for that change, and the only integration test that exercises `InitializeModuleServer` with `modules.StorageServer` is now skipped on the very backend the storage server is required to support. Combined with the eager-init behavior change in `NewResourceServer`, this leaves a regression in postgres untested. Either unblock the test or add a dedicated test that exercises `NewResourceServer` -> eager init -> a Search gRPC call end-to-end on a real backend.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 196, \"severity\": \"low\", \"category\": \"data\", \"title\": \"successful index build still logs duration but index size is constant\",\"name_omitted\": false, \"body\": \"The new `s.log.Info(\\\"search index initialized\\\", \\\"duration_secs\\\", end-start, \\\"total_docs\\\", s.search.TotalDocs())` reports `total_docs` from `bleveBackend.TotalDocs()`, which iterates `b.cache` at the moment init's search goroutines return. Because `searchSupport.init` uses `errgroup.Group` with `group.SetLimit(s.initWorkers)`, multiple `BuildIndex` calls may still be in flight when init's group.Wait() returns only the FIRST error; if no error occurred, `group.Wait` returns nil and the cache may not yet contain every index that was being built (the cache assignment happens inside `bleveBackend.BuildIndex`, after `builder(idx)` and `idx.Flush()`, and is only protected by `cacheMu`). Worse, if any one of those last in-flight builds fails after some succeed, the log line is never reached but partial state is reported earlier. This is a minor observability concern, but combined with the bleve lock-removal race it understates how many indexes were actually built.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Race condition introduced by removing BuildIndex global lock",
+   "body": "The diff removes `b.cacheMu.Lock()` at the start of `BuildIndex` and only acquires it around the final `b.cache[key] = idx` assignment. As a result, two concurrent calls for the same key can both pass through `GetIndex` (which takes only an RLock and returns nil for a missing entry) and concurrently execute `BuildIndex` for the same key. Both will then race on `b.cache[key] = idx` with last-writer-wins. At startup this is reachable whenever a gRPC request lands while `searchSupport.init` is still building a namespace, and at runtime it is reachable whenever a search request races with `getOrCreateIndex`. Previously the lock held for the whole build prevented this entirely; now the cache can contain stale indexes, and the second build allocates a whole new bleve index (potentially on disk under `b.opts.Root`) that is then orphaned. The fix in `getOrCreateIndex` only acquires the index after the build returns, so callers that retrieved the earlier index write to an index that is no longer the cached one. A per-key mutex, singleflight.Group, or sync.Map with double-checked loading is needed to make this safe."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 309,
+   "severity": "high",
+   "category": "data",
+   "title": "Reordering search.init before initWatcher loses events written in the gap",
+   "body": "The diff reorders `Init` to call `s.search.init(ctx)` first and then `s.initWatcher()`. Previously the broadcaster/stream was attached before the search index was built. `searchSupport.init` builds the index from a snapshot taken via `GetResourceStats`/`ListIterator` that returns when its last `ListIterator` completes. Any writes that hit the SQL backend between that point and when `s.initWatcher` starts (and calls `WatchWriteEvents` -> `listLatestRVs` to compute its `since`) are NOT in the search index snapshot AND are NOT yet visible to the watcher, so they are silently dropped from the search index. With the old order, the watcher (poller) was already running, so its `since` was at or after the build's last read RV. The fix is either to keep the original order or to pass an explicit `since` (the last RV read by `searchSupport.init`) into `initWatcher` so its polling starts at that RV."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "api",
+   "title": "NewResourceServer now fails if init fails, breaking callers that relied on lazy init",
+   "body": "`NewResourceServer` now calls `s.Init(ctx)` synchronously and returns `(nil, err)` on any init failure (lifecycle hook, search init, or watcher startup). Previously, init was deferred to the first RPC and a server object was always returned. Callers (e.g., the storage server module wiring) that construct the server, register it, and then serve traffic will now fail at construction time on any transient init failure. The PR description explicitly flags this as a question for the reviewer (\"Does anything else depend on initializing US lazily?\") but the chosen behavior change is significant: a slow/unhealthy database at startup, a corrupt bleve index directory, or any failure in `s.lifecycle.Init` / `s.search.init` will now prevent the storage server module from starting at all. Either keep the lazy path (with a context that isn't the per-RPC deadline) or ensure every caller of `NewResourceServer` is updated and tested for the eager-failure case."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "data",
+   "title": "NewResourceServer leaks backend resources when Init fails",
+   "body": "When `s.lifecycle.Init(ctx)` succeeds (which is what opens the SQL database connection in the SQL backend's `initLocked`) but a later step in `s.once.Do` (search init or `initWatcher`) fails, `NewResourceServer` returns `(nil, err)` without calling `s.Stop`. There is no `defer` to call `s.cancel()` or to call `s.lifecycle.Stop`. The SQL backend's database handle (`b.db`), open bleve file indices on disk under `b.opts.Root`, and any goroutines started during partial init are left running. A successful subsequent `NewResourceServer` call for the same backend then races against the leaked resources. Add a cleanup path on the failure branch."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Data race on outer `err` variable inside errgroup goroutine",
+   "body": "Inside `searchSupport.init`, the errgroup goroutine does `_, _, err = s.build(...)` and then `return err`, where `err` is the outer named variable declared just above the `for` loop. With `group.SetLimit(s.initWorkers) > 1`, multiple goroutines write to the same outer `err` concurrently. The race is benign here because the goroutines also `return err` and `group.Wait()` is reassigned to `err` immediately after, but it is still a data race per the Go memory model and a race detector run will flag it. Use `_, _, buildErr := s.build(...)` and return `buildErr`."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "BuildIndex still discards the traced context",
+   "body": "This PR's stated goal is to \"fix trace propagation by passing span contexts down\". `searchSupport.init`, `searchSupport.build`, and `backend.GetResourceStats` were all updated from `_, span := ...` to `ctx, span := ...` so the new context flows into downstream calls. `bleveBackend.BuildIndex` is the only other function touched in this PR that still uses `_, span := b.tracer.Start(ctx, tracingPrexfixBleve+\"BuildIndex\")`. The span exists but the returned context is dropped, which is the same bug the PR claims to fix. Apply the same `ctx, span :=` change here for consistency, even though the builder closure currently captures its own context from the caller."
+  },
+  {
+   "index": 6,
+   "file": "pkg/storage/unified/sql/backend.go",
+   "line": 126,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Trace propagation fix is incomplete in backend.go",
+   "body": "The PR description says \"Fixes trace propagation by passing span contexts down\" and updates `GetResourceStats` from `_, span := ...` to `ctx, span := ...`. Other methods in the same file (`WriteEvent` at line 158, `ReadResource` at line 353, `ListIterator` at line 388, `poll` at line 664, `resourceVersionAtomicInc` at line 718) still use `_, span := b.tracer.Start(ctx, ...)`, discarding the returned context. Downstream DB calls made with the outer `ctx` (not the traced context) therefore do not appear as children of these spans. Either the fix is intentionally scoped (in which case the PR description is misleading) or these should all be updated to `ctx, span :=`."
+  },
+  {
+   "index": 7,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres support in the storage-server integration test is skipped rather than fixed",
+   "body": "The diff adds a `t.Skip` for `dbType == \"postgres\"` with a TODO to fix the test. This PR changes the most fundamental part of the storage server lifecycle (where initialization runs) but provides no new test coverage for that change, and the only integration test that exercises `InitializeModuleServer` with `modules.StorageServer` is now skipped on the very backend the storage server is required to support. Combined with the eager-init behavior change in `NewResourceServer`, this leaves a regression in postgres untested. Either unblock the test or add a dedicated test that exercises `NewResourceServer` -> eager init -> a Search gRPC call end-to-end on a real backend."
+  },
+  {
+   "index": 8,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 196,
+   "severity": "low",
+   "category": "data",
+   "title": "successful index build still logs duration but index size is constant",
+   "body": "The new `s.log.Info(\"search index initialized\", \"duration_secs\", end-start, \"total_docs\", s.search.TotalDocs())` reports `total_docs` from `bleveBackend.TotalDocs()`, which iterates `b.cache` at the moment init's search goroutines return. Because `searchSupport.init` uses `errgroup.Group` with `group.SetLimit(s.initWorkers)`, multiple `BuildIndex` calls may still be in flight when init's group.Wait() returns only the FIRST error; if no error occurred, `group.Wait` returns nil and the cache may not yet contain every index that was being built (the cache assignment happens inside `bleveBackend.BuildIndex`, after `builder(idx)` and `idx.Flush()`, and is only protected by `cacheMu`). Worse, if any one of those last in-flight builds fails after some succeed, the log line is never reached but partial state is reported earlier. This is a minor observability concern, but combined with the bleve lock-removal race it understates how many indexes were actually built."
+  }
+ ],
+ "finding_count": 9
+}

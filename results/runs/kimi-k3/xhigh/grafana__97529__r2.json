@@ -1,0 +1,128 @@
+{
+ "run_id": "kimi-k3__xhigh__grafana__97529__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-17T23:30:14Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33253,
+    "output": 5779,
+    "reasoning": 4716,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 286213,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4683,
+   "raw_usage": {
+    "completion_tokens": 5779,
+    "prompt_tokens": 33253,
+    "total_tokens": 39032,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 4716,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T23:30:14Z",
+   "first_chunk_ms": 6159,
+   "first_text_ms": 235276,
+   "response_id": "chatcmpl-afwmpm5mmkrk3folo2vofqlnq2vevf4ck7fhridrculnzynu745q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33253,
+  "output": 5779,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4716
+ },
+ "cost_reported": null,
+ "latency_ms": 286213,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 96, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Removing the function-wide lock in BuildIndex allows concurrent builds of the same index\", \"body\": \"Previously BuildIndex held b.cacheMu for its entire duration, serializing all index builds. The PR removes that lock and only locks around the final cache write, but there is no per-key serialization anywhere else: searchSupport.getOrCreateIndex (pkg/storage/unified/resource/search.go) does GetIndex-then-build with no guard (its own TODO admits this), so two concurrent Search calls, or a Search concurrent with a watch event, for the same NamespacedResource can both enter BuildIndex. Consequences: (1) for file-backed indexes (size > FileThreshold), both goroutines call bleve.New on the same directory path, which will fail with a lock/already-exists error or risk on-disk corruption, surfacing as spurious request errors; (2) both goroutines write b.cache[key], so the loser's fully built index is overwritten without ever being closed, leaking file handles and memory. The speedup is real for distinct keys, but same-key builds need a singleflight/per-key mutex to stay safe.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data races on shared err and totalBatchesIndexed in concurrent init goroutines\", \"body\": \"In searchSupport.init, each errgroup goroutine does `totalBatchesIndexed++` and `_, _, err = s.build(...)`, where both variables are shared outer-scope variables also accessed by the main goroutine (err is reassigned by `err = group.Wait()`, totalBatchesIndexed is read for the span event). With initWorkers > 1 \u2014 which this PR explicitly promotes by moving init to startup and speeding up concurrent builds \u2014 these are genuine data races that `go test -race` will flag, and the err returned by an individual goroutine may be overwritten by a sibling goroutine's build result. Each goroutine should use a local err and the counter should be an atomic (or dropped).\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 209, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Watch goroutine panics on nil event when the events channel closes at shutdown\", \"body\": \"The goroutine started at the end of searchSupport.init does `v := <-events` in a loop without checking the ok flag. The SQL backend's poller closes the stream channel when the backend is stopped (defer close(stream) in backend.poller), at which point this receive returns nil forever and s.handleEvent(watchctx, nil) immediately dereferences evt.Type, panicking the process. Because this PR moves init from the first gRPC call to server construction, this goroutine now always runs whenever search is configured, so every shutdown of a search-enabled server (including the integration test in this PR that calls ms.Shutdown) risks a process-crashing panic. The receive should be `v, ok := <-events; if !ok { return }`.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the index cache map without holding cacheMu\", \"body\": \"bleveBackend.TotalDocs ranges over b.cache with no lock, while BuildIndex now writes to that map under a short-lived cacheMu critical section. The PR adds a new caller: searchSupport.init logs s.search.TotalDocs() (search.go line 216) immediately after starting the watch goroutine, and that goroutine can concurrently call getOrCreateIndex -> BuildIndex -> `b.cache[key] = idx` when an event arrives for a namespace that was below the initMinSize threshold and thus not pre-built. A concurrent map read and write is a fatal runtime error in Go (not a recoverable panic), so this can crash the server during or right after startup. TotalDocs should take cacheMu.RLock() before iterating.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Storage-server integration test is now skipped entirely on postgres\", \"body\": \"The PR adds a skip for GRAFANA_TEST_DB=postgres in TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer, so CI no longer exercises the storage-server module target (which is exactly the startup path this PR changes by moving unified-storage init into server construction) against postgres. The TODO acknowledges it only fails in Drone, but merging this means the postgres variant can silently rot; consider skipping only in CI (e.g., detecting the Drone environment) or fixing the underlying issue before relying on this test to validate the new eager init behavior.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 96,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Removing the function-wide lock in BuildIndex allows concurrent builds of the same index",
+   "body": "Previously BuildIndex held b.cacheMu for its entire duration, serializing all index builds. The PR removes that lock and only locks around the final cache write, but there is no per-key serialization anywhere else: searchSupport.getOrCreateIndex (pkg/storage/unified/resource/search.go) does GetIndex-then-build with no guard (its own TODO admits this), so two concurrent Search calls, or a Search concurrent with a watch event, for the same NamespacedResource can both enter BuildIndex. Consequences: (1) for file-backed indexes (size > FileThreshold), both goroutines call bleve.New on the same directory path, which will fail with a lock/already-exists error or risk on-disk corruption, surfacing as spurious request errors; (2) both goroutines write b.cache[key], so the loser's fully built index is overwritten without ever being closed, leaking file handles and memory. The speedup is real for distinct keys, but same-key builds need a singleflight/per-key mutex to stay safe."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data races on shared err and totalBatchesIndexed in concurrent init goroutines",
+   "body": "In searchSupport.init, each errgroup goroutine does `totalBatchesIndexed++` and `_, _, err = s.build(...)`, where both variables are shared outer-scope variables also accessed by the main goroutine (err is reassigned by `err = group.Wait()`, totalBatchesIndexed is read for the span event). With initWorkers > 1 \u2014 which this PR explicitly promotes by moving init to startup and speeding up concurrent builds \u2014 these are genuine data races that `go test -race` will flag, and the err returned by an individual goroutine may be overwritten by a sibling goroutine's build result. Each goroutine should use a local err and the counter should be an atomic (or dropped)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 209,
+   "severity": "high",
+   "category": "bug",
+   "title": "Watch goroutine panics on nil event when the events channel closes at shutdown",
+   "body": "The goroutine started at the end of searchSupport.init does `v := <-events` in a loop without checking the ok flag. The SQL backend's poller closes the stream channel when the backend is stopped (defer close(stream) in backend.poller), at which point this receive returns nil forever and s.handleEvent(watchctx, nil) immediately dereferences evt.Type, panicking the process. Because this PR moves init from the first gRPC call to server construction, this goroutine now always runs whenever search is configured, so every shutdown of a search-enabled server (including the integration test in this PR that calls ms.Shutdown) risks a process-crashing panic. The receive should be `v, ok := <-events; if !ok { return }`."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the index cache map without holding cacheMu",
+   "body": "bleveBackend.TotalDocs ranges over b.cache with no lock, while BuildIndex now writes to that map under a short-lived cacheMu critical section. The PR adds a new caller: searchSupport.init logs s.search.TotalDocs() (search.go line 216) immediately after starting the watch goroutine, and that goroutine can concurrently call getOrCreateIndex -> BuildIndex -> `b.cache[key] = idx` when an event arrives for a namespace that was below the initMinSize threshold and thus not pre-built. A concurrent map read and write is a fatal runtime error in Go (not a recoverable panic), so this can crash the server during or right after startup. TotalDocs should take cacheMu.RLock() before iterating."
+  },
+  {
+   "index": 4,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Storage-server integration test is now skipped entirely on postgres",
+   "body": "The PR adds a skip for GRAFANA_TEST_DB=postgres in TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer, so CI no longer exercises the storage-server module target (which is exactly the startup path this PR changes by moving unified-storage init into server construction) against postgres. The TODO acknowledges it only fails in Drone, but merging this means the postgres variant can silently rot; consider skipping only in CI (e.g., detecting the Drone environment) or fixing the underlying issue before relying on this test to validate the new eager init behavior."
+  }
+ ],
+ "finding_count": 5
+}

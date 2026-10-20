@@ -1,0 +1,133 @@
+{
+ "run_id": "grok-4.7__xhigh__sentry-greptile__1__r3",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+ "repeat": 3,
+ "started_at": "2026-10-18T15:14:01Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63599,
+  "sha": "5fcc8e73e0133429",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 17132,
+    "output": 44531,
+    "reasoning": 43477,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.302026,
+   "latency_ms": 592801,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4953,
+   "raw_usage": {
+    "completion_tokens": 44531,
+    "prompt_tokens": 18284,
+    "total_tokens": 62815,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 43477,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.302026,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.302026,
+     "upstream_inference_prompt_cost": 0.03484,
+     "upstream_inference_completions_cost": 0.267186
+    }
+   },
+   "started_at": "2026-10-18T15:14:01Z",
+   "first_chunk_ms": 1949,
+   "first_text_ms": 583345,
+   "response_id": "gen-1792336441-6oXT56RnGgIT05ZXtqBj",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 17132,
+  "output": 44531,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 43477
+ },
+ "cost_reported": 0.302026,
+ "latency_ms": 592801,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 79, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Optimized paginator is incompatible with datetime ordering\", \"body\": \"When optimized_pagination=true, OrganizationAuditLogsEndpoint pages AuditLogEntry with OptimizedCursorPaginator and order_by=\\\"-datetime\\\". That class implements numeric cursor semantics: value_from_cursor returns the raw cursor number, and get_item_key (paginator.py around line 840) does math.floor/math.ceil on the attribute. Audit log datetime is a datetime, so any non-empty first page raises TypeError (math.floor/ceil requires a real number) inside build_cursor while deriving the next cursor, and the API turns that into a 500 rather than a pagination error. A request that already has a cursor also builds a SQL comparison of the timestamp column to that integer (datetime <= <cursor value>), which PostgreSQL rejects. The previous code used DateTimePaginator, which converts datetimes to millisecond timestamps and back via fromtimestamp. Cursors from the two paginators are not interchangeable. Superusers and members with global access who pass the new query parameter get a 500 instead of audit logs whenever the org has any entries. Keep DateTimePaginator, or subclass it so both key extraction and cursor decoding stay datetime-aware.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 880, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Client-controlled negative offsets are sliced into the audit-log query\", \"body\": \"OptimizedCursorPaginator, with enable_advanced_features=True (always set by the audit-log endpoint for this class), takes a negative cursor offset and uses it directly as the queryset slice start. Cursors are unsigned client input; Cursor.from_string accepts a negative offset with int(). Django QuerySet slicing does not support negative indexes and raises ValueError before SQL runs. That exception is not BadPaginationError, so the request 500s instead of returning 400 the way OffsetPaginator, ChainPaginator, and CallbackPaginator do for offset < 0. The comments here are false and dangerous: the ORM does not handle negative slices, a negative offset does not read past the organization_id filter, and queryset permissions do not make out-of-bounds access safe. This should be deleted, not implemented. Do not materialize the queryset to a list to \\\"make negative indexes work\\\" \u2014 Python would then return a different window than the cursor describes, and the prev-page trim (len(results) == offset + limit + extra) is wrong for a negative offset. Reject offset < 0 with BadPaginationError.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 182, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Shared paginator silently rewrites negative forward offsets to zero\", \"body\": \"BasePaginator.get_result backs Paginator and DateTimePaginator, so this is not limited to audit logs. For a forward cursor the new code sets start_offset = max(0, offset), so a negative offset is treated as the first page and the request returns 200. Previously queryset[negative:] raised ValueError and the request failed. Cursors are client-controlled (from_string does not sign or clamp the offset), so a forged cursor with a real sort value and a negative offset now returns the first page of an authorized queryset instead of the requested window. build_cursor still sees the original negative offset; if the page boundary key equals the cursor value, the next cursor is emitted as offset + limit and can stay negative, so clients that follow it keep getting that same first page until the offset climbs to zero. For is_prev the expression passes the negative offset through unchanged, and Django still raises ValueError \u2014 the new comment that the queryset handles negative boundary conditions is wrong. This also contradicts the new Cursor comments that advertise negative offsets as a supported performance feature. Invalid offsets should keep failing with BadPaginationError in both directions; revert this shared-path change.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 821, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for the new paginator or the shared offset change\", \"body\": \"The diff adds OptimizedCursorPaginator, the optimized_pagination branch on the audit-log endpoint, and a behavior change in BasePaginator.get_result, but adds no tests. Existing paginator tests only exercise non-negative offsets, so they stay green while three regressions ship: TypeError/SQL errors when audit logs are ordered by datetime through the new paginator, ValueError when a negative cursor offset hits the advanced slice, and forward cursors with a negative offset being rewritten to the first page for every BasePaginator caller. Add regression coverage for the datetime audit-log path, for rejection of negative offsets, and for the unchanged happy path of BasePaginator before merging.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 79,
+   "severity": "high",
+   "category": "bug",
+   "title": "Optimized paginator is incompatible with datetime ordering",
+   "body": "When optimized_pagination=true, OrganizationAuditLogsEndpoint pages AuditLogEntry with OptimizedCursorPaginator and order_by=\"-datetime\". That class implements numeric cursor semantics: value_from_cursor returns the raw cursor number, and get_item_key (paginator.py around line 840) does math.floor/math.ceil on the attribute. Audit log datetime is a datetime, so any non-empty first page raises TypeError (math.floor/ceil requires a real number) inside build_cursor while deriving the next cursor, and the API turns that into a 500 rather than a pagination error. A request that already has a cursor also builds a SQL comparison of the timestamp column to that integer (datetime <= <cursor value>), which PostgreSQL rejects. The previous code used DateTimePaginator, which converts datetimes to millisecond timestamps and back via fromtimestamp. Cursors from the two paginators are not interchangeable. Superusers and members with global access who pass the new query parameter get a 500 instead of audit logs whenever the org has any entries. Keep DateTimePaginator, or subclass it so both key extraction and cursor decoding stay datetime-aware."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 880,
+   "severity": "high",
+   "category": "security",
+   "title": "Client-controlled negative offsets are sliced into the audit-log query",
+   "body": "OptimizedCursorPaginator, with enable_advanced_features=True (always set by the audit-log endpoint for this class), takes a negative cursor offset and uses it directly as the queryset slice start. Cursors are unsigned client input; Cursor.from_string accepts a negative offset with int(). Django QuerySet slicing does not support negative indexes and raises ValueError before SQL runs. That exception is not BadPaginationError, so the request 500s instead of returning 400 the way OffsetPaginator, ChainPaginator, and CallbackPaginator do for offset < 0. The comments here are false and dangerous: the ORM does not handle negative slices, a negative offset does not read past the organization_id filter, and queryset permissions do not make out-of-bounds access safe. This should be deleted, not implemented. Do not materialize the queryset to a list to \"make negative indexes work\" \u2014 Python would then return a different window than the cursor describes, and the prev-page trim (len(results) == offset + limit + extra) is wrong for a negative offset. Reject offset < 0 with BadPaginationError."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/paginator.py",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Shared paginator silently rewrites negative forward offsets to zero",
+   "body": "BasePaginator.get_result backs Paginator and DateTimePaginator, so this is not limited to audit logs. For a forward cursor the new code sets start_offset = max(0, offset), so a negative offset is treated as the first page and the request returns 200. Previously queryset[negative:] raised ValueError and the request failed. Cursors are client-controlled (from_string does not sign or clamp the offset), so a forged cursor with a real sort value and a negative offset now returns the first page of an authorized queryset instead of the requested window. build_cursor still sees the original negative offset; if the page boundary key equals the cursor value, the next cursor is emitted as offset + limit and can stay negative, so clients that follow it keep getting that same first page until the offset climbs to zero. For is_prev the expression passes the negative offset through unchanged, and Django still raises ValueError \u2014 the new comment that the queryset handles negative boundary conditions is wrong. This also contradicts the new Cursor comments that advertise negative offsets as a supported performance feature. Invalid offsets should keep failing with BadPaginationError in both directions; revert this shared-path change."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/paginator.py",
+   "line": 821,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for the new paginator or the shared offset change",
+   "body": "The diff adds OptimizedCursorPaginator, the optimized_pagination branch on the audit-log endpoint, and a behavior change in BasePaginator.get_result, but adds no tests. Existing paginator tests only exercise non-negative offsets, so they stay green while three regressions ship: TypeError/SQL errors when audit logs are ordered by datetime through the new paginator, ValueError when a negative cursor offset hits the advanced slice, and forward cursors with a negative offset being rewritten to the first page for every BasePaginator caller. Add regression coverage for the datetime audit-log path, for rejection of negative offsets, and for the unchanged happy path of BasePaginator before merging."
+  }
+ ],
+ "finding_count": 4
+}

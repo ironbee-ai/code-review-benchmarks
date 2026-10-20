@@ -1,0 +1,120 @@
+{
+ "run_id": "gemini-4-argon__default__sentry-greptile__2__r3",
+ "model_id": "gemini-4-argon",
+ "family": "google",
+ "route": "openrouter",
+ "provider_model": "google/gemini-4-argon",
+ "provider_pin": {
+  "order": [
+   "google-ai-studio"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry-greptile__2",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/2",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:50:41Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134937,
+  "sha": "12fcc907f4816f00",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 45079,
+    "output": 931,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.099468,
+   "latency_ms": 18774,
+   "finish_reason": "stop",
+   "served_model": "google/gemini-4-argon",
+   "provider_served": "Google AI Studio",
+   "http_attempts": 1,
+   "text_chars": 3569,
+   "raw_usage": {
+    "completion_tokens": 931,
+    "prompt_tokens": 45079,
+    "total_tokens": 46010,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.099468,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.099468,
+     "upstream_inference_prompt_cost": 0.090158,
+     "upstream_inference_completions_cost": 0.00931
+    }
+   },
+   "started_at": "2026-10-18T11:50:41Z",
+   "first_chunk_ms": 7164,
+   "first_text_ms": 7164,
+   "response_id": "gen-1792324241-0Xc8OYLYF8tsCtxm4tO3",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 45079,
+  "output": 931,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.099468,
+ "latency_ms": 18774,
+ "served_model": "google/gemini-4-argon",
+ "provider_served": "Google AI Studio",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 76, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"`OrganizationAuditLogsEndpoint.get` passes an unsupported kwarg to `self.paginate` and uses a non-datetime paginator on `-datetime`\", \"body\": \"`OrganizationAuditLogsEndpoint.get` calls `self.paginate(..., paginator_cls=OptimizedCursorPaginator, order_by=\\\"-datetime\\\", ..., enable_advanced_features=True)`. First, `Endpoint.paginate` does not accept `enable_advanced_features` and does not forward `**kwargs` to `paginator_cls`, so any request with `optimized_pagination=true` from a superuser or global-access member will raise `TypeError: paginate() got an unexpected keyword argument 'enable_advanced_features'`. Second, `OptimizedCursorPaginator` (lines 838-843 of `paginator.py`) implements `get_item_key` using `math.floor`/`math.ceil` on `getattr(item, self.key)` and `value_from_cursor` by returning the raw numeric cursor value, rather than converting `datetime` objects to/from timestamps like `DateTimePaginator` does; ordering by `-datetime` will therefore fail with `TypeError: must be real number, not datetime.datetime` when building cursors (and pass a numeric cursor value against a `datetime` column on subsequent requests). Finally, these audit-log and paginator changes are completely unrelated to the PR's stated purpose of optimizing spans buffer insertion.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 182, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Allowing negative cursor offsets in `BasePaginator` and `OptimizedCursorPaginator` causes `ValueError: Negative indexing is not supported` in Django QuerySets\", \"body\": \"In `BasePaginator.get_result` (line 182) and `OptimizedCursorPaginator.get_result` (lines 877-886), negative `cursor.offset` values are passed directly as the slice start to `queryset[start_offset:stop]` (when `cursor.is_prev` is True in `BasePaginator`, or when `enable_advanced_features` is True in `OptimizedCursorPaginator`). Django `QuerySet.__getitem__` explicitly forbids negative slice indices and raises `ValueError: Negative indexing is not supported.` (or `AssertionError` in older Django versions). In addition, if `start_offset` is negative enough that `stop = start_offset + limit + extra` is also negative or less than `start_offset`, slicing fails before reaching the database. Because `Cursor.from_string` parses user-supplied cursor strings and allows negative integers for `offset`, any client supplying a cursor like `0:-1:1` will trigger an unhandled 500 error on endpoints using `BasePaginator` subclasses.\"}, {\"file\": \"src/sentry/spans/buffer.py\", \"line\": 197, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Changing `span-buf:s:*` from Redis sets to sorted sets without migrating or namespacing keys will cause `WRONGTYPE` errors on deploy\", \"body\": \"`process_spans` now writes to `span-buf:s:{project_and_trace}:{parent_span_id}` using `ZADD` (line 197), `add-buffer.lua` uses `ZCARD`/`ZUNIONSTORE`/`ZPOPMIN`, and `_load_segment_data` reads with `ZSCAN` (line 434), whereas previously these same `span-buf:s:*` keys were Redis `SET`s accessed with `SADD`/`SCARD`/`SUNIONSTORE`/`SSCAN` (with a 1-hour TTL). During a rolling deploy, existing `span-buf:s:*` keys in Redis are still of type `set`, so executing `ZADD`, `ZCARD`, `ZUNIONSTORE`, or `ZSCAN` against them will fail with `redis.exceptions.ResponseError: WRONGTYPE Operation against a key holding the wrong kind of value`, crashing consumer batches until old keys expire or are flushed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 76,
+   "severity": "high",
+   "category": "bug",
+   "title": "`OrganizationAuditLogsEndpoint.get` passes an unsupported kwarg to `self.paginate` and uses a non-datetime paginator on `-datetime`",
+   "body": "`OrganizationAuditLogsEndpoint.get` calls `self.paginate(..., paginator_cls=OptimizedCursorPaginator, order_by=\"-datetime\", ..., enable_advanced_features=True)`. First, `Endpoint.paginate` does not accept `enable_advanced_features` and does not forward `**kwargs` to `paginator_cls`, so any request with `optimized_pagination=true` from a superuser or global-access member will raise `TypeError: paginate() got an unexpected keyword argument 'enable_advanced_features'`. Second, `OptimizedCursorPaginator` (lines 838-843 of `paginator.py`) implements `get_item_key` using `math.floor`/`math.ceil` on `getattr(item, self.key)` and `value_from_cursor` by returning the raw numeric cursor value, rather than converting `datetime` objects to/from timestamps like `DateTimePaginator` does; ordering by `-datetime` will therefore fail with `TypeError: must be real number, not datetime.datetime` when building cursors (and pass a numeric cursor value against a `datetime` column on subsequent requests). Finally, these audit-log and paginator changes are completely unrelated to the PR's stated purpose of optimizing spans buffer insertion."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 182,
+   "severity": "high",
+   "category": "bug",
+   "title": "Allowing negative cursor offsets in `BasePaginator` and `OptimizedCursorPaginator` causes `ValueError: Negative indexing is not supported` in Django QuerySets",
+   "body": "In `BasePaginator.get_result` (line 182) and `OptimizedCursorPaginator.get_result` (lines 877-886), negative `cursor.offset` values are passed directly as the slice start to `queryset[start_offset:stop]` (when `cursor.is_prev` is True in `BasePaginator`, or when `enable_advanced_features` is True in `OptimizedCursorPaginator`). Django `QuerySet.__getitem__` explicitly forbids negative slice indices and raises `ValueError: Negative indexing is not supported.` (or `AssertionError` in older Django versions). In addition, if `start_offset` is negative enough that `stop = start_offset + limit + extra` is also negative or less than `start_offset`, slicing fails before reaching the database. Because `Cursor.from_string` parses user-supplied cursor strings and allows negative integers for `offset`, any client supplying a cursor like `0:-1:1` will trigger an unhandled 500 error on endpoints using `BasePaginator` subclasses."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/buffer.py",
+   "line": 197,
+   "severity": "medium",
+   "category": "data",
+   "title": "Changing `span-buf:s:*` from Redis sets to sorted sets without migrating or namespacing keys will cause `WRONGTYPE` errors on deploy",
+   "body": "`process_spans` now writes to `span-buf:s:{project_and_trace}:{parent_span_id}` using `ZADD` (line 197), `add-buffer.lua` uses `ZCARD`/`ZUNIONSTORE`/`ZPOPMIN`, and `_load_segment_data` reads with `ZSCAN` (line 434), whereas previously these same `span-buf:s:*` keys were Redis `SET`s accessed with `SADD`/`SCARD`/`SUNIONSTORE`/`SSCAN` (with a 1-hour TTL). During a rolling deploy, existing `span-buf:s:*` keys in Redis are still of type `set`, so executing `ZADD`, `ZCARD`, `ZUNIONSTORE`, or `ZSCAN` against them will fail with `redis.exceptions.ResponseError: WRONGTYPE Operation against a key holding the wrong kind of value`, crashing consumer batches until old keys expire or are flushed."
+  }
+ ],
+ "finding_count": 3
+}

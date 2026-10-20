@@ -1,0 +1,144 @@
+{
+ "run_id": "glm-5.3__low__cal.com__8087__r1",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:21:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 39980,
+    "output": 1901,
+    "reasoning": 792,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0643364,
+   "latency_ms": 30702,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5029,
+   "raw_usage": {
+    "completion_tokens": 1901,
+    "prompt_tokens": 39980,
+    "total_tokens": 41881,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 792,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0643364,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0643364,
+     "upstream_inference_prompt_cost": 0.055972,
+     "upstream_inference_completions_cost": 0.0083644
+    }
+   },
+   "started_at": "2026-10-17T11:21:57Z",
+   "first_chunk_ms": 3514,
+   "first_text_ms": 16308,
+   "response_id": "gen-1792236117-ZayWP1RAlOuOeIM1uNsZ",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 39980,
+  "output": 1901,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 792
+ },
+ "cost_reported": 0.0643364,
+ "latency_ms": 30702,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Recurring-event calendar deletions are lost due to async forEach pushing into apiDeletes after awaits\", \"body\": \"In the recurring-event cancellation branch, `bookingToDelete.user.credentials...forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent); })` is fire-and-forget. Since `getCalendar` is now async, the pushes into `apiDeletes` happen only after the dynamic import resolves \u2014 by which time the later `await Promise.all(prismaPromises.concat(apiDeletes))` has already snapshotted an (empty) array and completed. External calendar events for cancelled recurring bookings will never be awaited (and may be skipped entirely if the process ends), leaving orphaned events on users' calendars. Before this PR, `getCalendar` was synchronous so the pushes happened before `Promise.all`. Fix by collecting with `Promise.all(credentials.map(async ...))` and awaiting it before the final Promise.all.\"}, {\"file\": \"packages/app-store/index.ts\", \"line\": 3, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Dynamic import() calls are invoked eagerly, defeating the stated purpose of the PR\", \"body\": \"The appStore object is a module-level object literal whose property values are `import(\\\"./applecalendar\\\")` etc. These import() calls all execute as soon as `@calcom/app-store` is first imported \u2014 every app module begins loading immediately, in parallel. The PR description says it makes app imports async/lazy, but no app loading is actually deferred; only the *await* is deferred. To make loading truly lazy, the store should hold factory functions (`() => import(\\\"./applecalendar\\\")`) that are called on demand, otherwise this change adds promise indirection with no startup-time benefit (and a burst of simultaneous module loads on first import).\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"forEach(async ...) discards deletion promises; booking marked cancelled before external events are actually deleted\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { ... const calendar = await getCalendar(...); return calendar?.deleteEvent(...) })` never awaits the returned promises. With the now-async `getCalendar`, each callback suspends at the first await and the surrounding `try/catch` cannot catch any errors thrown inside (rejections become unhandled promise rejections, not logged). The function then proceeds to send the reschedule email and return success while external calendar/video deletions may still be in flight (or fail silently), so users' external calendars can keep the old event even though the booking was already set to CANCELLED in the DB at line 67. The same pattern exists in packages/app-store/wipemycalother/lib/reschedule.ts line 125 and packages/trpc/server/routers/viewer/bookings.tsx line 553 (requestReschedule). Use `await Promise.all(bookingRefsFiltered.map(async ...))` instead.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"getCalendarCredentials now stores a Promise in the `calendar` field, silently changing its contract\", \"body\": \"`getCalendarCredentials` calls `getCalendar(credential)` without awaiting, so each returned item's `calendar` property is now a `Promise<Calendar | null>` rather than a `Calendar | null`. The internal consumer `getConnectedCalendars` was updated to `await item.calendar`, but `getCalendarCredentials` is an exported function; any other caller that uses `item.calendar` directly (e.g. calling `calendar.listCalendars()` or checking `if (!calendar)`) now operates on a Promise, which is always truthy, so null-checks stop working and method calls will fail at runtime with no TypeScript error if the consumer widened the type. The promise should be either awaited in `getCalendarCredentials` (making it async) or explicitly typed so callers know to await it.\"}, {\"file\": \"packages/core/EventManager.ts\", \"line\": 7, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Static app imports in EventManager and other core files undermine the async appStore refactor\", \"body\": \"While appStore was converted to dynamic imports, `packages/core/EventManager.ts` still statically imports `FAKE_DAILY_CREDENTIAL` from `@calcom/app-store/dailyvideo/lib/VideoApiAdapter`, `handleCancelBooking.ts` statically imports from dailyvideo and zapier app packages, and `videoClient.ts` statically imports `getDailyAppKeys` from `@calcom/app-store/dailyvideo/lib/getDailyAppKeys`. These static imports pull the dailyvideo and zapier app modules (and their dependency trees) into every bundle/serverless function that includes core, negating the code-splitting the PR intends. At minimum this inconsistency should be noted or resolved, otherwise the refactor provides no bundle-size benefit for the booking flow.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "high",
+   "category": "bug",
+   "title": "Recurring-event calendar deletions are lost due to async forEach pushing into apiDeletes after awaits",
+   "body": "In the recurring-event cancellation branch, `bookingToDelete.user.credentials...forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent); })` is fire-and-forget. Since `getCalendar` is now async, the pushes into `apiDeletes` happen only after the dynamic import resolves \u2014 by which time the later `await Promise.all(prismaPromises.concat(apiDeletes))` has already snapshotted an (empty) array and completed. External calendar events for cancelled recurring bookings will never be awaited (and may be skipped entirely if the process ends), leaving orphaned events on users' calendars. Before this PR, `getCalendar` was synchronous so the pushes happened before `Promise.all`. Fix by collecting with `Promise.all(credentials.map(async ...))` and awaiting it before the final Promise.all."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/index.ts",
+   "line": 3,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Dynamic import() calls are invoked eagerly, defeating the stated purpose of the PR",
+   "body": "The appStore object is a module-level object literal whose property values are `import(\"./applecalendar\")` etc. These import() calls all execute as soon as `@calcom/app-store` is first imported \u2014 every app module begins loading immediately, in parallel. The PR description says it makes app imports async/lazy, but no app loading is actually deferred; only the *await* is deferred. To make loading truly lazy, the store should hold factory functions (`() => import(\"./applecalendar\")`) that are called on demand, otherwise this change adds promise indirection with no startup-time benefit (and a burst of simultaneous module loads on first import)."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "forEach(async ...) discards deletion promises; booking marked cancelled before external events are actually deleted",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { ... const calendar = await getCalendar(...); return calendar?.deleteEvent(...) })` never awaits the returned promises. With the now-async `getCalendar`, each callback suspends at the first await and the surrounding `try/catch` cannot catch any errors thrown inside (rejections become unhandled promise rejections, not logged). The function then proceeds to send the reschedule email and return success while external calendar/video deletions may still be in flight (or fail silently), so users' external calendars can keep the old event even though the booking was already set to CANCELLED in the DB at line 67. The same pattern exists in packages/app-store/wipemycalother/lib/reschedule.ts line 125 and packages/trpc/server/routers/viewer/bookings.tsx line 553 (requestReschedule). Use `await Promise.all(bookingRefsFiltered.map(async ...))` instead."
+  },
+  {
+   "index": 3,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "medium",
+   "category": "api",
+   "title": "getCalendarCredentials now stores a Promise in the `calendar` field, silently changing its contract",
+   "body": "`getCalendarCredentials` calls `getCalendar(credential)` without awaiting, so each returned item's `calendar` property is now a `Promise<Calendar | null>` rather than a `Calendar | null`. The internal consumer `getConnectedCalendars` was updated to `await item.calendar`, but `getCalendarCredentials` is an exported function; any other caller that uses `item.calendar` directly (e.g. calling `calendar.listCalendars()` or checking `if (!calendar)`) now operates on a Promise, which is always truthy, so null-checks stop working and method calls will fail at runtime with no TypeScript error if the consumer widened the type. The promise should be either awaited in `getCalendarCredentials` (making it async) or explicitly typed so callers know to await it."
+  },
+  {
+   "index": 4,
+   "file": "packages/core/EventManager.ts",
+   "line": 7,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Static app imports in EventManager and other core files undermine the async appStore refactor",
+   "body": "While appStore was converted to dynamic imports, `packages/core/EventManager.ts` still statically imports `FAKE_DAILY_CREDENTIAL` from `@calcom/app-store/dailyvideo/lib/VideoApiAdapter`, `handleCancelBooking.ts` statically imports from dailyvideo and zapier app packages, and `videoClient.ts` statically imports `getDailyAppKeys` from `@calcom/app-store/dailyvideo/lib/getDailyAppKeys`. These static imports pull the dailyvideo and zapier app modules (and their dependency trees) into every bundle/serverless function that includes core, negating the code-splitting the PR intends. At minimum this inconsistency should be noted or resolved, otherwise the refactor provides no bundle-size benefit for the booking flow."
+  }
+ ],
+ "finding_count": 5
+}

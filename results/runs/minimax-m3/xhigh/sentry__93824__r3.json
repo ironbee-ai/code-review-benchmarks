@@ -1,0 +1,178 @@
+{
+ "run_id": "minimax-m3__xhigh__sentry__93824__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:56:31Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25363,
+    "output": 9753,
+    "reasoning": 7863,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01932018,
+   "latency_ms": 43209,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 7917,
+   "raw_usage": {
+    "completion_tokens": 9753,
+    "prompt_tokens": 25491,
+    "total_tokens": 35244,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 7863,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01932018,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01932018,
+     "upstream_inference_prompt_cost": 0.00761658,
+     "upstream_inference_completions_cost": 0.0117036
+    }
+   },
+   "started_at": "2026-10-18T12:56:31Z",
+   "first_chunk_ms": 1607,
+   "first_text_ms": 33936,
+   "response_id": "gen-1792328191-AVFxDQ8Z7siN3ZVV1M9O",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25363,
+  "output": 9753,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 7863
+ },
+ "cost_reported": 0.01932018,
+ "latency_ms": 43209,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to analyze the multiprocessed flusher implementation, focusing on the backpressure logic, memory checks, default values, and tests.\n\nKey concerns I identified:\n\n1. The default `--flusher-processes=1` contradicts the PR's stated goal of \"one process per redis shard\"\n2. The memory backpressure check now sums across multiple SpansBuffer instances, which could double-count global Redis memory\n3. The new test doesn't actually verify flushing works with shared processes\n4. Dead code and edge cases in parameter handling\n5. Non-deterministic test timing\n\n{\"findings\": [{\"file\": \"src/sentry/consumers/__init__.py\", \"line\": 437, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"--flusher-processes default of 1 contradicts PR goal\", \"body\": \"The CLI option defaults to 1 and the help text reads 'Defaults to 1'. With `flusher_processes=1` the flusher remains a single process handling all assigned shards, exactly matching the prior behavior and contradicting the PR description 'make the flusher spawn a process per redis shard'. The factory falls back to `max_processes or len(buffer.assigned_shards)`, so passing 0 would auto-scale but the CLI default of 1 silently disables the new behavior. The default should be 0 (auto), or the help text/help should clearly indicate operators must opt in to get the multi-process behavior described.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 51, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"max_processes=0 falls through to len(assigned_shards) via `or`\", \"body\": \"`self.max_processes = max_processes or len(buffer.assigned_shards)` treats 0 as falsy, so callers that explicitly pass 0 (a common sentinel meaning 'auto/unbounded') get silently coerced to `len(buffer.assigned_shards)`. While 0 is not currently exposed via the CLI default (which is 1), this is a footgun for any future caller (and for the planned 'auto' default). It also makes the check indistinguishable from `None`. Use an explicit `if max_processes is None` check.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 299, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Memory backpressure check likely over-aggregates Redis global memory\", \"body\": \"In the old single-buffer code, `self.buffer.get_memory_info()` returned one set of Redis memory stats. The new code iterates `for buffer in self.buffers.values(): memory_infos.extend(buffer.get_memory_info())` and sums `used`/`available` across all of them. Because every SpansBuffer in `self.buffers` queries the same underlying Redis cluster, each call returns the same global `used`/`available` values; summing N copies multiplies the apparent memory by N. With the new default of N flushers (one per shard), the threshold would trip at roughly `max_memory_percentage / N` of real usage, causing the consumer to hard-pause way before Redis is actually full. Either aggregate once (deduplicating per Redis cluster) or change `get_memory_info` to report per-shard stats before summing.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 278, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Per-process backpressure raises on any one process, halting the consumer\", \"body\": \"The old code had a single `backpressure_since` for the lone flusher process; raising MessageRejected on that flag paused the consumer for the whole pipeline. The new code raises MessageRejected if *any* one of the per-process backpressure flags is over threshold. With the new shard-per-process layout a single hot shard can now trip backpressure and stop ingestion entirely, even when the other shards have plenty of headroom. The original code also fetched the `backpressure-seconds` option only when needed; the new code fetches it on every submit (small perf regression). Consider only signalling backpressure when *all* processes are stuck, or aggregating by Redis instance.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 127, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Dead method _create_process_for_shard defined but never called\", \"body\": \"The new code defines `def _create_process_for_shard(self, shard: int)` with logic that looks up which process owns a shard and restarts that process. It is never invoked from anywhere in the module (restarts go through `_create_process_for_shards` directly via `_ensure_processes_alive`). It is misleading dead code that should be removed or actually wired into per-shard restart paths.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 60, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_basic relies on time.sleep(0.1) for flusher to drain\", \"body\": \"The test was changed to add an unconditional `time.sleep(0.1)` between setting `current_drift` and `step.join()`. With `produce_to_pipe` set, the flusher now runs as a thread whose loop has a `time.sleep(1)` (defanged by the monkeypatch to `lambda _: None`) and is gated by `stopped.value` only being set in `join()`. The 0.1s sleep is a band-aid for a race: if the thread is not yet past the `buffer.flush_segments` call when `join()` runs, the test fails with no messages. The test should deterministically wait for the flusher (e.g., poll on a counter or a barrier) instead of relying on wall time, and the change from `@pytest.mark.django_db` to `@pytest.mark.django_db(transaction=True)` should be justified in a comment.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 85, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_flusher_processes_limit does not verify shared-process flushing works\", \"body\": \"The new test only asserts `len(flusher.processes) == 2`, `flusher.max_processes == 2`, `flusher.num_processes == 2`, and that `sum(len(shards) for shards in ... ) == 4`. It does not actually send any spans through `submit()`, so the multi-process/sharing code path (round-robin shard distribution, per-shard SpansBuffer instances, per-process backpressure/health values, per-shard metric tags) is never exercised. Add a case that submits spans into shards handled by each of the two threads and asserts each produced its expected message with the correct `shard` tag.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 346, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Thread flusher not joined on shutdown when produce_to_pipe is set\", \"body\": \"In `join()`, the loop waits for `process.is_alive()` to become False and then only calls `process.terminate()` when `isinstance(process, multiprocessing.Process)`. For the test path (`produce_to_pipe is not None`), the workers are `threading.Thread` daemons, so they have no `terminate()`. The code only signals them via `stopped.value`, but the main loop may exit before the thread observes the flag (especially with the monkeypatched `time.sleep`). Daemon threads will be killed when the interpreter exits, but in-process this can leak work in-flight in Redis (e.g., `done_flush_segments` not called), leaving dangling 'flushing' segment keys. Consider an explicit thread shutdown with a small bounded wait, or document the test-only restriction.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 343, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Inner join loop ignores remaining_time after first wait\", \"body\": \"Inside `join()`, the per-process loop computes `remaining_time = deadline - time.time()` once before the `while process.is_alive()` loop, but never recomputes `deadline` inside that inner loop. After each `time.sleep(0.1)` the comparison `deadline > time.time()` is still correct (it uses absolute deadline), so the loop does terminate, but the initial `remaining_time` check is dead \u2014 it is computed and then never consulted again. Harmless but confusing; either remove the pre-check or actually use it to cap the total per-process wait.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/consumers/__init__.py",
+   "line": 437,
+   "severity": "medium",
+   "category": "bug",
+   "title": "--flusher-processes default of 1 contradicts PR goal",
+   "body": "The CLI option defaults to 1 and the help text reads 'Defaults to 1'. With `flusher_processes=1` the flusher remains a single process handling all assigned shards, exactly matching the prior behavior and contradicting the PR description 'make the flusher spawn a process per redis shard'. The factory falls back to `max_processes or len(buffer.assigned_shards)`, so passing 0 would auto-scale but the CLI default of 1 silently disables the new behavior. The default should be 0 (auto), or the help text/help should clearly indicate operators must opt in to get the multi-process behavior described."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 51,
+   "severity": "low",
+   "category": "bug",
+   "title": "max_processes=0 falls through to len(assigned_shards) via `or`",
+   "body": "`self.max_processes = max_processes or len(buffer.assigned_shards)` treats 0 as falsy, so callers that explicitly pass 0 (a common sentinel meaning 'auto/unbounded') get silently coerced to `len(buffer.assigned_shards)`. While 0 is not currently exposed via the CLI default (which is 1), this is a footgun for any future caller (and for the planned 'auto' default). It also makes the check indistinguishable from `None`. Use an explicit `if max_processes is None` check."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 299,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Memory backpressure check likely over-aggregates Redis global memory",
+   "body": "In the old single-buffer code, `self.buffer.get_memory_info()` returned one set of Redis memory stats. The new code iterates `for buffer in self.buffers.values(): memory_infos.extend(buffer.get_memory_info())` and sums `used`/`available` across all of them. Because every SpansBuffer in `self.buffers` queries the same underlying Redis cluster, each call returns the same global `used`/`available` values; summing N copies multiplies the apparent memory by N. With the new default of N flushers (one per shard), the threshold would trip at roughly `max_memory_percentage / N` of real usage, causing the consumer to hard-pause way before Redis is actually full. Either aggregate once (deduplicating per Redis cluster) or change `get_memory_info` to report per-shard stats before summing."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 278,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Per-process backpressure raises on any one process, halting the consumer",
+   "body": "The old code had a single `backpressure_since` for the lone flusher process; raising MessageRejected on that flag paused the consumer for the whole pipeline. The new code raises MessageRejected if *any* one of the per-process backpressure flags is over threshold. With the new shard-per-process layout a single hot shard can now trip backpressure and stop ingestion entirely, even when the other shards have plenty of headroom. The original code also fetched the `backpressure-seconds` option only when needed; the new code fetches it on every submit (small perf regression). Consider only signalling backpressure when *all* processes are stuck, or aggregating by Redis instance."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "bug",
+   "title": "Dead method _create_process_for_shard defined but never called",
+   "body": "The new code defines `def _create_process_for_shard(self, shard: int)` with logic that looks up which process owns a shard and restarts that process. It is never invoked from anywhere in the module (restarts go through `_create_process_for_shards` directly via `_ensure_processes_alive`). It is misleading dead code that should be removed or actually wired into per-shard restart paths."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 60,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_basic relies on time.sleep(0.1) for flusher to drain",
+   "body": "The test was changed to add an unconditional `time.sleep(0.1)` between setting `current_drift` and `step.join()`. With `produce_to_pipe` set, the flusher now runs as a thread whose loop has a `time.sleep(1)` (defanged by the monkeypatch to `lambda _: None`) and is gated by `stopped.value` only being set in `join()`. The 0.1s sleep is a band-aid for a race: if the thread is not yet past the `buffer.flush_segments` call when `join()` runs, the test fails with no messages. The test should deterministically wait for the flusher (e.g., poll on a counter or a barrier) instead of relying on wall time, and the change from `@pytest.mark.django_db` to `@pytest.mark.django_db(transaction=True)` should be justified in a comment."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 85,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_flusher_processes_limit does not verify shared-process flushing works",
+   "body": "The new test only asserts `len(flusher.processes) == 2`, `flusher.max_processes == 2`, `flusher.num_processes == 2`, and that `sum(len(shards) for shards in ... ) == 4`. It does not actually send any spans through `submit()`, so the multi-process/sharing code path (round-robin shard distribution, per-shard SpansBuffer instances, per-process backpressure/health values, per-shard metric tags) is never exercised. Add a case that submits spans into shards handled by each of the two threads and asserts each produced its expected message with the correct `shard` tag."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 346,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Thread flusher not joined on shutdown when produce_to_pipe is set",
+   "body": "In `join()`, the loop waits for `process.is_alive()` to become False and then only calls `process.terminate()` when `isinstance(process, multiprocessing.Process)`. For the test path (`produce_to_pipe is not None`), the workers are `threading.Thread` daemons, so they have no `terminate()`. The code only signals them via `stopped.value`, but the main loop may exit before the thread observes the flag (especially with the monkeypatched `time.sleep`). Daemon threads will be killed when the interpreter exits, but in-process this can leak work in-flight in Redis (e.g., `done_flush_segments` not called), leaving dangling 'flushing' segment keys. Consider an explicit thread shutdown with a small bounded wait, or document the test-only restriction."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 343,
+   "severity": "low",
+   "category": "bug",
+   "title": "Inner join loop ignores remaining_time after first wait",
+   "body": "Inside `join()`, the per-process loop computes `remaining_time = deadline - time.time()` once before the `while process.is_alive()` loop, but never recomputes `deadline` inside that inner loop. After each `time.sleep(0.1)` the comparison `deadline > time.time()` is still correct (it uses absolute deadline), so the loop does terminate, but the initial `remaining_time` check is dead \u2014 it is computed and then never consulted again. Harmless but confusing; either remove the pre-check or actually use it to cap the total per-process wait."
+  }
+ ],
+ "finding_count": 9
+}

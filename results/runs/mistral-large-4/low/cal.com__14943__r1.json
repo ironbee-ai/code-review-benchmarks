@@ -1,0 +1,152 @@
+{
+ "run_id": "mistral-large-4__low__cal.com__14943__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:21:53Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18446,
+    "output": 1541,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01576397,
+   "latency_ms": 28552,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 6587,
+   "raw_usage": {
+    "completion_tokens": 1541,
+    "prompt_tokens": 18446,
+    "total_tokens": 19987,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01576397,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01576397,
+     "upstream_inference_prompt_cost": 0.01254328,
+     "upstream_inference_completions_cost": 0.00322069
+    }
+   },
+   "started_at": "2026-10-17T11:21:53Z",
+   "first_chunk_ms": 2147,
+   "first_text_ms": 2147,
+   "response_id": "gen-1792236113-WB8gNQLRHyWzvAlOzI2r",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18446,
+  "output": 1541,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01576397,
+ "latency_ms": 28552,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\",\n      \"line\": 38,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"deleteMany with retryCount > 1 deletes ALL workflow reminders regardless of method, including EMAIL and WHATSAPP reminders\",\n      \"body\": \"The cleanup query at the top of the handler uses `OR: [{ method: SMS, scheduledDate <= now }, { retryCount: { gt: 1 } }]`. The second OR branch has no `method` filter, so it deletes every WorkflowReminder row in the table with retryCount > 1 \u2014 including EMAIL and WHATSAPP reminders that may still be legitimately scheduled for the future. This is a data-loss bug: email reminders (which never increment retryCount in this file, but could in other code paths, e.g. scheduleEmailReminders or future changes) or any reminder that has accumulated retries would be silently deleted even though their scheduledDate is in the future and they were never meant to be cleaned up by the SMS cron. The retryCount-based deletion must be scoped to `method: WorkflowMethods.SMS` (and ideally `scheduled: false`), e.g. `AND: [{ method: SMS }, { OR: [past-due, retryCount > 1] }]`.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\",\n      \"line\": 158,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Reminders with no message or no sendTo are never retried nor deleted, and the retryCount increment is skipped silently\",\n      \"body\": \"The retryCount increment only happens inside `if (message?.length && message?.length > 0 && sendTo)` (line 158) or in the catch block. If a reminder has an empty message (e.g. `reminderBody` is empty and template is not REMINDER, so `message` stays null) or `sendTo` is missing (no `smsReminderNumber` on the booking and no `sendTo` on the step), the code falls through without scheduling, without incrementing retryCount, and without any error. The reminder stays `scheduled: false` forever and will be re-fetched and re-processed by every cron run indefinitely \u2014 the exact infinite-retry problem this PR claims to fix. A reminder that can never succeed (missing phone number) should either increment retryCount or be marked failed/cancelled so the cleanup query can remove it.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\",\n      \"line\": 184,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"retryCount is incremented via read-modify-write (reminder.retryCount + 1), which is racy under concurrent cron invocations\",\n      \"body\": \"The handler reads `retryCount` once in the findMany (line 48-60) and later writes `retryCount: reminder.retryCount + 1` (lines 184 and 195). If two instances of this cron endpoint run concurrently (overlapping cron schedules, multiple serverless invocations, or a long-running loop), both can read the same retryCount value and both write the same incremented value, losing one increment. Worse, the deleteMany cleanup at line 29-45 runs before the loop, so a reminder at retryCount=1 that fails in two concurrent runs could stay at 2 and be retried again rather than deleted. The correct approach is an atomic increment: `data: { retryCount: { increment: 1 } }`, which Prisma supports and which avoids the lost-update race entirely.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\",\n      \"line\": 39,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Off-by-one: PR description says 'after scheduling failed twice we delete', but retryCount > 1 deletes after the second failure is recorded, allowing only one actual retry before deletion on the next run\",\n      \"body\": \"The PR description states 'after scheduling failed twice we delete the workflow reminder'. The implementation deletes rows where `retryCount > 1`, i.e. retryCount >= 2. A reminder starts at retryCount=0. First failure sets it to 1 (still kept, will be retried). Second failure sets it to 2, and the next cron run's deleteMany removes it. So the reminder is attempted at most twice total (initial + one retry) before deletion, not 'failed twice then deleted' as described \u2014 the description implies two retries after the initial attempt. Either the threshold should be `gte: 2` with the description clarified, or the code should use `gt: 2` to match the description. The mismatch between documented behavior and actual behavior should be resolved.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\",\n      \"line\": 189,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"If the retryCount update inside the catch block itself throws, the error is unhandled and the loop aborts, leaving remaining reminders unprocessed and the response never sent\",\n      \"body\": \"The catch block (line 189) performs `await prisma.workflowReminder.update(...)` to increment retryCount. If that database update fails (transient DB error, connection issue), the exception propagates out of the for-loop, out of the handler, and the request hangs or returns a 500 via defaultHandler \u2014 and all remaining unscheduled reminders in `unscheduledReminders` are skipped for this run. There is no try/catch around the retryCount update and no per-reminder error isolation beyond the outer catch. A failure to record a retry should not prevent processing of other reminders; wrap the increment in its own try/catch (or use a transaction) so one bad row doesn't abort the batch.\"\n    },\n    {\n      \"file\": \"packages/prisma/migrations/20240508134359_add_retry_count_to_workflow_reminder/migration.sql\",\n      \"line\": 2,\n      \"severity\": \"low\",\n      \"category\": \"perf\",\n      \"title\": \"Migration adds a NOT NULL column with DEFAULT 0 to WorkflowReminder without documenting the table rewrite/lock implications on large tables\",\n      \"body\": \"On PostgreSQL 11+, `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT 0` is a metadata-only operation and is safe. However, on older PostgreSQL versions (< 11) this rewrites the entire WorkflowReminder table and holds an ACCESS EXCLUSIVE lock for the duration, which on a large production table (workflow reminders accumulate per booking) could cause significant lock contention and downtime during migration. The migration should either confirm the minimum supported PG version is >= 11, or use the safe pattern of adding a nullable column, backfilling, then setting NOT NULL in a separate migration. At minimum this risk should be noted for the deploy runbook.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 38,
+   "severity": "high",
+   "category": "data",
+   "title": "deleteMany with retryCount > 1 deletes ALL workflow reminders regardless of method, including EMAIL and WHATSAPP reminders",
+   "body": "The cleanup query at the top of the handler uses `OR: [{ method: SMS, scheduledDate <= now }, { retryCount: { gt: 1 } }]`. The second OR branch has no `method` filter, so it deletes every WorkflowReminder row in the table with retryCount > 1 \u2014 including EMAIL and WHATSAPP reminders that may still be legitimately scheduled for the future. This is a data-loss bug: email reminders (which never increment retryCount in this file, but could in other code paths, e.g. scheduleEmailReminders or future changes) or any reminder that has accumulated retries would be silently deleted even though their scheduledDate is in the future and they were never meant to be cleaned up by the SMS cron. The retryCount-based deletion must be scoped to `method: WorkflowMethods.SMS` (and ideally `scheduled: false`), e.g. `AND: [{ method: SMS }, { OR: [past-due, retryCount > 1] }]`."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reminders with no message or no sendTo are never retried nor deleted, and the retryCount increment is skipped silently",
+   "body": "The retryCount increment only happens inside `if (message?.length && message?.length > 0 && sendTo)` (line 158) or in the catch block. If a reminder has an empty message (e.g. `reminderBody` is empty and template is not REMINDER, so `message` stays null) or `sendTo` is missing (no `smsReminderNumber` on the booking and no `sendTo` on the step), the code falls through without scheduling, without incrementing retryCount, and without any error. The reminder stays `scheduled: false` forever and will be re-fetched and re-processed by every cron run indefinitely \u2014 the exact infinite-retry problem this PR claims to fix. A reminder that can never succeed (missing phone number) should either increment retryCount or be marked failed/cancelled so the cleanup query can remove it."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "retryCount is incremented via read-modify-write (reminder.retryCount + 1), which is racy under concurrent cron invocations",
+   "body": "The handler reads `retryCount` once in the findMany (line 48-60) and later writes `retryCount: reminder.retryCount + 1` (lines 184 and 195). If two instances of this cron endpoint run concurrently (overlapping cron schedules, multiple serverless invocations, or a long-running loop), both can read the same retryCount value and both write the same incremented value, losing one increment. Worse, the deleteMany cleanup at line 29-45 runs before the loop, so a reminder at retryCount=1 that fails in two concurrent runs could stay at 2 and be retried again rather than deleted. The correct approach is an atomic increment: `data: { retryCount: { increment: 1 } }`, which Prisma supports and which avoids the lost-update race entirely."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "low",
+   "category": "bug",
+   "title": "Off-by-one: PR description says 'after scheduling failed twice we delete', but retryCount > 1 deletes after the second failure is recorded, allowing only one actual retry before deletion on the next run",
+   "body": "The PR description states 'after scheduling failed twice we delete the workflow reminder'. The implementation deletes rows where `retryCount > 1`, i.e. retryCount >= 2. A reminder starts at retryCount=0. First failure sets it to 1 (still kept, will be retried). Second failure sets it to 2, and the next cron run's deleteMany removes it. So the reminder is attempted at most twice total (initial + one retry) before deletion, not 'failed twice then deleted' as described \u2014 the description implies two retries after the initial attempt. Either the threshold should be `gte: 2` with the description clarified, or the code should use `gt: 2` to match the description. The mismatch between documented behavior and actual behavior should be resolved."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 189,
+   "severity": "low",
+   "category": "bug",
+   "title": "If the retryCount update inside the catch block itself throws, the error is unhandled and the loop aborts, leaving remaining reminders unprocessed and the response never sent",
+   "body": "The catch block (line 189) performs `await prisma.workflowReminder.update(...)` to increment retryCount. If that database update fails (transient DB error, connection issue), the exception propagates out of the for-loop, out of the handler, and the request hangs or returns a 500 via defaultHandler \u2014 and all remaining unscheduled reminders in `unscheduledReminders` are skipped for this run. There is no try/catch around the retryCount update and no per-reminder error isolation beyond the outer catch. A failure to record a retry should not prevent processing of other reminders; wrap the increment in its own try/catch (or use a transaction) so one bad row doesn't abort the batch."
+  },
+  {
+   "index": 5,
+   "file": "packages/prisma/migrations/20240508134359_add_retry_count_to_workflow_reminder/migration.sql",
+   "line": 2,
+   "severity": "low",
+   "category": "perf",
+   "title": "Migration adds a NOT NULL column with DEFAULT 0 to WorkflowReminder without documenting the table rewrite/lock implications on large tables",
+   "body": "On PostgreSQL 11+, `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT 0` is a metadata-only operation and is safe. However, on older PostgreSQL versions (< 11) this rewrites the entire WorkflowReminder table and holds an ACCESS EXCLUSIVE lock for the duration, which on a large production table (workflow reminders accumulate per booking) could cause significant lock contention and downtime during migration. The migration should either confirm the minimum supported PG version is >= 11, or use the safe pattern of adding a nullable column, backfilling, then setting NOT NULL in a separate migration. At minimum this risk should be noted for the deploy runbook."
+  }
+ ],
+ "finding_count": 6
+}

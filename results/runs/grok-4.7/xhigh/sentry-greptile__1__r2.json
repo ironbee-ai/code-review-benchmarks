@@ -1,0 +1,142 @@
+{
+ "run_id": "grok-4.7__xhigh__sentry-greptile__1__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+ "repeat": 2,
+ "started_at": "2026-10-18T00:02:08Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63599,
+  "sha": "5fcc8e73e0133429",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 17132,
+    "output": 37393,
+    "reasoning": 36286,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.259198,
+   "latency_ms": 526566,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4983,
+   "raw_usage": {
+    "completion_tokens": 37393,
+    "prompt_tokens": 18284,
+    "total_tokens": 55677,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 36286,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.259198,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.259198,
+     "upstream_inference_prompt_cost": 0.03484,
+     "upstream_inference_completions_cost": 0.224358
+    }
+   },
+   "started_at": "2026-10-18T00:02:08Z",
+   "first_chunk_ms": 1911,
+   "first_text_ms": 517665,
+   "response_id": "gen-1792281729-A3oHaxxdlwTeGpk5dirH",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 17132,
+  "output": 37393,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 36286
+ },
+ "cost_reported": 0.259198,
+ "latency_ms": 526566,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 79, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Optimized paginator crashes on datetime audit logs\", \"body\": \"When optimized_pagination=true and the caller is a superuser or has global access, the audit-log GET uses OptimizedCursorPaginator with order_by=-datetime. That class copies the numeric Paginator key logic: get_item_key does math.floor/math.ceil on the attribute, and value_from_cursor returns the raw cursor number. AuditLogEntry.datetime is a datetime, so build_cursor raises TypeError as soon as a page contains any rows (it calls get_item_key on the first result to build Link cursors). A later page would also compare the timestamptz column to an integer in SQL, which PostgreSQL rejects. DateTimePaginator, which this path replaces, converts datetimes to millisecond timestamps and converts cursor values back to UTC datetimes. Any opted-in request for an org that has audit entries returns 500 instead of rows, and cursors would be incompatible with existing DateTimePaginator cursors for this endpoint.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 882, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Negative cursor offsets crash queryset slicing\", \"body\": \"OptimizedCursorPaginator.get_result, when enable_advanced_features is true and cursor.offset < 0, evaluates queryset[negative:stop]. The audit-log endpoint always passes enable_advanced_features=True for this paginator, and Cursor.from_string accepts a negative middle field (for example 0:-1:0). Django QuerySet does not support negative indexing: __getitem__ raises AssertionError ('Negative indexing is not supported.'). If assertions are stripped, the SQL compiler emits a negative OFFSET, which PostgreSQL rejects. Nothing in build_cursor ever produces a negative offset, so this does not speed up reverse pagination; it only 500s on a client-supplied cursor. Comments that the ORM handles negative slicing and that this safely reaches rows beyond pagination bounds are wrong \u2014 the organization filter is unchanged, and the slice errors before any extra rows are returned.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 182, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Shared paginator mishandles negative offsets\", \"body\": \"BasePaginator.get_result now sets the slice start to max(0, offset) only for forward cursors and passes the raw offset through for previous-page cursors. The new comment says this is safe because the queryset handles boundary conditions. It does not: a negative start or stop raises AssertionError in Django, so a prev cursor such as 123:-5:1 (which Cursor.from_string will parse) 500s on every endpoint using BasePaginator, including the default DateTimePaginator audit-log path. That prev behavior is the same crash as the old queryset[offset:stop], now explicitly kept and described as an optimization. Forward cursors with a negative offset used to 500 and now silently clamp to 0 and return 200 with the offset dropped (the cursor value filter still applies), so a corrupt cursor can show a different page than requested. Valid non-negative offsets are unchanged. This is not a performance improvement and should not ship on the shared paginator.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 71, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Missing member None check 500s every audit-log GET\", \"body\": \"enable_advanced is evaluated on every GET, not only when optimized_pagination is set: request.user.is_superuser or organization_context.member.has_global_access. RpcUserOrganizationContext.member is optional and is None when the acting principal has no OrganizationMember row. Permission is enforced by OrganizationAuditPermission via request.access, which is a different object and can succeed without member being set (org auth tokens and similar). For those non-superuser callers, this line raises AttributeError before pagination, so the previously working audit-log list returns 500 even if optimized_pagination is absent. Superusers avoid it only because or short-circuits. Null-check member, and do not touch it unless the optimized branch is actually taken.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 821, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for new paginator or offset changes\", \"body\": \"This change adds OptimizedCursorPaginator, the optimized_pagination branch on the audit-log endpoint, and new offset handling in BasePaginator.get_result, with no tests. Existing pagination tests do not pass datetime rows through the new class or send negative cursor offsets, so they will not catch the TypeError on any non-empty audit-log page or the AssertionError from negative queryset slices. Coverage should lock the default DateTimePaginator path, require the optimized path to page datetime rows without skipping or 500ing, and reject negative offsets instead of slicing them.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 79,
+   "severity": "high",
+   "category": "bug",
+   "title": "Optimized paginator crashes on datetime audit logs",
+   "body": "When optimized_pagination=true and the caller is a superuser or has global access, the audit-log GET uses OptimizedCursorPaginator with order_by=-datetime. That class copies the numeric Paginator key logic: get_item_key does math.floor/math.ceil on the attribute, and value_from_cursor returns the raw cursor number. AuditLogEntry.datetime is a datetime, so build_cursor raises TypeError as soon as a page contains any rows (it calls get_item_key on the first result to build Link cursors). A later page would also compare the timestamptz column to an integer in SQL, which PostgreSQL rejects. DateTimePaginator, which this path replaces, converts datetimes to millisecond timestamps and converts cursor values back to UTC datetimes. Any opted-in request for an org that has audit entries returns 500 instead of rows, and cursors would be incompatible with existing DateTimePaginator cursors for this endpoint."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 882,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Negative cursor offsets crash queryset slicing",
+   "body": "OptimizedCursorPaginator.get_result, when enable_advanced_features is true and cursor.offset < 0, evaluates queryset[negative:stop]. The audit-log endpoint always passes enable_advanced_features=True for this paginator, and Cursor.from_string accepts a negative middle field (for example 0:-1:0). Django QuerySet does not support negative indexing: __getitem__ raises AssertionError ('Negative indexing is not supported.'). If assertions are stripped, the SQL compiler emits a negative OFFSET, which PostgreSQL rejects. Nothing in build_cursor ever produces a negative offset, so this does not speed up reverse pagination; it only 500s on a client-supplied cursor. Comments that the ORM handles negative slicing and that this safely reaches rows beyond pagination bounds are wrong \u2014 the organization filter is unchanged, and the slice errors before any extra rows are returned."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/paginator.py",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Shared paginator mishandles negative offsets",
+   "body": "BasePaginator.get_result now sets the slice start to max(0, offset) only for forward cursors and passes the raw offset through for previous-page cursors. The new comment says this is safe because the queryset handles boundary conditions. It does not: a negative start or stop raises AssertionError in Django, so a prev cursor such as 123:-5:1 (which Cursor.from_string will parse) 500s on every endpoint using BasePaginator, including the default DateTimePaginator audit-log path. That prev behavior is the same crash as the old queryset[offset:stop], now explicitly kept and described as an optimization. Forward cursors with a negative offset used to 500 and now silently clamp to 0 and return 200 with the offset dropped (the cursor value filter still applies), so a corrupt cursor can show a different page than requested. Valid non-negative offsets are unchanged. This is not a performance improvement and should not ship on the shared paginator."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 71,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Missing member None check 500s every audit-log GET",
+   "body": "enable_advanced is evaluated on every GET, not only when optimized_pagination is set: request.user.is_superuser or organization_context.member.has_global_access. RpcUserOrganizationContext.member is optional and is None when the acting principal has no OrganizationMember row. Permission is enforced by OrganizationAuditPermission via request.access, which is a different object and can succeed without member being set (org auth tokens and similar). For those non-superuser callers, this line raises AttributeError before pagination, so the previously working audit-log list returns 500 even if optimized_pagination is absent. Superusers avoid it only because or short-circuits. Null-check member, and do not touch it unless the optimized branch is actually taken."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/paginator.py",
+   "line": 821,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for new paginator or offset changes",
+   "body": "This change adds OptimizedCursorPaginator, the optimized_pagination branch on the audit-log endpoint, and new offset handling in BasePaginator.get_result, with no tests. Existing pagination tests do not pass datetime rows through the new class or send negative cursor offsets, so they will not catch the TypeError on any non-empty audit-log page or the AssertionError from negative queryset slices. Coverage should lock the default DateTimePaginator path, require the optimized path to page datetime rows without skipping or 500ing, and reject negative offsets instead of slicing them."
+  }
+ ],
+ "finding_count": 5
+}

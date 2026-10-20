@@ -1,0 +1,129 @@
+{
+ "run_id": "claude-opus-5__xhigh__grafana__80329__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__80329",
+ "golden_url": "https://github.com/grafana/grafana/pull/80329",
+ "repeat": 3,
+ "started_at": "2026-10-18T22:09:29Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 65677,
+  "sha": "8d83e49cfc512854",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 32541,
+    "output": 10848,
+    "reasoning": 9182,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 133323,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4475,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 32541,
+    "output_tokens": 10848,
+    "output_tokens_details": {
+     "thinking_tokens": 9182
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:09:29Z",
+   "first_chunk_ms": 1947,
+   "first_text_ms": 114681,
+   "response_id": "msg_bdrk_p64venne25o5qcbxqleyz5a4jii3lykuv6fmqfg34pei7gslewya",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 32541,
+  "output": 10848,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9182
+ },
+ "cost_reported": null,
+ "latency_ms": 133323,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/cleanup/cleanup.go\", \"line\": 77, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cleanup ticker reduced from 10 minutes to 1 minute (apparent debug leftover)\", \"body\": \"The background cleanup loop's ticker was changed from `time.Minute * 10` to `time.Minute * 1`. This makes *all* cleanup jobs (temp files, expired snapshots, dashboard versions, expired images, annotations, user invites, short URLs, query history) run 10x more often, multiplying background DB load on every Grafana instance. Nothing in the PR description mentions changing the cleanup cadence, and the per-run timeout is still 9 minutes (sized for the 10-minute cadence), so a long-running cleanup now blocks the loop while ticks are dropped. This looks like a leftover from local testing of the annotation cleanup and should be reverted (or justified and documented) before merge.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 534, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Debug logging left in at Error level, dumping every deleted ID\", \"body\": \"Six new `r.log.Error(...)` calls were added in the cleanup paths (lines 534, 537, 554, 557 in `CleanAnnotations` and 576, 579 in `CleanOrphanedAnnotationTags`). These log normal, successful operation at ERROR severity, which will trigger operator alerting/dashboards that watch for error logs. They also log the full `ids` slice and the raw SQL condition on every batch: with the default cleanup cadence and a batch size that can be tens of thousands (the new test uses 32767), each cycle emits log lines containing tens of thousands of IDs, which is a serious log-volume and formatting-cost problem. Additionally, the `\\\"err\\\", err` field in the \\\"to clean\\\" lines is always nil (the error was already returned above), and the error from `deleteByIDs` is logged *and* returned, so failures get double-reported. These statements should be removed or demoted to Debug without the full ID list.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 611, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Quadratic string concatenation when inlining IDs for SQLite\", \"body\": \"In `deleteByIDs`, the SQLite inline-values branch builds the IN list with `values = fmt.Sprintf(\\\"%s, %d\\\", values, v)` inside the loop. Each iteration reallocates and copies the whole accumulated string, making the construction O(n^2) in the number of IDs. With the batch sizes this branch is specifically meant for (it only triggers when `AnnotationCleanupJobBatchSize > 999`; the new test uses 32767) this copies hundreds of megabytes to gigabytes per batch and burns CPU/GC on every cleanup cycle. Use a `strings.Builder` (or `strconv.AppendInt` into a byte slice, as done elsewhere in this file) instead.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 608, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Placeholder-count limit only handled for SQLite; large batch sizes now break MySQL/Postgres cleanup\", \"body\": \"`deleteByIDs` only falls back to inlining IDs when the driver is SQLite and the configured batch size exceeds 999; otherwise it emits one `?` placeholder per ID. MySQL and PostgreSQL cap a single statement at 65535 bind parameters, so an operator who sets `annotation_cleanup_job_batch_size` above that value will now get a hard failure from every cleanup batch, where the previous sub-query-based DELETE had no such limit. Consider chunking `ids` to a safe maximum (e.g. a few thousand) inside `deleteByIDs` regardless of driver, instead of relying on the configured batch size staying small.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/cleanup_test.go\", \"line\": 120, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Per-subtest DB cleanup is registered after the data is inserted and asserted\", \"body\": \"`t.Cleanup` that truncates `annotation`/`annotation_tag` is registered only after `createTestAnnotations` and the two `require`-based pre-assertions have run. Since all subtests share one `db.InitTestDB` instance and now seed rows with fixed primary keys (`ID: int64(i+1)`), a failure inside `createTestAnnotations` or in the pre-condition assertions aborts the subtest without ever registering the cleanup, leaving rows behind and causing every subsequent subtest to fail with confusing duplicate-key/count errors instead of just the original failure. Register the cleanup before inserting the test data.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/cleanup/cleanup.go",
+   "line": 77,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cleanup ticker reduced from 10 minutes to 1 minute (apparent debug leftover)",
+   "body": "The background cleanup loop's ticker was changed from `time.Minute * 10` to `time.Minute * 1`. This makes *all* cleanup jobs (temp files, expired snapshots, dashboard versions, expired images, annotations, user invites, short URLs, query history) run 10x more often, multiplying background DB load on every Grafana instance. Nothing in the PR description mentions changing the cleanup cadence, and the per-run timeout is still 9 minutes (sized for the 10-minute cadence), so a long-running cleanup now blocks the loop while ticks are dropped. This looks like a leftover from local testing of the annotation cleanup and should be reverted (or justified and documented) before merge."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 534,
+   "severity": "high",
+   "category": "bug",
+   "title": "Debug logging left in at Error level, dumping every deleted ID",
+   "body": "Six new `r.log.Error(...)` calls were added in the cleanup paths (lines 534, 537, 554, 557 in `CleanAnnotations` and 576, 579 in `CleanOrphanedAnnotationTags`). These log normal, successful operation at ERROR severity, which will trigger operator alerting/dashboards that watch for error logs. They also log the full `ids` slice and the raw SQL condition on every batch: with the default cleanup cadence and a batch size that can be tens of thousands (the new test uses 32767), each cycle emits log lines containing tens of thousands of IDs, which is a serious log-volume and formatting-cost problem. Additionally, the `\"err\", err` field in the \"to clean\" lines is always nil (the error was already returned above), and the error from `deleteByIDs` is logged *and* returned, so failures get double-reported. These statements should be removed or demoted to Debug without the full ID list."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 611,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Quadratic string concatenation when inlining IDs for SQLite",
+   "body": "In `deleteByIDs`, the SQLite inline-values branch builds the IN list with `values = fmt.Sprintf(\"%s, %d\", values, v)` inside the loop. Each iteration reallocates and copies the whole accumulated string, making the construction O(n^2) in the number of IDs. With the batch sizes this branch is specifically meant for (it only triggers when `AnnotationCleanupJobBatchSize > 999`; the new test uses 32767) this copies hundreds of megabytes to gigabytes per batch and burns CPU/GC on every cleanup cycle. Use a `strings.Builder` (or `strconv.AppendInt` into a byte slice, as done elsewhere in this file) instead."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 608,
+   "severity": "low",
+   "category": "bug",
+   "title": "Placeholder-count limit only handled for SQLite; large batch sizes now break MySQL/Postgres cleanup",
+   "body": "`deleteByIDs` only falls back to inlining IDs when the driver is SQLite and the configured batch size exceeds 999; otherwise it emits one `?` placeholder per ID. MySQL and PostgreSQL cap a single statement at 65535 bind parameters, so an operator who sets `annotation_cleanup_job_batch_size` above that value will now get a hard failure from every cleanup batch, where the previous sub-query-based DELETE had no such limit. Consider chunking `ids` to a safe maximum (e.g. a few thousand) inside `deleteByIDs` regardless of driver, instead of relying on the configured batch size staying small."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/annotations/annotationsimpl/cleanup_test.go",
+   "line": 120,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Per-subtest DB cleanup is registered after the data is inserted and asserted",
+   "body": "`t.Cleanup` that truncates `annotation`/`annotation_tag` is registered only after `createTestAnnotations` and the two `require`-based pre-assertions have run. Since all subtests share one `db.InitTestDB` instance and now seed rows with fixed primary keys (`ID: int64(i+1)`), a failure inside `createTestAnnotations` or in the pre-condition assertions aborts the subtest without ever registering the cleanup, leaving rows behind and causing every subsequent subtest to fail with confusing duplicate-key/count errors instead of just the original failure. Register the cleanup before inserting the test data."
+  }
+ ],
+ "finding_count": 5
+}

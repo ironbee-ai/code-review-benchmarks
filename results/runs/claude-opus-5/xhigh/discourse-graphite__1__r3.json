@@ -1,0 +1,174 @@
+{
+ "run_id": "claude-opus-5__xhigh__discourse-graphite__1__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/1",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:42:29Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 28941,
+  "sha": "e6ad5d59c5fd0fac",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 12337,
+    "output": 9577,
+    "reasoning": 6436,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 124357,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 8595,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 12337,
+    "output_tokens": 9577,
+    "output_tokens_details": {
+     "thinking_tokens": 6436
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:42:29Z",
+   "first_chunk_ms": 1457,
+   "first_text_ms": 87005,
+   "response_id": "msg_bdrk_jnsgdqahz6xepkexyqrb6fp5s45adaufnvfyny6erga2p2lvh3cq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 12337,
+  "output": 9577,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 6436
+ },
+ "cost_reported": null,
+ "latency_ms": 124357,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/optimized_image.rb\", \"line\": 149, \"severity\": \"high\", \"category\": \"api\", \"title\": \"Second `self.downsize` definition silently overrides the (width, height) variant\", \"body\": \"`def self.downsize(from, to, max_width, max_height, opts={})` (line 145) is immediately redefined by `def self.downsize(from, to, dimensions, opts={})` (line 149). In Ruby the later definition wins, so the 4-positional-argument form is gone. Any existing caller/plugin doing `OptimizedImage.downsize(from, to, 500, 500)` now binds `dimensions = 500` and `opts = 500`, so `opts[:force_aspect_ratio]` in `downsize_instructions` raises `TypeError: no implicit conversion of Symbol into Integer` (or produces a bogus geometry). Either keep a single method that accepts both forms (e.g. `downsize(from, to, dimensions_or_width, height_or_opts = nil, opts = {})`) or rename the new one (e.g. `downsize_to`) and update callers.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 67, \"severity\": \"high\", \"category\": \"data\", \"title\": \"In-place downsize ignores failure and can corrupt/truncate the uploaded file\", \"body\": \"`OptimizedImage.downsize(tempfile.path, tempfile.path, \\\"80%\\\", ...)` reads and writes the same path, and its boolean return value is discarded. `OptimizedImage.convert_with` swallows all failures (returns false after logging), so if `convert`/`gifsicle` fails after having already opened the destination for writing, the tempfile is left truncated or partially written and the code unconditionally continues to `Upload.create_for(..., tempfile, ..., tempfile.size, ...)`, storing a corrupt image as the user's upload. Additionally, the still-open Ruby `Tempfile` handle is reused afterwards: if the external tool replaces the inode rather than truncating it, `tempfile.size` reports the stale size, which both makes the loop spin pointlessly and records a `filesize` on the `uploads` row that does not match the stored bytes. Convert to a distinct temp file, check the return value, and only swap in / re-stat the result on success.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 67, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Percentage geometry is invalid for the animated (gifsicle) downsize path\", \"body\": \"When `SiteSetting.allow_animated_thumbnails` is true and the temp path ends in `.gif`, `OptimizedImage.optimize` dispatches to `downsize_instructions_animated`, which delegates to `resize_instructions_animated` and emits `gifsicle <in> --colors=256 --resize-fit 80% --optimize=3 --output <out>`. `gifsicle --resize-fit` only accepts a WxH geometry (e.g. `_x300`); a percentage is rejected, so every one of the 5 attempts fails, the file size never changes, and the upload then fails the server-side size validation with no useful diagnostic. Use `--scale 0.8` for the animated path, or compute an explicit pixel geometry before calling downsize.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 67, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Downsizing the original strips GIF animation and depends on the temp file extension\", \"body\": \"When `allow_animated_thumbnails` is false (the default), an oversized animated GIF is passed to `downsize_instructions`, which uses `convert #{from}[0]` \u2013 only the first frame. Because the conversion is written back over `tempfile.path`, the user's *original* animated GIF is irreversibly replaced by a single static frame. Worse, the animation branch is selected with `from =~ /\\\\.GIF$/i` against the temp path: files obtained via the API URL branch come from `FileHelper.download(url, ..., \\\"discourse-upload-#{type}\\\")`, whose tempfile has no `.gif` extension, so animated GIFs downloaded by URL are always flattened regardless of the setting. Pass the real `filename` through to `optimize` for format detection, and do not use `[0]`/first-frame conversion on the original upload.\"}, {\"file\": \"app/assets/javascripts/discourse/lib/utilities.js\", \"line\": 182, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Client-side upload size check hardcodes 10MB and ignores max_attachment_size_kb\", \"body\": \"`validateUploadedFile` previously used `Discourse.SiteSettings['max_' + type + '_size_kb']`; it now always compares against a hardcoded `10 * 1024` KB, and the `type` parameter is unused for sizing. The server still validates attachments against `SiteSetting.max_attachment_size_kb` (only images are auto-downsized), so a site with, say, a 2MB attachment limit will let the browser accept a 9MB .zip, upload it, and only fail asynchronously server-side with a confusing error. Conversely, sites configured with a limit above 10MB can no longer upload files they are allowed to. The image limit may legitimately be relaxed now, but the attachment limit must still come from the site setting (and the hardcoded ceiling should be a setting shared with the server's `10.megabytes`).\"}, {\"file\": \"app/assets/javascripts/discourse/lib/utilities.js\", \"line\": 246, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"413 error message reports a hardcoded 10MB that may not be the real limit\", \"body\": \"In `displayErrorForUpload`, the HTTP 413 branch now tells the user `file_too_large` with `max_size_kb = 10 * 1024`. A 413 comes from the front-end web server (nginx `client_max_body_size`) or the attachment/image site settings, which are independent of this constant, so the message can state a limit that is neither the configured nor the enforced one, misleading users about what they can upload.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 55, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"API URL download limit hardcoded to 10MB, ignoring site configuration\", \"body\": \"`FileHelper.download(url, 10.megabytes, ...)` replaces `SiteSetting.max_image_size_kb.kilobytes` with a magic constant. Sites configured to allow images/attachments larger than 10MB can no longer ingest them through the API `url` parameter, and the limit is now unconfigurable and duplicated in three places (here, and twice in `utilities.js`). Introduce a site setting (or a shared constant) for the absolute upload ceiling instead of hardcoding it.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 64, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Up to five convert + ImageOptim passes per upload on the upload path\", \"body\": \"The loop runs `OptimizedImage.downsize` up to 5 times, and `OptimizedImage.convert_with` invokes `ImageOptim.new.optimize_image!` after every successful conversion. ImageOptim (pngcrush/jpegoptim/advpng...) is very CPU- and time-expensive, so a single large upload can occupy a `Scheduler::Defer` worker for tens of seconds, five sequential ImageMagick runs plus five ImageOptim runs, and this happens for every oversized image. Also, if a conversion fails the loop still burns all 5 iterations because the result is never checked. Consider computing the target geometry once (so a single resize suffices), breaking out on failure/no size change, and skipping ImageOptim for intermediate passes or moving the work to a background job.\"}, {\"file\": \"app/models/optimized_image.rb\", \"line\": 153, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Public `self.dimensions` removed and `self.optimize` signature changed without deprecation\", \"body\": \"`self.dimensions(width, height)` was deleted and `self.optimize` changed from `(operation, from, to, width, height, opts)` to `(operation, from, to, dimensions, opts)`. These are public class methods on a model that plugins and existing specs call directly; the change will raise `NoMethodError`/`ArgumentError` for any such caller. If the signature change is intentional, it should be called out and the in-tree callers/specs updated, otherwise keep backwards-compatible wrappers.\"}, {\"file\": \"app/controllers/uploads_controller.rb\", \"line\": 64, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for the new auto-downsize behaviour or the redefined downsize API\", \"body\": \"The PR adds a new in-place downsize loop in `UploadsController#create_upload` and changes/duplicates `OptimizedImage.downsize` / `OptimizedImage.optimize` signatures, but no specs are added or updated. There is no coverage for: an oversized image being reduced below `max_image_size_kb`, the case where 5 attempts are not enough, an oversized non-image skipping the loop, the animated-GIF path, or the new string-geometry `downsize` form (which currently breaks the old width/height form). Given the data-loss risk of writing over the user's tempfile, these paths need tests before merge.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/optimized_image.rb",
+   "line": 149,
+   "severity": "high",
+   "category": "api",
+   "title": "Second `self.downsize` definition silently overrides the (width, height) variant",
+   "body": "`def self.downsize(from, to, max_width, max_height, opts={})` (line 145) is immediately redefined by `def self.downsize(from, to, dimensions, opts={})` (line 149). In Ruby the later definition wins, so the 4-positional-argument form is gone. Any existing caller/plugin doing `OptimizedImage.downsize(from, to, 500, 500)` now binds `dimensions = 500` and `opts = 500`, so `opts[:force_aspect_ratio]` in `downsize_instructions` raises `TypeError: no implicit conversion of Symbol into Integer` (or produces a bogus geometry). Either keep a single method that accepts both forms (e.g. `downsize(from, to, dimensions_or_width, height_or_opts = nil, opts = {})`) or rename the new one (e.g. `downsize_to`) and update callers."
+  },
+  {
+   "index": 1,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 67,
+   "severity": "high",
+   "category": "data",
+   "title": "In-place downsize ignores failure and can corrupt/truncate the uploaded file",
+   "body": "`OptimizedImage.downsize(tempfile.path, tempfile.path, \"80%\", ...)` reads and writes the same path, and its boolean return value is discarded. `OptimizedImage.convert_with` swallows all failures (returns false after logging), so if `convert`/`gifsicle` fails after having already opened the destination for writing, the tempfile is left truncated or partially written and the code unconditionally continues to `Upload.create_for(..., tempfile, ..., tempfile.size, ...)`, storing a corrupt image as the user's upload. Additionally, the still-open Ruby `Tempfile` handle is reused afterwards: if the external tool replaces the inode rather than truncating it, `tempfile.size` reports the stale size, which both makes the loop spin pointlessly and records a `filesize` on the `uploads` row that does not match the stored bytes. Convert to a distinct temp file, check the return value, and only swap in / re-stat the result on success."
+  },
+  {
+   "index": 2,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 67,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Percentage geometry is invalid for the animated (gifsicle) downsize path",
+   "body": "When `SiteSetting.allow_animated_thumbnails` is true and the temp path ends in `.gif`, `OptimizedImage.optimize` dispatches to `downsize_instructions_animated`, which delegates to `resize_instructions_animated` and emits `gifsicle <in> --colors=256 --resize-fit 80% --optimize=3 --output <out>`. `gifsicle --resize-fit` only accepts a WxH geometry (e.g. `_x300`); a percentage is rejected, so every one of the 5 attempts fails, the file size never changes, and the upload then fails the server-side size validation with no useful diagnostic. Use `--scale 0.8` for the animated path, or compute an explicit pixel geometry before calling downsize."
+  },
+  {
+   "index": 3,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 67,
+   "severity": "medium",
+   "category": "data",
+   "title": "Downsizing the original strips GIF animation and depends on the temp file extension",
+   "body": "When `allow_animated_thumbnails` is false (the default), an oversized animated GIF is passed to `downsize_instructions`, which uses `convert #{from}[0]` \u2013 only the first frame. Because the conversion is written back over `tempfile.path`, the user's *original* animated GIF is irreversibly replaced by a single static frame. Worse, the animation branch is selected with `from =~ /\\.GIF$/i` against the temp path: files obtained via the API URL branch come from `FileHelper.download(url, ..., \"discourse-upload-#{type}\")`, whose tempfile has no `.gif` extension, so animated GIFs downloaded by URL are always flattened regardless of the setting. Pass the real `filename` through to `optimize` for format detection, and do not use `[0]`/first-frame conversion on the original upload."
+  },
+  {
+   "index": 4,
+   "file": "app/assets/javascripts/discourse/lib/utilities.js",
+   "line": 182,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Client-side upload size check hardcodes 10MB and ignores max_attachment_size_kb",
+   "body": "`validateUploadedFile` previously used `Discourse.SiteSettings['max_' + type + '_size_kb']`; it now always compares against a hardcoded `10 * 1024` KB, and the `type` parameter is unused for sizing. The server still validates attachments against `SiteSetting.max_attachment_size_kb` (only images are auto-downsized), so a site with, say, a 2MB attachment limit will let the browser accept a 9MB .zip, upload it, and only fail asynchronously server-side with a confusing error. Conversely, sites configured with a limit above 10MB can no longer upload files they are allowed to. The image limit may legitimately be relaxed now, but the attachment limit must still come from the site setting (and the hardcoded ceiling should be a setting shared with the server's `10.megabytes`)."
+  },
+  {
+   "index": 5,
+   "file": "app/assets/javascripts/discourse/lib/utilities.js",
+   "line": 246,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "413 error message reports a hardcoded 10MB that may not be the real limit",
+   "body": "In `displayErrorForUpload`, the HTTP 413 branch now tells the user `file_too_large` with `max_size_kb = 10 * 1024`. A 413 comes from the front-end web server (nginx `client_max_body_size`) or the attachment/image site settings, which are independent of this constant, so the message can state a limit that is neither the configured nor the enforced one, misleading users about what they can upload."
+  },
+  {
+   "index": 6,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 55,
+   "severity": "medium",
+   "category": "bug",
+   "title": "API URL download limit hardcoded to 10MB, ignoring site configuration",
+   "body": "`FileHelper.download(url, 10.megabytes, ...)` replaces `SiteSetting.max_image_size_kb.kilobytes` with a magic constant. Sites configured to allow images/attachments larger than 10MB can no longer ingest them through the API `url` parameter, and the limit is now unconfigurable and duplicated in three places (here, and twice in `utilities.js`). Introduce a site setting (or a shared constant) for the absolute upload ceiling instead of hardcoding it."
+  },
+  {
+   "index": 7,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 64,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Up to five convert + ImageOptim passes per upload on the upload path",
+   "body": "The loop runs `OptimizedImage.downsize` up to 5 times, and `OptimizedImage.convert_with` invokes `ImageOptim.new.optimize_image!` after every successful conversion. ImageOptim (pngcrush/jpegoptim/advpng...) is very CPU- and time-expensive, so a single large upload can occupy a `Scheduler::Defer` worker for tens of seconds, five sequential ImageMagick runs plus five ImageOptim runs, and this happens for every oversized image. Also, if a conversion fails the loop still burns all 5 iterations because the result is never checked. Consider computing the target geometry once (so a single resize suffices), breaking out on failure/no size change, and skipping ImageOptim for intermediate passes or moving the work to a background job."
+  },
+  {
+   "index": 8,
+   "file": "app/models/optimized_image.rb",
+   "line": 153,
+   "severity": "low",
+   "category": "api",
+   "title": "Public `self.dimensions` removed and `self.optimize` signature changed without deprecation",
+   "body": "`self.dimensions(width, height)` was deleted and `self.optimize` changed from `(operation, from, to, width, height, opts)` to `(operation, from, to, dimensions, opts)`. These are public class methods on a model that plugins and existing specs call directly; the change will raise `NoMethodError`/`ArgumentError` for any such caller. If the signature change is intentional, it should be called out and the in-tree callers/specs updated, otherwise keep backwards-compatible wrappers."
+  },
+  {
+   "index": 9,
+   "file": "app/controllers/uploads_controller.rb",
+   "line": 64,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for the new auto-downsize behaviour or the redefined downsize API",
+   "body": "The PR adds a new in-place downsize loop in `UploadsController#create_upload` and changes/duplicates `OptimizedImage.downsize` / `OptimizedImage.optimize` signatures, but no specs are added or updated. There is no coverage for: an oversized image being reduced below `max_image_size_kb`, the case where 5 attempts are not enough, an oversized non-image skipping the loop, the animated-GIF path, or the new string-geometry `downsize` form (which currently breaks the old width/height form). Given the data-loss risk of writing over the user's tempfile, these paths need tests before merge."
+  }
+ ],
+ "finding_count": 10
+}

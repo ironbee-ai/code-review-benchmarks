@@ -1,0 +1,125 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__sentry__93824__r1",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 1,
+ "started_at": "2026-10-16T13:27:34Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 41832,
+    "output": 7522,
+    "reasoning": null,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 73365,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5295
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 41832,
+  "output": 7522,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": null
+ },
+ "cost_reported": null,
+ "latency_ms": 73365,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 254, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Hung flusher processes are never killed, so a duplicate flusher is started for the same shards\", \"body\": \"The kill is now guarded by `isinstance(process, multiprocessing.Process)`. Real processes are created with `self.mp_context.Process`, i.e. `multiprocessing.context.SpawnProcess`. `SpawnProcess` subclasses `BaseProcess` directly, not `multiprocessing.Process` (`multiprocessing.context.Process`), so the check is always False and `process.kill()` never runs.\\n\\nThe old code called `kill()` unconditionally. Now, when a process is detected as hung (`cause == \\\"hang\\\"`), it keeps running and `_create_process_for_shards` spawns a second process for the same shards. Both processes share the same `stopped`, `healthy_since` and `backpressure_since` Values.\\n\\nConsequences:\\n- Two flushers can flush the same shards concurrently, which risks duplicate segments on buffered-segments.\\n- Processes leak on every restart, up to MAX_PROCESS_RESTARTS per process index.\\n- A recovered zombie keeps updating the shared health and backpressure values.\\n\\nFix: check against `multiprocessing.process.BaseProcess` or the concrete `SpawnProcess` class, or test `not isinstance(process, threading.Thread)`.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 341, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"join() stops early on deadline without terminating the remaining flusher processes\", \"body\": \"In `join()`, if the deadline has passed when the loop reaches a process, it does `break`. Every later process is skipped and never gets `terminate()` called.\\n\\nWith a timeout, the whole budget can be spent waiting on the first process, so the other N-1 processes are simply abandoned. On a rebalance, the next `create_with_partitions` immediately spawns new flushers, so hung or still-running old processes can overlap with the new ones.\\n\\nSeparately, the `isinstance(process, multiprocessing.Process)` check at line 346 never matches `SpawnProcess`, so `terminate()` is effectively never called for real processes.\\n\\nFix: keep the wait loop bounded by the deadline, but always terminate every process, and use a correct type check.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 300, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Redis memory info is queried once per flusher buffer on every submit, multiplying INFO calls on the main thread\", \"body\": \"`get_memory_info()` on `SpansBuffer` walks the memory usage of every node in the Redis cluster; it does not depend on `assigned_shards`. Looping over `self.buffers.values()` therefore runs the same full-cluster INFO sweep `num_processes` times on each `submit()` and sums the duplicated results.\\n\\nThe used/available ratio comes out the same, but the main consumer thread now pays N times the Redis round-trips. That works against the PR's stated goal of keeping the main thread minimal.\\n\\nFix: query memory info once, e.g. from the original `buffer` or from just one of the shard buffers.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 62, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Added time.sleep(0.1) is a no-op because time.sleep is monkeypatched\", \"body\": \"The test calls `monkeypatch.setattr(\\\"time.sleep\\\", lambda _: None)` at the top and then calls `time.sleep(0.1)` through the `time` module. That call hits the patched lambda, so no time passes.\\n\\nThe comment \\\"Give flusher threads time to process after drift change\\\" is false. The test still depends on the flusher thread happening to flush before `join()` sets `stopped`, so it can be flaky. If a real wait is needed, use a saved reference to the real `sleep` or poll until `messages` is non-empty.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Inconsistent metric tag key: 'shard' vs 'shards'\", \"body\": \"Three metrics in this PR tag the shard list:\\n- `spans.buffer.flusher.produce` uses the tag key `shard`.\\n- `spans.buffer.segment_size_bytes` uses `shard`.\\n- `spans.buffer.flusher.wait_produce` uses `shards`.\\n\\nDashboards and queries that group by shard will silently miss the `wait_produce` metric. Use one tag key consistently.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 32, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Docstring says one process per shard, but processes are capped and default CLI value is 1\", \"body\": \"The class docstring says the flusher \\\"Creates one process per shard\\\". In fact shards are distributed round-robin across `min(max_processes, len(shards))` processes.\\n\\nThe CLI option `--flusher-processes` defaults to 1, so by default a single process handles all shards. The docstring should describe the capped, round-robin assignment.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 127, \"severity\": \"low\", \"category\": \"style\", \"title\": \"Unused method _create_process_for_shard\", \"body\": \"`_create_process_for_shard` is never called anywhere; restarts go through `_create_process_for_shards` directly. This dead code should be removed to avoid confusion about the restart path.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 254,
+   "severity": "high",
+   "category": "bug",
+   "title": "Hung flusher processes are never killed, so a duplicate flusher is started for the same shards",
+   "body": "The kill is now guarded by `isinstance(process, multiprocessing.Process)`. Real processes are created with `self.mp_context.Process`, i.e. `multiprocessing.context.SpawnProcess`. `SpawnProcess` subclasses `BaseProcess` directly, not `multiprocessing.Process` (`multiprocessing.context.Process`), so the check is always False and `process.kill()` never runs.\n\nThe old code called `kill()` unconditionally. Now, when a process is detected as hung (`cause == \"hang\"`), it keeps running and `_create_process_for_shards` spawns a second process for the same shards. Both processes share the same `stopped`, `healthy_since` and `backpressure_since` Values.\n\nConsequences:\n- Two flushers can flush the same shards concurrently, which risks duplicate segments on buffered-segments.\n- Processes leak on every restart, up to MAX_PROCESS_RESTARTS per process index.\n- A recovered zombie keeps updating the shared health and backpressure values.\n\nFix: check against `multiprocessing.process.BaseProcess` or the concrete `SpawnProcess` class, or test `not isinstance(process, threading.Thread)`."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 341,
+   "severity": "medium",
+   "category": "bug",
+   "title": "join() stops early on deadline without terminating the remaining flusher processes",
+   "body": "In `join()`, if the deadline has passed when the loop reaches a process, it does `break`. Every later process is skipped and never gets `terminate()` called.\n\nWith a timeout, the whole budget can be spent waiting on the first process, so the other N-1 processes are simply abandoned. On a rebalance, the next `create_with_partitions` immediately spawns new flushers, so hung or still-running old processes can overlap with the new ones.\n\nSeparately, the `isinstance(process, multiprocessing.Process)` check at line 346 never matches `SpawnProcess`, so `terminate()` is effectively never called for real processes.\n\nFix: keep the wait loop bounded by the deadline, but always terminate every process, and use a correct type check."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 300,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Redis memory info is queried once per flusher buffer on every submit, multiplying INFO calls on the main thread",
+   "body": "`get_memory_info()` on `SpansBuffer` walks the memory usage of every node in the Redis cluster; it does not depend on `assigned_shards`. Looping over `self.buffers.values()` therefore runs the same full-cluster INFO sweep `num_processes` times on each `submit()` and sums the duplicated results.\n\nThe used/available ratio comes out the same, but the main consumer thread now pays N times the Redis round-trips. That works against the PR's stated goal of keeping the main thread minimal.\n\nFix: query memory info once, e.g. from the original `buffer` or from just one of the shard buffers."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Added time.sleep(0.1) is a no-op because time.sleep is monkeypatched",
+   "body": "The test calls `monkeypatch.setattr(\"time.sleep\", lambda _: None)` at the top and then calls `time.sleep(0.1)` through the `time` module. That call hits the patched lambda, so no time passes.\n\nThe comment \"Give flusher threads time to process after drift change\" is false. The test still depends on the flusher thread happening to flush before `join()` sets `stopped`, so it can be flaky. If a real wait is needed, use a saved reference to the real `sleep` or poll until `messages` is non-empty."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 199,
+   "severity": "low",
+   "category": "bug",
+   "title": "Inconsistent metric tag key: 'shard' vs 'shards'",
+   "body": "Three metrics in this PR tag the shard list:\n- `spans.buffer.flusher.produce` uses the tag key `shard`.\n- `spans.buffer.segment_size_bytes` uses `shard`.\n- `spans.buffer.flusher.wait_produce` uses `shards`.\n\nDashboards and queries that group by shard will silently miss the `wait_produce` metric. Use one tag key consistently."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 32,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Docstring says one process per shard, but processes are capped and default CLI value is 1",
+   "body": "The class docstring says the flusher \"Creates one process per shard\". In fact shards are distributed round-robin across `min(max_processes, len(shards))` processes.\n\nThe CLI option `--flusher-processes` defaults to 1, so by default a single process handles all shards. The docstring should describe the capped, round-robin assignment."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "style",
+   "title": "Unused method _create_process_for_shard",
+   "body": "`_create_process_for_shard` is never called anywhere; restarts go through `_create_process_for_shards` directly. This dead code should be removed to avoid confusion about the restart path."
+  }
+ ],
+ "finding_count": 7,
+ "provider_pin": null
+}

@@ -1,0 +1,144 @@
+{
+ "run_id": "minimax-m3__xhigh__grafana__79265__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:45:38Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29614,
+    "output": 17540,
+    "reasoning": 16413,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02995986,
+   "latency_ms": 73105,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4987,
+   "raw_usage": {
+    "completion_tokens": 17540,
+    "prompt_tokens": 30075,
+    "total_tokens": 47615,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 16413,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.02995986,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02995986,
+     "upstream_inference_prompt_cost": 0.00891186,
+     "upstream_inference_completions_cost": 0.021048
+    }
+   },
+   "started_at": "2026-10-18T12:45:38Z",
+   "first_chunk_ms": 2372,
+   "first_text_ms": 66709,
+   "response_id": "gen-1792327538-WfEByd8IL8FSecvqe6wi",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29614,
+  "output": 17540,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 16413
+ },
+ "cost_reported": 0.02995986,
+ "latency_ms": 73105,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 109, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TOCTOU race allows exceeding configured device limit\", \"body\": \"In CreateOrUpdateDevice the limit is enforced via a non-atomic 'SELECT COUNT(*) ... then INSERT' pattern: when s.deviceLimit > 0 the code calls CountDevices and, if count >= s.deviceLimit, routes the request to updateDevice; otherwise it falls through to the INSERT...ON CONFLICT branch. There is no row-level lock or transactional guard, so two concurrent requests for different devices (or N concurrent requests) can both observe count < limit and both succeed at INSERT, leaving the table with more than deviceLimit rows. For a feature whose stated purpose is to cap the number of devices, this race is a correctness bug: the configured limit is not actually a hard cap under concurrent traffic. Wrap the count+insert in a serializable transaction, lock a dedicated row (e.g. a 'anon_device_limit' singleton), or move the check into the database (e.g. an INSERT trigger that counts and aborts) so the check and the write are atomic.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 80, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Local cache set before DB call defeats ErrDeviceLimitReached lockout\", \"body\": \"tagDeviceUI populates a.localCache.SetDefault(key, struct{}{}) BEFORE calling a.anonStore.CreateOrUpdateDevice. Previously this was harmless because CreateOrUpdateDevice errors were only logged. After this PR, ErrDeviceLimitReached propagates up and causes Authenticate to deny the user (client.go returns the error). However, once that error is returned the cache entry is still in place for ~29 minutes (the cache TTL). Any retry for the same device within that window hits the cache, returns nil, and the user is silently authenticated despite the device never having been written and the limit being reached. The lockout semantics are therefore inconsistent: same device, same DB state, allowed or denied depending on cache timing. Move the cache set to AFTER a successful CreateOrUpdateDevice, or delete the cache key on error.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Anonymous auth request now blocks on synchronous DB write\", \"body\": \"The previous implementation ran the device tagging in a goroutine with its own context.WithTimeout(context.Background(), 2*time.Minute), so anonymous authentication never waited on the database. The new code calls a.anonDeviceService.TagDevice(ctx, httpReqCopy, ...) inline on the auth request path and propagates the error. Every anonymous request now performs a synchronous database write (CountDevices + INSERT/UPDATE) before the auth response is returned, adding latency to every anonymous login. Worse, if the database is slow the request itself can hang because the goroutine's 2-minute timeout is gone; the request context can be canceled by the client earlier, but cannot enforce an upper bound on a hung DB. Consider keeping the tagging async (fire-and-forget or a short-lived worker) while still surfacing ErrDeviceLimitReached synchronously, or pre-computing the decision from a cached count.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test that an existing device can still update when at limit\", \"body\": \"TestIntegrationBeyondDeviceLimit inserts device '32mdo31deeqwes', then tries to insert a NEW device 'keep' and asserts ErrDeviceLimitReached. The equally important branch of updateDevice - 'device already exists in the table, so the UPDATE affects 1 row and returns nil' - is not covered. The stated behavior ('if device limit is reached, only update devices') only holds if existing devices genuinely succeed; otherwise legitimate users of an already-registered device will be silently locked out when the limit is reached. Add a case where the second CreateOrUpdateDevice call uses the SAME DeviceID as the first one and assert that no error is returned.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 25, \"severity\": \"low\", \"category\": \"style\", \"title\": \"anonymousDeviceExpiration constant renamed only in api package\", \"body\": \"The PR renames the 30-day window constant to anonymousDeviceExpiration in pkg/services/anonymous/anonimpl/api/api.go, and uses the same name in the new constant in pkg/services/anonymous/anonimpl/anonstore/database.go, but pkg/services/anonymous/anonimpl/impl.go still defines 'const thirtyDays = 30 * 24 * time.Hour' and uses it in usageStatFn. Three copies of the same magic number (30 * 24 * time.Hour) now live in the same codebase under two different names, and changing the expiration window requires touching multiple files. Consolidate to a single exported constant (e.g. in the anonstore package) and reference it from impl.go and api.go.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TOCTOU race allows exceeding configured device limit",
+   "body": "In CreateOrUpdateDevice the limit is enforced via a non-atomic 'SELECT COUNT(*) ... then INSERT' pattern: when s.deviceLimit > 0 the code calls CountDevices and, if count >= s.deviceLimit, routes the request to updateDevice; otherwise it falls through to the INSERT...ON CONFLICT branch. There is no row-level lock or transactional guard, so two concurrent requests for different devices (or N concurrent requests) can both observe count < limit and both succeed at INSERT, leaving the table with more than deviceLimit rows. For a feature whose stated purpose is to cap the number of devices, this race is a correctness bug: the configured limit is not actually a hard cap under concurrent traffic. Wrap the count+insert in a serializable transaction, lock a dedicated row (e.g. a 'anon_device_limit' singleton), or move the check into the database (e.g. an INSERT trigger that counts and aborts) so the check and the write are atomic."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 80,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Local cache set before DB call defeats ErrDeviceLimitReached lockout",
+   "body": "tagDeviceUI populates a.localCache.SetDefault(key, struct{}{}) BEFORE calling a.anonStore.CreateOrUpdateDevice. Previously this was harmless because CreateOrUpdateDevice errors were only logged. After this PR, ErrDeviceLimitReached propagates up and causes Authenticate to deny the user (client.go returns the error). However, once that error is returned the cache entry is still in place for ~29 minutes (the cache TTL). Any retry for the same device within that window hits the cache, returns nil, and the user is silently authenticated despite the device never having been written and the limit being reached. The lockout semantics are therefore inconsistent: same device, same DB state, allowed or denied depending on cache timing. Move the cache set to AFTER a successful CreateOrUpdateDevice, or delete the cache key on error."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Anonymous auth request now blocks on synchronous DB write",
+   "body": "The previous implementation ran the device tagging in a goroutine with its own context.WithTimeout(context.Background(), 2*time.Minute), so anonymous authentication never waited on the database. The new code calls a.anonDeviceService.TagDevice(ctx, httpReqCopy, ...) inline on the auth request path and propagates the error. Every anonymous request now performs a synchronous database write (CountDevices + INSERT/UPDATE) before the auth response is returned, adding latency to every anonymous login. Worse, if the database is slow the request itself can hang because the goroutine's 2-minute timeout is gone; the request context can be canceled by the client earlier, but cannot enforce an upper bound on a hung DB. Consider keeping the tagging async (fire-and-forget or a short-lived worker) while still surfacing ErrDeviceLimitReached synchronously, or pre-computing the decision from a cached count."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test that an existing device can still update when at limit",
+   "body": "TestIntegrationBeyondDeviceLimit inserts device '32mdo31deeqwes', then tries to insert a NEW device 'keep' and asserts ErrDeviceLimitReached. The equally important branch of updateDevice - 'device already exists in the table, so the UPDATE affects 1 row and returns nil' - is not covered. The stated behavior ('if device limit is reached, only update devices') only holds if existing devices genuinely succeed; otherwise legitimate users of an already-registered device will be silently locked out when the limit is reached. Add a case where the second CreateOrUpdateDevice call uses the SAME DeviceID as the first one and assert that no error is returned."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 25,
+   "severity": "low",
+   "category": "style",
+   "title": "anonymousDeviceExpiration constant renamed only in api package",
+   "body": "The PR renames the 30-day window constant to anonymousDeviceExpiration in pkg/services/anonymous/anonimpl/api/api.go, and uses the same name in the new constant in pkg/services/anonymous/anonimpl/anonstore/database.go, but pkg/services/anonymous/anonimpl/impl.go still defines 'const thirtyDays = 30 * 24 * time.Hour' and uses it in usageStatFn. Three copies of the same magic number (30 * 24 * time.Hour) now live in the same codebase under two different names, and changing the expiration window requires touching multiple files. Consolidate to a single exported constant (e.g. in the anonstore package) and reference it from impl.go and api.go."
+  }
+ ],
+ "finding_count": 5
+}

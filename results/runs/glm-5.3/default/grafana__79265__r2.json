@@ -1,0 +1,162 @@
+{
+ "run_id": "glm-5.3__default__grafana__79265__r2",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:55:08Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30093,
+    "output": 7011,
+    "reasoning": 5640,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0729786,
+   "latency_ms": 109251,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 6271,
+   "raw_usage": {
+    "completion_tokens": 7011,
+    "prompt_tokens": 30093,
+    "total_tokens": 37104,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 5640,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0729786,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0729786,
+     "upstream_inference_prompt_cost": 0.0421302,
+     "upstream_inference_completions_cost": 0.0308484
+    }
+   },
+   "started_at": "2026-10-17T20:55:08Z",
+   "first_chunk_ms": 2737,
+   "first_text_ms": 92822,
+   "response_id": "gen-1792270508-eZRP8ZK71YX4qup6YA5S",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30093,
+  "output": 7011,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5640
+ },
+ "cost_reported": 0.0729786,
+ "latency_ms": 109251,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Device tagging moved onto the synchronous anonymous auth path with no timeout or panic recovery\", \"body\": \"Authenticate previously ran TagDevice in a background goroutine with a dedicated 2-minute timeout and a recover() around panics. This change calls a.anonDeviceService.TagDevice(ctx, ...) inline, so every anonymous request now performs database work (a COUNT over anon_device plus an INSERT/UPDATE for cache misses) on the authentication critical path, with no independent timeout; a slow or saturated database directly delays or fails anonymous page loads. Additionally, a panic inside TagDevice or the store is no longer contained (the recover() was removed along with the goroutine), so it now surfaces in the request handler instead of being logged. If the synchronous behavior is required to propagate ErrDeviceLimitReached, at minimum keep panic recovery and a bounded timeout, and make sure the count/write can be skipped cheaply when the limit is 0.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 109, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Device limit check is a non-atomic count-then-insert (TOCTOU)\", \"body\": \"CreateOrUpdateDevice enforces the limit by calling CountDevices and then, if count < deviceLimit, executing a separate INSERT ... ON CONFLICT statement. These are two independent database operations with no transaction or locking, so concurrent requests (especially from multiple Grafana instances, since the local cache in impl.go is per-process) can all observe a count below the limit and all insert, exceeding the configured device_limit. The limit is therefore only advisory under load. To enforce it strictly the count and insert need to be combined atomically (e.g., a single conditional upsert or a transaction with appropriate isolation).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 45, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Unauthenticated users can exhaust the device limit and deny anonymous access to everyone\", \"body\": \"When the limit is reached, CreateOrUpdateDevice returns ErrDeviceLimitReached and Authenticate returns it, failing authentication for any device not already in the 30-day window. The device ID is taken verbatim from the client-controlled X-Grafana-Device-Id header with no authentication or rate limiting, so any anonymous visitor can send requests with random device IDs until count >= device_limit, after which every new anonymous device (i.e., every new browser) is rejected from the whole instance. This turns a licensing/limiting feature into a trivial remote denial-of-service for anonymous access. Consider capping inserts per client IP, or rate-limiting new device registrations, before enforcing a hard authentication failure.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 95, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"MySQL RowsAffected semantics can cause spurious ErrDeviceLimitReached for an existing device\", \"body\": \"updateDevice treats rowsAffected == 0 as 'device limit reached', but on MySQL (without CLIENT_FOUND_ROWS, which Grafana's DSN does not set) RowsAffected reports changed rows, not matched rows. If a device row exists and the update writes identical client_ip, user_agent, and the same updated_at second (possible when two Grafana instances handle the same device within one second, since the dedupe localCache in impl.go is per-process), MySQL reports 0 affected rows and a legitimate existing device is rejected with ErrDeviceLimitReached, failing that user's anonymous authentication. The check should distinguish 'row matched' from 'row changed' (e.g., check existence separately or use a dialect-aware affected-rows mode), and ErrDeviceLimitReached should not be used to mean 'device not found or unchanged'.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test for the main success path: an existing device refreshing itself once the limit is reached\", \"body\": \"TestIntegrationBeyondDeviceLimit only covers the rejection case (a second, new device gets ErrDeviceLimitReached). The core behavior of the feature\u2014that a device already registered within the 30-day window can still be updated (last-seen refreshed) when the limit is reached, i.e., updateDevice returning nil\u2014is untested, and neither is the end-to-end behavior of the authn client (what HTTP status/body an anonymous user receives once the limit is hit, and that a repeat visitor is not locked out). These are the paths most likely to regress.\"}, {\"file\": \"packages/grafana-data/src/types/config.ts\", \"line\": 200, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Frontend type says anonymousDeviceLimit may be undefined, but backend always serializes it (default 0)\", \"body\": \"The TypeScript GrafanaConfig declares `anonymousDeviceLimit: number | undefined`, but the Go DTO (pkg/api/dtos/frontend_settings.go, AnonymousDeviceLimit int64 with no omitempty) always emits the field, sending 0 when no limit is configured. Consumers therefore can never rely on undefined to mean 'no limit' and must special-case 0, which the type does not communicate. Either make the Go field `*int64` with omitempty to match the optional contract, or type the frontend field as a plain number and document that 0 means unlimited.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1652, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"device_limit accepts negative values that silently disable the limit\", \"body\": \"cfg.AnonymousDeviceLimit is read with MustInt64(0) and the store only applies the limit when deviceLimit > 0, so a negative value (e.g., device_limit = -1, a plausible typo for 'unlimited' or a mistake) is silently treated the same as 0 with no warning logged, unlike other Grafana settings that log when values are invalid. Additionally, the new auth.anonymous device_limit option is not documented anywhere in this PR (no docs or config reference update), so the semantics of 0/negative values and the blocking behavior when the limit is reached are undocumented.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Device tagging moved onto the synchronous anonymous auth path with no timeout or panic recovery",
+   "body": "Authenticate previously ran TagDevice in a background goroutine with a dedicated 2-minute timeout and a recover() around panics. This change calls a.anonDeviceService.TagDevice(ctx, ...) inline, so every anonymous request now performs database work (a COUNT over anon_device plus an INSERT/UPDATE for cache misses) on the authentication critical path, with no independent timeout; a slow or saturated database directly delays or fails anonymous page loads. Additionally, a panic inside TagDevice or the store is no longer contained (the recover() was removed along with the goroutine), so it now surfaces in the request handler instead of being logged. If the synchronous behavior is required to propagate ErrDeviceLimitReached, at minimum keep panic recovery and a bounded timeout, and make sure the count/write can be skipped cheaply when the limit is 0."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Device limit check is a non-atomic count-then-insert (TOCTOU)",
+   "body": "CreateOrUpdateDevice enforces the limit by calling CountDevices and then, if count < deviceLimit, executing a separate INSERT ... ON CONFLICT statement. These are two independent database operations with no transaction or locking, so concurrent requests (especially from multiple Grafana instances, since the local cache in impl.go is per-process) can all observe a count below the limit and all insert, exceeding the configured device_limit. The limit is therefore only advisory under load. To enforce it strictly the count and insert need to be combined atomically (e.g., a single conditional upsert or a transaction with appropriate isolation)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 45,
+   "severity": "medium",
+   "category": "security",
+   "title": "Unauthenticated users can exhaust the device limit and deny anonymous access to everyone",
+   "body": "When the limit is reached, CreateOrUpdateDevice returns ErrDeviceLimitReached and Authenticate returns it, failing authentication for any device not already in the 30-day window. The device ID is taken verbatim from the client-controlled X-Grafana-Device-Id header with no authentication or rate limiting, so any anonymous visitor can send requests with random device IDs until count >= device_limit, after which every new anonymous device (i.e., every new browser) is rejected from the whole instance. This turns a licensing/limiting feature into a trivial remote denial-of-service for anonymous access. Consider capping inserts per client IP, or rate-limiting new device registrations, before enforcing a hard authentication failure."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 95,
+   "severity": "low",
+   "category": "bug",
+   "title": "MySQL RowsAffected semantics can cause spurious ErrDeviceLimitReached for an existing device",
+   "body": "updateDevice treats rowsAffected == 0 as 'device limit reached', but on MySQL (without CLIENT_FOUND_ROWS, which Grafana's DSN does not set) RowsAffected reports changed rows, not matched rows. If a device row exists and the update writes identical client_ip, user_agent, and the same updated_at second (possible when two Grafana instances handle the same device within one second, since the dedupe localCache in impl.go is per-process), MySQL reports 0 affected rows and a legitimate existing device is rejected with ErrDeviceLimitReached, failing that user's anonymous authentication. The check should distinguish 'row matched' from 'row changed' (e.g., check existence separately or use a dialect-aware affected-rows mode), and ErrDeviceLimitReached should not be used to mean 'device not found or unchanged'."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test for the main success path: an existing device refreshing itself once the limit is reached",
+   "body": "TestIntegrationBeyondDeviceLimit only covers the rejection case (a second, new device gets ErrDeviceLimitReached). The core behavior of the feature\u2014that a device already registered within the 30-day window can still be updated (last-seen refreshed) when the limit is reached, i.e., updateDevice returning nil\u2014is untested, and neither is the end-to-end behavior of the authn client (what HTTP status/body an anonymous user receives once the limit is hit, and that a repeat visitor is not locked out). These are the paths most likely to regress."
+  },
+  {
+   "index": 5,
+   "file": "packages/grafana-data/src/types/config.ts",
+   "line": 200,
+   "severity": "low",
+   "category": "api",
+   "title": "Frontend type says anonymousDeviceLimit may be undefined, but backend always serializes it (default 0)",
+   "body": "The TypeScript GrafanaConfig declares `anonymousDeviceLimit: number | undefined`, but the Go DTO (pkg/api/dtos/frontend_settings.go, AnonymousDeviceLimit int64 with no omitempty) always emits the field, sending 0 when no limit is configured. Consumers therefore can never rely on undefined to mean 'no limit' and must special-case 0, which the type does not communicate. Either make the Go field `*int64` with omitempty to match the optional contract, or type the frontend field as a plain number and document that 0 means unlimited."
+  },
+  {
+   "index": 6,
+   "file": "pkg/setting/setting.go",
+   "line": 1652,
+   "severity": "low",
+   "category": "bug",
+   "title": "device_limit accepts negative values that silently disable the limit",
+   "body": "cfg.AnonymousDeviceLimit is read with MustInt64(0) and the store only applies the limit when deviceLimit > 0, so a negative value (e.g., device_limit = -1, a plausible typo for 'unlimited' or a mistake) is silently treated the same as 0 with no warning logged, unlike other Grafana settings that log when values are invalid. Additionally, the new auth.anonymous device_limit option is not documented anywhere in this PR (no docs or config reference update), so the semantics of 0/negative values and the blocking behavior when the limit is reached are undocumented."
+  }
+ ],
+ "finding_count": 7
+}

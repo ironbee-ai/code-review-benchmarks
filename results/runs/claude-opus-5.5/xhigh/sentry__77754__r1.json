@@ -1,0 +1,138 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__sentry__77754__r1",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:47:26Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29953,
+    "output": 7059,
+    "reasoning": 5397,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 65542,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4664,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 29953,
+    "output_tokens": 7059,
+    "output_tokens_details": {
+     "thinking_tokens": 5397
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T11:47:26Z",
+   "first_chunk_ms": 2437,
+   "first_text_ms": 51271,
+   "response_id": "msg_bdrk_c35ppozfvduqbg65yzwt2kewxnaj7s6zsix6m2jbwcqavlykfuya",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29953,
+  "output": 7059,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5397
+ },
+ "cost_reported": null,
+ "latency_ms": 65542,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 18, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`queued` default is evaluated once at import time, so every instance shares the same timestamp\", \"body\": \"`queued: datetime = timezone.now()` is a plain dataclass default. It is computed once, when the class body runs at module import, not on each instantiation.\\n\\nEvery `AssignmentSource` built without an explicit `queued` (including all those from `from_integration`) gets the worker process's import time. In a long-lived worker that can be hours or days stale. Any current or future use of `queued` for staleness, ordering or debouncing of rapid assignee changes (the scenario this PR targets) will be wrong.\\n\\nUse `queued: datetime = field(default_factory=timezone.now)`.\\n\\n`test_to_dict` only asserts `queued is not None`, so it cannot catch this.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 28, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`to_dict` puts a raw `datetime` into Celery task kwargs; the round-trip is not type-safe\", \"body\": \"`to_dict()` returns `asdict(self)`, which contains a `datetime` object. That dict is passed as `assignment_source_dict` to `sync_assignee_outbound.apply_async(kwargs=...)`.\\n\\nTask payloads should be JSON-safe primitives. Under a JSON serializer the datetime is either rejected at enqueue time or converted to an ISO string. `from_dict` does `cls(**input_dict)` with no type coercion, so after the round-trip `queued` silently becomes a `str` despite its `datetime` annotation.\\n\\nSerialize `queued` explicitly (e.g. `isoformat()` or epoch) in `to_dict` and parse it back in `from_dict`.\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 390, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Cycle guard compares integration IDs, so syncs to other linked issues in the same integration are dropped\", \"body\": \"`should_sync` returns False whenever `sync_source.integration_id == self.org_integration.integration_id`. The outbound task runs once per linked `ExternalIssue`.\\n\\nIf a Sentry group is linked to two issues in the same Jira integration (A and B), an inbound change on A now blocks the outbound update to B as well. Previously B would be kept in sync; this is a silent regression.\\n\\nThe loop being fixed is between Sentry and the specific external issue that sent the webhook. Carrying the originating external issue key/id in `AssignmentSource` and skipping only that issue would break the cycle without suppressing legitimate propagation.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 33, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`from_dict` silently returns None on malformed input, which re-enables the sync loop\", \"body\": \"`from_dict` catches `ValueError`/`TypeError` and returns None without logging. In `sync_assignee_outbound`, a None source means `should_sync` skips the cycle check and proceeds with the outbound sync.\\n\\nAny schema drift in the payload (an added or renamed field, or tasks enqueued by a different code version during deploy) silently brings back the exact cycle this PR fixes. Log or emit a metric when parsing fails so this is observable.\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 416, \"severity\": \"low\", \"category\": \"api\", \"title\": \"`sync_status_outbound` gains an `assignment_source` parameter that nothing passes or honors\", \"body\": \"The abstract signature of `sync_status_outbound` now declares `assignment_source: AssignmentSource | None = None`. No caller supplies it, no implementation uses it, and the status outbound path does not consult the source in `should_sync`.\\n\\nThis suggests to readers and implementers that status-sync cycles are also prevented when they are not. Either wire it through the status sync path or remove it from this PR.\"}, {\"file\": \"tests/sentry/models/test_groupassignee.py\", \"line\": 221, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test that a different integration still receives the sync, or that the inbound path breaks the cycle\", \"body\": \"The new test only covers the case where the source matches the target integration and the outbound call is skipped.\\n\\nTwo behaviors are untested:\\n- An `AssignmentSource` from a different integration still triggers `sync_assignee_outbound` on the linked integration.\\n- `sync_group_assignee_inbound` (the real webhook entry point) does not call back out to the originating integration.\\n\\nThe existing inbound tests run without `self.tasks()` and without mocking outbound, so the end-to-end cycle break is not verified.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`queued` default is evaluated once at import time, so every instance shares the same timestamp",
+   "body": "`queued: datetime = timezone.now()` is a plain dataclass default. It is computed once, when the class body runs at module import, not on each instantiation.\n\nEvery `AssignmentSource` built without an explicit `queued` (including all those from `from_integration`) gets the worker process's import time. In a long-lived worker that can be hours or days stale. Any current or future use of `queued` for staleness, ordering or debouncing of rapid assignee changes (the scenario this PR targets) will be wrong.\n\nUse `queued: datetime = field(default_factory=timezone.now)`.\n\n`test_to_dict` only asserts `queued is not None`, so it cannot catch this."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 28,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`to_dict` puts a raw `datetime` into Celery task kwargs; the round-trip is not type-safe",
+   "body": "`to_dict()` returns `asdict(self)`, which contains a `datetime` object. That dict is passed as `assignment_source_dict` to `sync_assignee_outbound.apply_async(kwargs=...)`.\n\nTask payloads should be JSON-safe primitives. Under a JSON serializer the datetime is either rejected at enqueue time or converted to an ISO string. `from_dict` does `cls(**input_dict)` with no type coercion, so after the round-trip `queued` silently becomes a `str` despite its `datetime` annotation.\n\nSerialize `queued` explicitly (e.g. `isoformat()` or epoch) in `to_dict` and parse it back in `from_dict`."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 390,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Cycle guard compares integration IDs, so syncs to other linked issues in the same integration are dropped",
+   "body": "`should_sync` returns False whenever `sync_source.integration_id == self.org_integration.integration_id`. The outbound task runs once per linked `ExternalIssue`.\n\nIf a Sentry group is linked to two issues in the same Jira integration (A and B), an inbound change on A now blocks the outbound update to B as well. Previously B would be kept in sync; this is a silent regression.\n\nThe loop being fixed is between Sentry and the specific external issue that sent the webhook. Carrying the originating external issue key/id in `AssignmentSource` and skipping only that issue would break the cycle without suppressing legitimate propagation."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 33,
+   "severity": "low",
+   "category": "bug",
+   "title": "`from_dict` silently returns None on malformed input, which re-enables the sync loop",
+   "body": "`from_dict` catches `ValueError`/`TypeError` and returns None without logging. In `sync_assignee_outbound`, a None source means `should_sync` skips the cycle check and proceeds with the outbound sync.\n\nAny schema drift in the payload (an added or renamed field, or tasks enqueued by a different code version during deploy) silently brings back the exact cycle this PR fixes. Log or emit a metric when parsing fails so this is observable."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 416,
+   "severity": "low",
+   "category": "api",
+   "title": "`sync_status_outbound` gains an `assignment_source` parameter that nothing passes or honors",
+   "body": "The abstract signature of `sync_status_outbound` now declares `assignment_source: AssignmentSource | None = None`. No caller supplies it, no implementation uses it, and the status outbound path does not consult the source in `should_sync`.\n\nThis suggests to readers and implementers that status-sync cycles are also prevented when they are not. Either wire it through the status sync path or remove it from this PR."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/models/test_groupassignee.py",
+   "line": 221,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test that a different integration still receives the sync, or that the inbound path breaks the cycle",
+   "body": "The new test only covers the case where the source matches the target integration and the outbound call is skipped.\n\nTwo behaviors are untested:\n- An `AssignmentSource` from a different integration still triggers `sync_assignee_outbound` on the linked integration.\n- `sync_group_assignee_inbound` (the real webhook entry point) does not call back out to the originating integration.\n\nThe existing inbound tests run without `self.tasks()` and without mocking outbound, so the end-to-end cycle break is not verified."
+  }
+ ],
+ "finding_count": 6
+}

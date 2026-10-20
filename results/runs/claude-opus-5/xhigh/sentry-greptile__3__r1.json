@@ -1,0 +1,215 @@
+{
+ "run_id": "claude-opus-5__xhigh__sentry-greptile__3__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-18T22:34:44Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 88660,
+  "sha": "d62ec561fe1b4a7e",
+  "patch_only": [
+   "sentry-repo",
+   "src/sentry/search/events/datasets/discover.py",
+   "src/sentry/testutils/factories.py",
+   "tests/snuba/api/endpoints/test_organization_events_stats.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 34043,
+    "output": 16460,
+    "reasoning": 12189,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 210298,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 12005,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 34043,
+    "output_tokens": 16460,
+    "output_tokens_details": {
+     "thinking_tokens": 12189
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:34:44Z",
+   "first_chunk_ms": 1896,
+   "first_text_ms": 158884,
+   "response_id": "msg_bdrk_vmeevwxxqbi6qcn73bdte7c7fo3jk5rv3w6mkbsi4q6dv4rkyata",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 34043,
+  "output": 16460,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 12189
+ },
+ "cost_reported": null,
+ "latency_ms": 210298,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 220, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Upsampling eligibility uses the outer `dataset` instead of `scoped_dataset`\", \"body\": \"`_get_event_stats` receives `scoped_dataset` as its first argument (the dataset actually queried), but the eligibility check passes the enclosing `dataset` variable: `is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request)`. In the dashboard-widget-split code path, `_get_event_stats` is intentionally invoked with a different dataset (`discover`, or the widget's split dataset) while the outer `dataset` is the metrics/discover dataset selected from the request. As a result the `count()` -> `upsampled_count()` decision is made for a dataset that is not the one being queried: upsampling can be skipped for an errors query that should be upsampled, or (when the outer dataset is errors-like and the scoped dataset is not) `upsampled_count()` can be sent to a dataset that has no `sample_weight` column, producing a Snuba error or wrong numbers. The check should use `scoped_dataset`.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 27, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Caching allowlist eligibility for 60s can serve 10x-wrong counts and cannot be invalidated\", \"body\": \"`is_errors_query_for_error_upsampled_projects` stores the result of the allowlist check in the shared cache under `error_upsampling_eligible:{org}:{hash(project_ids)}` for 60 seconds. The underlying value comes from `options.get(\\\"issues.client_error_sampling.project_allowlist\\\")`, which is already cached by the options store, so there is no meaningful performance gain; what it does add is up to a minute of stale behavior. After an operator removes a project from the allowlist (e.g. to stop bad data or roll back the feature), charts keep returning `sum(sample_weight)` values that are inflated by the inverse sample rate (10x in the tests here) \u2014 and conversely, newly allowlisted projects keep returning raw counts. Because the cache key is per (org, exact project-id set), there is no practical way to purge all affected entries. Additionally, if the cache backend (redis/memcached) outlives a database reset in CI or local dev, project ids can be reused and a stale `True`/`False` will be applied to an unrelated project set. Consider removing the cache entirely or keying it on the option value/version.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 27, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Cache key uses `hash()` of the project tuple, so distinct project sets can collide\", \"body\": \"The cache key embeds `hash(tuple(sorted(snuba_params.project_ids)))` rather than the project ids themselves. Two different project sets within the same organization that hash to the same value will share a cached eligibility verdict, which means a non-allowlisted project set can be treated as upsampled (counts multiplied by the sample weight) or vice versa. Serializing the ids (e.g. `\\\"-\\\".join(map(str, sorted(ids)))`, or a cryptographic digest if length matters) removes this failure mode at no cost.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 50, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Docstring claims the allowlist is read fresh on every call, which the caller's cache contradicts\", \"body\": \"`_are_all_projects_error_upsampled`'s docstring states: \\\"This function reads the allowlist configuration fresh each time... This is intentional to ensure we always have the latest configuration state.\\\" Its only caller, `is_errors_query_for_error_upsampled_projects`, caches the result for 60 seconds, so the system does not always see the latest configuration. The comment in the caller (\\\"This is safe because allowlist changes are infrequent and eventual consistency is acceptable\\\") asserts the opposite guarantee. A future maintainer reading either docstring will reason incorrectly about staleness; the two must be reconciled.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 67, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`invalidate_upsampling_cache` is dead code and cannot invalidate in practice\", \"body\": \"`invalidate_upsampling_cache` is not called from anywhere in this PR, and by construction it can only delete the single key for one exact (organization, project-id set) combination. Eligibility is cached per distinct project-id set, so a single allowlist option change would require enumerating every combination of project ids that has ever been queried. Shipping it gives the false impression that the cache is invalidated on configuration changes; either wire up a real invalidation (option-value-based cache key / option update hook) or drop the function.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1045, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"`upsampled_count` has no fallback when `sample_weight` is missing/NULL\", \"body\": \"The new aggregate is `toInt64(sum(sample_weight))` with a comment asserting the schema guarantees `sample_weight` exists for all events in allowlisted projects. That guarantee does not hold for data stored before a project was allowlisted or before the SDK started sending `contexts.error_sampling.client_sample_rate` (the test factory change in this PR only sets `sample_rate` when that context is present). For such rows `sample_weight` is NULL/0, so `sum` silently drops them and a chart over a time range that spans the rollout collapses to zero or badly undercounts \u2014 with no error surfaced to the user. Wrapping the column, e.g. `sum(ifNull(sample_weight, 1))`, makes unweighted events count as 1.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1041, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"`upsampled_count` is registered as a public function, exposing it to arbitrary user queries\", \"body\": \"Unlike the neighbouring internal aggregates, the new `upsampled_count` SnQLFunction is not marked `private=True`, so any user can put `upsampled_count()` in a Discover/dashboard field or yAxis. This (a) lets users obtain sample-weight-scaled counts for projects that are not on the `issues.client_error_sampling.project_allowlist`, bypassing the gating this PR builds, and (b) will fail at the Snuba layer (500 / SnubaError) for datasets or storages where the `sample_weight` column does not exist, since nothing validates dataset or project eligibility at resolution time. Mark it private, as this is an implementation detail of the server-side column rewrite.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1051, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`default_result_type=\\\"number\\\"` conflicts with the integer result it replaces\", \"body\": \"`upsampled_count` is declared with `default_result_type=\\\"number\\\"` even though the aggregate is wrapped in `toInt64` and it is substituted for `count()`, which declares `\\\"integer\\\"`. Because the rewrite aliases the result back to `count`, clients receive meta `fieldType`/`type` of `number` for a field they previously got `integer` for, which changes formatting/axis handling in the UI for the same logical series. Use `\\\"integer\\\"` for consistency.\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 229, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Top-events path upsamples only the series, not the top-N selection or orderby\", \"body\": \"In the `top_events > 0` branch only `timeseries_columns`/`y_axes` are rewritten to `upsampled_count()`; `selected_columns=self.get_field_list(...)` and `orderby=self.get_orderby(request)` keep the raw `count()`. The top-N groups are therefore selected and ordered by un-upsampled counts while the plotted series are upsampled. When the per-event sample rates differ across groups/projects, the chosen top groups and their ordering do not match the magnitudes shown in the chart.\"}, {\"file\": \"src/sentry/testutils/factories.py\", \"line\": 344, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Sample-rate extraction silently swallows all errors and drops a 0 rate\", \"body\": \"`_set_sample_rate_from_error_sampling` wraps both the context lookup and the `float()` conversion in bare `except Exception: pass`, and gates on `if client_sample_rate:` (falsy), so a malformed or zero `contexts.error_sampling.client_sample_rate` results in no `sample_rate` on the event with no signal at all. A test that intends to store an upsampled event but passes a slightly wrong value will instead silently assert against raw counts, making failures hard to diagnose. Narrow the exception handling (e.g. `(TypeError, ValueError)`) and check `is not None` rather than truthiness.\"}, {\"file\": \"sentry-repo\", \"line\": 1, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Accidental git submodule (gitlink) `sentry-repo` committed without a .gitmodules entry\", \"body\": \"This PR adds a gitlink entry `sentry-repo` pointing at `a5d290951def84afdcc4c88d2f1f20023fc36e2a` (the base commit of this very repository) with no corresponding `.gitmodules` mapping. Git will report \\\"no submodule mapping found in .gitmodules for path 'sentry-repo'\\\" and `git submodule update`/`clone --recurse-submodules` will fail, and the self-referential pointer serves no purpose. This looks like a local working-directory artifact and should be removed from the commit.\"}, {\"file\": \"tests/sentry/api/helpers/test_error_upsampling.py\", \"line\": 37, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test covers the public entry point, its cache, or the errors-dataset path\", \"body\": \"The unit tests only exercise the private helpers (`_are_all_projects_error_upsampled`, `_is_error_focused_query`, `_should_apply_sample_weight_transform`) and the column transform. The public function `is_errors_query_for_error_upsampled_projects` \u2014 which contains the new cache key construction, the `cache.get`/`cache.set` logic, and the combination of eligibility with the dataset check \u2014 is never called in any test, so the cache-hit path, cache-staleness behavior, and the empty-`project_ids` case are unverified. Separately, no test issues a request with `dataset=errors`, even though `_should_apply_sample_weight_transform` returns `True` unconditionally for that dataset and `upsampled_count` was only registered in the Discover dataset's `function_converter`; if the errors dataset config does not inherit that function, the primary intended path raises an invalid-function error and nothing here would catch it.\"}, {\"file\": \"tests/snuba/api/endpoints/test_organization_events_stats.py\", \"line\": 3626, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Misleading comments on upsampled count assertions\", \"body\": \"In `test_error_upsampling_with_allowlisted_projects` the assertions `assert data[0][1][0][\\\"count\\\"] == 10` / `== 10` are annotated \\\"# First bucket has 1 event\\\" / \\\"# Second bucket has 1 event\\\". The value 10 is the upsampled count derived from `client_sample_rate: 0.1`, not an event count; the comments make the expected values look like a bug to anyone reading the test. Reword to state that one stored event at a 0.1 sample rate is expected to be upsampled to 10.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 22, \"severity\": \"low\", \"category\": \"style\", \"title\": \"Trailing whitespace and an over-length line will fail the repo's formatting checks\", \"body\": \"Several added lines contain trailing whitespace (e.g. the blank-but-indented lines inside the docstrings and between statements in `is_errors_query_for_error_upsampled_projects`, and similar lines added in `organization_events_stats.py` around the `upsampling_enabled`/`final_columns` blocks), and the `cache_key = f\\\"error_upsampling_eligible:...\\\"` assignment exceeds the 100-character limit configured for black in `pyproject.toml`. The pre-commit/lint CI job will reject the branch until these are reformatted.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 220,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Upsampling eligibility uses the outer `dataset` instead of `scoped_dataset`",
+   "body": "`_get_event_stats` receives `scoped_dataset` as its first argument (the dataset actually queried), but the eligibility check passes the enclosing `dataset` variable: `is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request)`. In the dashboard-widget-split code path, `_get_event_stats` is intentionally invoked with a different dataset (`discover`, or the widget's split dataset) while the outer `dataset` is the metrics/discover dataset selected from the request. As a result the `count()` -> `upsampled_count()` decision is made for a dataset that is not the one being queried: upsampling can be skipped for an errors query that should be upsampled, or (when the outer dataset is errors-like and the scoped dataset is not) `upsampled_count()` can be sent to a dataset that has no `sample_weight` column, producing a Snuba error or wrong numbers. The check should use `scoped_dataset`."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 27,
+   "severity": "medium",
+   "category": "data",
+   "title": "Caching allowlist eligibility for 60s can serve 10x-wrong counts and cannot be invalidated",
+   "body": "`is_errors_query_for_error_upsampled_projects` stores the result of the allowlist check in the shared cache under `error_upsampling_eligible:{org}:{hash(project_ids)}` for 60 seconds. The underlying value comes from `options.get(\"issues.client_error_sampling.project_allowlist\")`, which is already cached by the options store, so there is no meaningful performance gain; what it does add is up to a minute of stale behavior. After an operator removes a project from the allowlist (e.g. to stop bad data or roll back the feature), charts keep returning `sum(sample_weight)` values that are inflated by the inverse sample rate (10x in the tests here) \u2014 and conversely, newly allowlisted projects keep returning raw counts. Because the cache key is per (org, exact project-id set), there is no practical way to purge all affected entries. Additionally, if the cache backend (redis/memcached) outlives a database reset in CI or local dev, project ids can be reused and a stale `True`/`False` will be applied to an unrelated project set. Consider removing the cache entirely or keying it on the option value/version."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 27,
+   "severity": "low",
+   "category": "bug",
+   "title": "Cache key uses `hash()` of the project tuple, so distinct project sets can collide",
+   "body": "The cache key embeds `hash(tuple(sorted(snuba_params.project_ids)))` rather than the project ids themselves. Two different project sets within the same organization that hash to the same value will share a cached eligibility verdict, which means a non-allowlisted project set can be treated as upsampled (counts multiplied by the sample weight) or vice versa. Serializing the ids (e.g. `\"-\".join(map(str, sorted(ids)))`, or a cryptographic digest if length matters) removes this failure mode at no cost."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 50,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Docstring claims the allowlist is read fresh on every call, which the caller's cache contradicts",
+   "body": "`_are_all_projects_error_upsampled`'s docstring states: \"This function reads the allowlist configuration fresh each time... This is intentional to ensure we always have the latest configuration state.\" Its only caller, `is_errors_query_for_error_upsampled_projects`, caches the result for 60 seconds, so the system does not always see the latest configuration. The comment in the caller (\"This is safe because allowlist changes are infrequent and eventual consistency is acceptable\") asserts the opposite guarantee. A future maintainer reading either docstring will reason incorrectly about staleness; the two must be reconciled."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 67,
+   "severity": "low",
+   "category": "bug",
+   "title": "`invalidate_upsampling_cache` is dead code and cannot invalidate in practice",
+   "body": "`invalidate_upsampling_cache` is not called from anywhere in this PR, and by construction it can only delete the single key for one exact (organization, project-id set) combination. Eligibility is cached per distinct project-id set, so a single allowlist option change would require enumerating every combination of project ids that has ever been queried. Shipping it gives the false impression that the cache is invalidated on configuration changes; either wire up a real invalidation (option-value-based cache key / option update hook) or drop the function."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1045,
+   "severity": "medium",
+   "category": "data",
+   "title": "`upsampled_count` has no fallback when `sample_weight` is missing/NULL",
+   "body": "The new aggregate is `toInt64(sum(sample_weight))` with a comment asserting the schema guarantees `sample_weight` exists for all events in allowlisted projects. That guarantee does not hold for data stored before a project was allowlisted or before the SDK started sending `contexts.error_sampling.client_sample_rate` (the test factory change in this PR only sets `sample_rate` when that context is present). For such rows `sample_weight` is NULL/0, so `sum` silently drops them and a chart over a time range that spans the rollout collapses to zero or badly undercounts \u2014 with no error surfaced to the user. Wrapping the column, e.g. `sum(ifNull(sample_weight, 1))`, makes unweighted events count as 1."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1041,
+   "severity": "medium",
+   "category": "api",
+   "title": "`upsampled_count` is registered as a public function, exposing it to arbitrary user queries",
+   "body": "Unlike the neighbouring internal aggregates, the new `upsampled_count` SnQLFunction is not marked `private=True`, so any user can put `upsampled_count()` in a Discover/dashboard field or yAxis. This (a) lets users obtain sample-weight-scaled counts for projects that are not on the `issues.client_error_sampling.project_allowlist`, bypassing the gating this PR builds, and (b) will fail at the Snuba layer (500 / SnubaError) for datasets or storages where the `sample_weight` column does not exist, since nothing validates dataset or project eligibility at resolution time. Mark it private, as this is an implementation detail of the server-side column rewrite."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1051,
+   "severity": "low",
+   "category": "bug",
+   "title": "`default_result_type=\"number\"` conflicts with the integer result it replaces",
+   "body": "`upsampled_count` is declared with `default_result_type=\"number\"` even though the aggregate is wrapped in `toInt64` and it is substituted for `count()`, which declares `\"integer\"`. Because the rewrite aliases the result back to `count`, clients receive meta `fieldType`/`type` of `number` for a field they previously got `integer` for, which changes formatting/axis handling in the UI for the same logical series. Use `\"integer\"` for consistency."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 229,
+   "severity": "low",
+   "category": "data",
+   "title": "Top-events path upsamples only the series, not the top-N selection or orderby",
+   "body": "In the `top_events > 0` branch only `timeseries_columns`/`y_axes` are rewritten to `upsampled_count()`; `selected_columns=self.get_field_list(...)` and `orderby=self.get_orderby(request)` keep the raw `count()`. The top-N groups are therefore selected and ordered by un-upsampled counts while the plotted series are upsampled. When the per-event sample rates differ across groups/projects, the chosen top groups and their ordering do not match the magnitudes shown in the chart."
+  },
+  {
+   "index": 9,
+   "file": "src/sentry/testutils/factories.py",
+   "line": 344,
+   "severity": "low",
+   "category": "bug",
+   "title": "Sample-rate extraction silently swallows all errors and drops a 0 rate",
+   "body": "`_set_sample_rate_from_error_sampling` wraps both the context lookup and the `float()` conversion in bare `except Exception: pass`, and gates on `if client_sample_rate:` (falsy), so a malformed or zero `contexts.error_sampling.client_sample_rate` results in no `sample_rate` on the event with no signal at all. A test that intends to store an upsampled event but passes a slightly wrong value will instead silently assert against raw counts, making failures hard to diagnose. Narrow the exception handling (e.g. `(TypeError, ValueError)`) and check `is not None` rather than truthiness."
+  },
+  {
+   "index": 10,
+   "file": "sentry-repo",
+   "line": 1,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Accidental git submodule (gitlink) `sentry-repo` committed without a .gitmodules entry",
+   "body": "This PR adds a gitlink entry `sentry-repo` pointing at `a5d290951def84afdcc4c88d2f1f20023fc36e2a` (the base commit of this very repository) with no corresponding `.gitmodules` mapping. Git will report \"no submodule mapping found in .gitmodules for path 'sentry-repo'\" and `git submodule update`/`clone --recurse-submodules` will fail, and the self-referential pointer serves no purpose. This looks like a local working-directory artifact and should be removed from the commit."
+  },
+  {
+   "index": 11,
+   "file": "tests/sentry/api/helpers/test_error_upsampling.py",
+   "line": 37,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test covers the public entry point, its cache, or the errors-dataset path",
+   "body": "The unit tests only exercise the private helpers (`_are_all_projects_error_upsampled`, `_is_error_focused_query`, `_should_apply_sample_weight_transform`) and the column transform. The public function `is_errors_query_for_error_upsampled_projects` \u2014 which contains the new cache key construction, the `cache.get`/`cache.set` logic, and the combination of eligibility with the dataset check \u2014 is never called in any test, so the cache-hit path, cache-staleness behavior, and the empty-`project_ids` case are unverified. Separately, no test issues a request with `dataset=errors`, even though `_should_apply_sample_weight_transform` returns `True` unconditionally for that dataset and `upsampled_count` was only registered in the Discover dataset's `function_converter`; if the errors dataset config does not inherit that function, the primary intended path raises an invalid-function error and nothing here would catch it."
+  },
+  {
+   "index": 12,
+   "file": "tests/snuba/api/endpoints/test_organization_events_stats.py",
+   "line": 3626,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Misleading comments on upsampled count assertions",
+   "body": "In `test_error_upsampling_with_allowlisted_projects` the assertions `assert data[0][1][0][\"count\"] == 10` / `== 10` are annotated \"# First bucket has 1 event\" / \"# Second bucket has 1 event\". The value 10 is the upsampled count derived from `client_sample_rate: 0.1`, not an event count; the comments make the expected values look like a bug to anyone reading the test. Reword to state that one stored event at a 0.1 sample rate is expected to be upsampled to 10."
+  },
+  {
+   "index": 13,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 22,
+   "severity": "low",
+   "category": "style",
+   "title": "Trailing whitespace and an over-length line will fail the repo's formatting checks",
+   "body": "Several added lines contain trailing whitespace (e.g. the blank-but-indented lines inside the docstrings and between statements in `is_errors_query_for_error_upsampled_projects`, and similar lines added in `organization_events_stats.py` around the `upsampling_enabled`/`final_columns` blocks), and the `cache_key = f\"error_upsampling_eligible:...\"` assignment exceeds the 100-character limit configured for black in `pyproject.toml`. The pre-commit/lint CI job will reject the branch until these are reformatted."
+  }
+ ],
+ "finding_count": 14
+}

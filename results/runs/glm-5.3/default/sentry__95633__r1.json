@@ -1,0 +1,171 @@
+{
+ "run_id": "glm-5.3__default__sentry__95633__r1",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-17T12:03:10Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 31026,
+    "output": 12551,
+    "reasoning": 10774,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0986608,
+   "latency_ms": 190768,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 8282,
+   "raw_usage": {
+    "completion_tokens": 12551,
+    "prompt_tokens": 31026,
+    "total_tokens": 43577,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 10774,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0986608,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0986608,
+     "upstream_inference_prompt_cost": 0.0434364,
+     "upstream_inference_completions_cost": 0.0552244
+    }
+   },
+   "started_at": "2026-10-17T12:03:10Z",
+   "first_chunk_ms": 3069,
+   "first_text_ms": 169881,
+   "response_id": "gen-1792238590-Ulu7bDM0SlI5b4Kgzbrn",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 31026,
+  "output": 12551,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 10774
+ },
+ "cost_reported": 0.0986608,
+ "latency_ms": 190768,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"critical\", \"category\": \"concurrency\", \"title\": \"Strategy close() permanently kills the factory-owned queue pool; any Kafka rebalance silently drops all subsequent messages\", \"body\": \"SimpleQueueProcessingStrategy.close() (and terminate()) call self.queue_pool.shutdown(), which stops all worker threads and calls queue.shutdown() on every work queue. However, the queue_pool is created once in ResultsStrategyFactory.__init__ and shared by every strategy the factory builds. Arroyo's StreamProcessor tears down the old strategy and calls create_with_partitions() again on every rebalance/partition reassignment, which is routine in production. After the first rebalance, the new SimpleQueueProcessingStrategy wraps a pool whose queues are shut down: FixedQueuePool.submit() -> work_queue.put() raises ValueError, which is swallowed by the except block in SimpleQueueProcessingStrategy.submit() (line 317), which marks the offset complete so it gets committed. The result is that after any rebalance, every message is silently dropped while offsets advance, i.e. total silent data loss. The pool's lifecycle must be owned by the factory (only shut down in factory.shutdown()), not by each strategy instance.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 148, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Failed messages are marked complete and committed, contradicting the documented 'only commits offsets after successful processing' guarantee\", \"body\": \"OrderedQueueWorker.run() completes the offset in a finally block even when self.result_processor(...) raises, and SimpleQueueProcessingStrategy.submit() (lines 317-325) does the same when decoding or grouping_fn raises. The class docstring claims 'No item is lost' and 'Only commits offsets after successful processing', but the implementation is at-most-once: a message whose handling fails is logged and its offset committed, so it is never retried or DLQ'd. This is a different failure semantic from other arroyo strategies (RunTask/BatchStep propagate errors so the processor can retry), so operators switching modes will silently lose data that used to be retried. Either the docstring/guarantees must be corrected or failures should keep the offset outstanding (or route to a DLQ).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 234, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Graceful shutdown does not drain queued items and the commit thread is stopped before draining, so shutdown loses in-flight work boundaries\", \"body\": \"FixedQueuePool.shutdown() sets worker.shutdown = True before calling q.shutdown(immediate=False). A worker's loop condition ('while not self.shutdown') is checked after each item, so a worker with a backlog exits after its current item, leaving the remaining queued items unprocessed even though q.shutdown(immediate=False) was specifically chosen to allow draining. Additionally, SimpleQueueProcessingStrategy.close() (line 335) stops and joins the commit thread before queue_pool.shutdown() drains remaining items, so offsets for items completed during the drain are never committed and those messages are re-consumed (and re-processed, possibly non-idempotently) after restart. The shutdown path should let workers drain the queues first (the queue.ShutDown from q.shutdown(immediate=False) already terminates them), and run a final commit pass after draining.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 89, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"OffsetTracker stalls forever on permanent offset gaps and does an O(offset-range) scan every second\", \"body\": \"get_committable_offsets() breaks at the first offset not present in all_offsets and only ever commits up to that point, assuming any gap will eventually be filled by a message passed to submit(). But offsets can be permanently absent from the consumer's view - e.g. Kafka transactional control records that librdkafka filters out, or offsets skipped after consumer-group offset expiry - so a gap that never fills blocks all commits for that partition for the life of the process, causing unbounded offset lag and rebalance risk. Additionally, the scan iterates range(start, max_offset + 1) every second; with such a permanent gap the range grows unboundedly (min to max of ever-seen offsets), making each commit tick progressively more expensive. A safer design is to track only the set of outstanding offsets and commit min(outstanding)-1, rather than requiring contiguity.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Unbounded work queues provide no backpressure despite the documented claim\", \"body\": \"FixedQueuePool creates plain queue.Queue() instances with no maxsize, and SimpleQueueProcessingStrategy.submit() returns immediately after put(), so the arroyo consumer thread keeps fetching and enqueueing messages as fast as Kafka delivers them. If workers fall behind (the exact 'one slow item clogs a queue' scenario the PR is meant to mitigate, now per-queue instead of per-batch), memory grows without bound and consumer lag accumulates invisibly. The class docstring claims 'Natural backpressure when queues fill up', which is false. The queues should be constructed with a bounded maxsize (queue.put then blocks the arroyo thread, applying real backpressure), or another bound on in-flight messages is needed.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1878, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling is racy and asserts behavior opposite to the implementation\", \"body\": \"The test asserts that no commit happens for a partition after a processing failure ('assert len(committed_offsets) == 0 or test_partition not in committed_offsets'). But OrderedQueueWorker completes the offset in a finally block even when result_processor raises, so once the 1-second commit tick fires the strategy will commit offset 102 for the partition. The test only passes if it finishes its wait/sleep before the commit thread's next tick, making it timing-dependent and flaky. It also masks the at-most-once data-loss behavior of the finally-block completion (see the worker implementation); either the implementation or the test's expectation needs to be fixed so they agree deterministically.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_stats_reporting races on queue depth and test_different_groups_distributed can flake under hash randomization\", \"body\": \"In test_stats_reporting, 10 items are submitted to a pool whose workers are already running a trivially fast result_processor, and the test immediately asserts stats['total_items'] > 0; if the workers drain the queue before get_stats() is called, the assertion fails intermittently. Similarly, test_different_groups_distributed asserts all 3 queue indices are hit by 20 hashed group keys; since string hashes are randomized per process (PYTHONHASHSEED), the mapping is effectively random each run and there is a small but real chance (~0.1%) that only 2 of 3 buckets are used, causing an intermittent failure. These assertions should be made deterministic (e.g., block the workers, or assert the index is within range rather than full coverage).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 281, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"'offsets_committed' metric counts partitions, not offsets\", \"body\": \"In _commit_loop, the metric 'remote_subscriptions.queue_pool.offsets_committed' is incremented by len(committable), which is the number of partitions in the commit dict, not the number of Kafka offsets advanced. For a busy consumer committing thousands of offsets per tick across a few partitions, the metric dramatically undercounts and its name misleads anyone dashboarding it. It should report the sum of offset deltas (or be renamed to partitions_committed).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "critical",
+   "category": "concurrency",
+   "title": "Strategy close() permanently kills the factory-owned queue pool; any Kafka rebalance silently drops all subsequent messages",
+   "body": "SimpleQueueProcessingStrategy.close() (and terminate()) call self.queue_pool.shutdown(), which stops all worker threads and calls queue.shutdown() on every work queue. However, the queue_pool is created once in ResultsStrategyFactory.__init__ and shared by every strategy the factory builds. Arroyo's StreamProcessor tears down the old strategy and calls create_with_partitions() again on every rebalance/partition reassignment, which is routine in production. After the first rebalance, the new SimpleQueueProcessingStrategy wraps a pool whose queues are shut down: FixedQueuePool.submit() -> work_queue.put() raises ValueError, which is swallowed by the except block in SimpleQueueProcessingStrategy.submit() (line 317), which marks the offset complete so it gets committed. The result is that after any rebalance, every message is silently dropped while offsets advance, i.e. total silent data loss. The pool's lifecycle must be owned by the factory (only shut down in factory.shutdown()), not by each strategy instance."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 148,
+   "severity": "medium",
+   "category": "data",
+   "title": "Failed messages are marked complete and committed, contradicting the documented 'only commits offsets after successful processing' guarantee",
+   "body": "OrderedQueueWorker.run() completes the offset in a finally block even when self.result_processor(...) raises, and SimpleQueueProcessingStrategy.submit() (lines 317-325) does the same when decoding or grouping_fn raises. The class docstring claims 'No item is lost' and 'Only commits offsets after successful processing', but the implementation is at-most-once: a message whose handling fails is logged and its offset committed, so it is never retried or DLQ'd. This is a different failure semantic from other arroyo strategies (RunTask/BatchStep propagate errors so the processor can retry), so operators switching modes will silently lose data that used to be retried. Either the docstring/guarantees must be corrected or failures should keep the offset outstanding (or route to a DLQ)."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 234,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Graceful shutdown does not drain queued items and the commit thread is stopped before draining, so shutdown loses in-flight work boundaries",
+   "body": "FixedQueuePool.shutdown() sets worker.shutdown = True before calling q.shutdown(immediate=False). A worker's loop condition ('while not self.shutdown') is checked after each item, so a worker with a backlog exits after its current item, leaving the remaining queued items unprocessed even though q.shutdown(immediate=False) was specifically chosen to allow draining. Additionally, SimpleQueueProcessingStrategy.close() (line 335) stops and joins the commit thread before queue_pool.shutdown() drains remaining items, so offsets for items completed during the drain are never committed and those messages are re-consumed (and re-processed, possibly non-idempotently) after restart. The shutdown path should let workers drain the queues first (the queue.ShutDown from q.shutdown(immediate=False) already terminates them), and run a final commit pass after draining."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 89,
+   "severity": "medium",
+   "category": "bug",
+   "title": "OffsetTracker stalls forever on permanent offset gaps and does an O(offset-range) scan every second",
+   "body": "get_committable_offsets() breaks at the first offset not present in all_offsets and only ever commits up to that point, assuming any gap will eventually be filled by a message passed to submit(). But offsets can be permanently absent from the consumer's view - e.g. Kafka transactional control records that librdkafka filters out, or offsets skipped after consumer-group offset expiry - so a gap that never fills blocks all commits for that partition for the life of the process, causing unbounded offset lag and rebalance risk. Additionally, the scan iterates range(start, max_offset + 1) every second; with such a permanent gap the range grows unboundedly (min to max of ever-seen offsets), making each commit tick progressively more expensive. A safer design is to track only the set of outstanding offsets and commit min(outstanding)-1, rather than requiring contiguity."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Unbounded work queues provide no backpressure despite the documented claim",
+   "body": "FixedQueuePool creates plain queue.Queue() instances with no maxsize, and SimpleQueueProcessingStrategy.submit() returns immediately after put(), so the arroyo consumer thread keeps fetching and enqueueing messages as fast as Kafka delivers them. If workers fall behind (the exact 'one slow item clogs a queue' scenario the PR is meant to mitigate, now per-queue instead of per-batch), memory grows without bound and consumer lag accumulates invisibly. The class docstring claims 'Natural backpressure when queues fill up', which is false. The queues should be constructed with a bounded maxsize (queue.put then blocks the arroyo thread, applying real backpressure), or another bound on in-flight messages is needed."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1878,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling is racy and asserts behavior opposite to the implementation",
+   "body": "The test asserts that no commit happens for a partition after a processing failure ('assert len(committed_offsets) == 0 or test_partition not in committed_offsets'). But OrderedQueueWorker completes the offset in a finally block even when result_processor raises, so once the 1-second commit tick fires the strategy will commit offset 102 for the partition. The test only passes if it finishes its wait/sleep before the commit thread's next tick, making it timing-dependent and flaky. It also masks the at-most-once data-loss behavior of the finally-block completion (see the worker implementation); either the implementation or the test's expectation needs to be fixed so they agree deterministically."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 199,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_stats_reporting races on queue depth and test_different_groups_distributed can flake under hash randomization",
+   "body": "In test_stats_reporting, 10 items are submitted to a pool whose workers are already running a trivially fast result_processor, and the test immediately asserts stats['total_items'] > 0; if the workers drain the queue before get_stats() is called, the assertion fails intermittently. Similarly, test_different_groups_distributed asserts all 3 queue indices are hit by 20 hashed group keys; since string hashes are randomized per process (PYTHONHASHSEED), the mapping is effectively random each run and there is a small but real chance (~0.1%) that only 2 of 3 buckets are used, causing an intermittent failure. These assertions should be made deterministic (e.g., block the workers, or assert the index is within range rather than full coverage)."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 281,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "'offsets_committed' metric counts partitions, not offsets",
+   "body": "In _commit_loop, the metric 'remote_subscriptions.queue_pool.offsets_committed' is incremented by len(committable), which is the number of partitions in the commit dict, not the number of Kafka offsets advanced. For a busy consumer committing thousands of offsets per tick across a few partitions, the metric dramatically undercounts and its name misleads anyone dashboarding it. It should report the sum of offset deltas (or be renamed to partitions_committed)."
+  }
+ ],
+ "finding_count": 8
+}

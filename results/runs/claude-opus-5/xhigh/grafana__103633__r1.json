@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-opus-5__xhigh__grafana__103633__r1",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__103633",
+ "golden_url": "https://github.com/grafana/grafana/pull/103633",
+ "repeat": 1,
+ "started_at": "2026-10-18T22:00:19Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109532,
+  "sha": "e2fe98b0f2909fbf",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 54949,
+    "output": 15831,
+    "reasoning": 13412,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 210936,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7042,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 54949,
+    "output_tokens": 15831,
+    "output_tokens_details": {
+     "thinking_tokens": 13412
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:00:19Z",
+   "first_chunk_ms": 2007,
+   "first_text_ms": 181786,
+   "response_id": "msg_bdrk_nwk7nb5tppdk2cgojj2rkjdepdvtvwfhxjqlqsj2qnewnvp5n5sq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 54949,
+  "output": 15831,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 13412
+ },
+ "cost_reported": null,
+ "latency_ms": 210936,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/authz/rbac/service.go\", \"line\": 154, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Denial cache can persist a deny caused by a stale folder tree, doubling the staleness window\", \"body\": \"After a DB re-query the result is cached as a denial for `shortCacheTTL` (30s). The re-query only refreshes the *permission* map; `checkInheritedPermissions`/`buildFolderTree` still use `folderCache` (also 30s), which is not refreshed. Concrete failure: a user with a grant on folder A creates subfolder B and a dashboard D inside B. `Check(dashboards:read, name=D, folder=B)` fails the direct `folders:uid:B` lookup and then walks `tree.Ancestors(\\\"B\\\")`, which is empty because B is not in the cached folder tree, so the request is denied \u2014 and that denial is now written to `permDenialCache` with its own independent 30s TTL. If the deny happens just before the folder tree entry expires, the user keeps being denied for up to ~60s even though the refreshed tree would allow it. This is exactly the \\\"creator cannot access the resource they just created\\\" case the PR intends to fix. Consider also invalidating/refetching the folder tree before caching a denial, or not caching denials that depend on folder inheritance.\"}, {\"file\": \"pkg/services/authz/rbac/cache.go\", \"line\": 30, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Permission-denial cache key omits identity type (and group/resource) that the decision depends on\", \"body\": \"`userPermDenialCacheKey(namespace, userUID, action, name, parent)` is built in `Check` from the raw `checkReq.UserUID` returned by `types.ParseTypeID`, without the identity type. Different identity types share the same identifier space: `anonymous:0` and `render:0` both yield userUID \\\"0\\\", so a denial cached for the render service is returned for the anonymous user (and vice versa) for the same namespace/action/name/folder. The key also omits group and resource, while the decision does depend on them (`checkPermission` uses `mapper.translation(req.Group, req.Resource)` to derive the scope prefix and the `folderSupport` flag); any two group/resource pairs that map to the same action string would therefore share denial entries and produce false denials. Finally, because the raw subject identifier is used (numeric user ID for `user:1`, UID for `user:abc`), the same user gets separate denial entries depending on how the caller addressed them. Include the identity type, group and resource (or the resolved internal UID) in the key.\"}, {\"file\": \"pkg/services/authz/rbac/service.go\", \"line\": 139, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Every denied Check now performs a full permission re-query against the database\", \"body\": \"The permission-cache read was removed from `getUserPermissions`/`getAnonymousPermissions`, and `Check` now only short-circuits on a cached *allow*. Any cached-but-denied result falls through to `getIdentityPermissions`, which executes `GetUserPermissions` (plus basic-role/team lookups on their own cache misses) against the DB. The new denial cache only suppresses repeats of the exact same (user, action, name, folder) tuple, so a workload that checks many distinct resource names the subject cannot access (per-object checks from the resource server, UI pre-flight checks) issues one permission query per check. `singleflight` only dedupes concurrent calls, not sequential ones, so this is a significant increase in DB load compared with the previous behaviour where the 30s permission cache absorbed denies as well.\"}, {\"file\": \"pkg/services/authz/rbac/service_test.go\", \"line\": 982, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"\\\"Should deny on explicit cache deny entry\\\" test is vacuous and its comment is wrong\", \"body\": \"The comment says \\\"Allow access to the dashboard to prove this is not checked\\\", but the permission cache is seeded with `map[string]bool{\\\"dashboards:uid:dash1\\\": false}`. A `false` value means the scope lookup in `checkPermission` fails, so the request would be denied even if the denial cache were never consulted (the fallback DB query uses the default `fakeStore` with no permissions and also denies). The assertion therefore passes regardless of whether the new `permDenialCache` short-circuit works; the value must be `true` for the test to actually prove the denial cache takes precedence. There is also no test covering the write side of the new behaviour (that a DB-confirmed deny stores an entry under `userPermDenialCacheKey`), so the whole denial-cache feature is effectively untested.\"}, {\"file\": \"pkg/services/authz/rbac/service.go\", \"line\": 137, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"permissionCacheUsage metric is misreported in Check\", \"body\": \"`s.metrics.permissionCacheUsage.WithLabelValues(\\\"false\\\", ...)` at line 137 is reached whenever the cached permissions did not yield an allow \u2014 including the case where the permission cache *did* hit but the decision was deny. Conversely, a hit in the new `permDenialCache` (line 118) is reported as a `permissionCacheUsage` hit even though it is a different cache. The resulting hit-rate metric no longer measures permission-cache effectiveness and will look much worse than it is, making it useless for tuning TTLs; use a distinct label/metric for the denial cache and only count a permission-cache miss when the cache actually missed.\"}, {\"file\": \"pkg/services/authz/rbac.go\", \"line\": 103, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Disabling the in-proc client cache moves per-request cost onto the server path\", \"body\": \"In-proc mode now passes `&NoopCache{}` to `authzlib.NewClient`, so no Check/List response is cached on the client side any more. Every authorization decision now goes through the in-proc channel into `Service.Check`, which reads the permission map out of the byte cache via `cacheWrap` and JSON-unmarshals it on every call. For users/service accounts with large permission sets (thousands of scopes) this adds a JSON decode of the whole scope map to every API request, where previously identical checks were served from the 30s client cache. Worth measuring before merge, or caching the decoded map in memory instead of re-decoding bytes per request.\"}, {\"file\": \"pkg/services/authz/rbac/service.go\", \"line\": 116, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Denial cache has unbounded key cardinality in a shared in-memory cache\", \"body\": \"Denial entries are keyed per (namespace, subject, action, resource name, parent folder), so their cardinality grows with the number of distinct resources any subject is denied on. They are stored in the same unbounded `cache.NewLocalCache` instance as the identity/permission/folder caches (configured in-proc with `CleanupInterval: 10 * time.Minute`), so although entries expire after 30s they are only reclaimed every 10 minutes. A burst of denied checks across many resource names can therefore retain a large amount of memory in the Grafana process; consider a bounded cache or a shorter cleanup interval for this cache.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 154,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Denial cache can persist a deny caused by a stale folder tree, doubling the staleness window",
+   "body": "After a DB re-query the result is cached as a denial for `shortCacheTTL` (30s). The re-query only refreshes the *permission* map; `checkInheritedPermissions`/`buildFolderTree` still use `folderCache` (also 30s), which is not refreshed. Concrete failure: a user with a grant on folder A creates subfolder B and a dashboard D inside B. `Check(dashboards:read, name=D, folder=B)` fails the direct `folders:uid:B` lookup and then walks `tree.Ancestors(\"B\")`, which is empty because B is not in the cached folder tree, so the request is denied \u2014 and that denial is now written to `permDenialCache` with its own independent 30s TTL. If the deny happens just before the folder tree entry expires, the user keeps being denied for up to ~60s even though the refreshed tree would allow it. This is exactly the \"creator cannot access the resource they just created\" case the PR intends to fix. Consider also invalidating/refetching the folder tree before caching a denial, or not caching denials that depend on folder inheritance."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/authz/rbac/cache.go",
+   "line": 30,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Permission-denial cache key omits identity type (and group/resource) that the decision depends on",
+   "body": "`userPermDenialCacheKey(namespace, userUID, action, name, parent)` is built in `Check` from the raw `checkReq.UserUID` returned by `types.ParseTypeID`, without the identity type. Different identity types share the same identifier space: `anonymous:0` and `render:0` both yield userUID \"0\", so a denial cached for the render service is returned for the anonymous user (and vice versa) for the same namespace/action/name/folder. The key also omits group and resource, while the decision does depend on them (`checkPermission` uses `mapper.translation(req.Group, req.Resource)` to derive the scope prefix and the `folderSupport` flag); any two group/resource pairs that map to the same action string would therefore share denial entries and produce false denials. Finally, because the raw subject identifier is used (numeric user ID for `user:1`, UID for `user:abc`), the same user gets separate denial entries depending on how the caller addressed them. Include the identity type, group and resource (or the resolved internal UID) in the key."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 139,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Every denied Check now performs a full permission re-query against the database",
+   "body": "The permission-cache read was removed from `getUserPermissions`/`getAnonymousPermissions`, and `Check` now only short-circuits on a cached *allow*. Any cached-but-denied result falls through to `getIdentityPermissions`, which executes `GetUserPermissions` (plus basic-role/team lookups on their own cache misses) against the DB. The new denial cache only suppresses repeats of the exact same (user, action, name, folder) tuple, so a workload that checks many distinct resource names the subject cannot access (per-object checks from the resource server, UI pre-flight checks) issues one permission query per check. `singleflight` only dedupes concurrent calls, not sequential ones, so this is a significant increase in DB load compared with the previous behaviour where the 30s permission cache absorbed denies as well."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/authz/rbac/service_test.go",
+   "line": 982,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "\"Should deny on explicit cache deny entry\" test is vacuous and its comment is wrong",
+   "body": "The comment says \"Allow access to the dashboard to prove this is not checked\", but the permission cache is seeded with `map[string]bool{\"dashboards:uid:dash1\": false}`. A `false` value means the scope lookup in `checkPermission` fails, so the request would be denied even if the denial cache were never consulted (the fallback DB query uses the default `fakeStore` with no permissions and also denies). The assertion therefore passes regardless of whether the new `permDenialCache` short-circuit works; the value must be `true` for the test to actually prove the denial cache takes precedence. There is also no test covering the write side of the new behaviour (that a DB-confirmed deny stores an entry under `userPermDenialCacheKey`), so the whole denial-cache feature is effectively untested."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 137,
+   "severity": "low",
+   "category": "bug",
+   "title": "permissionCacheUsage metric is misreported in Check",
+   "body": "`s.metrics.permissionCacheUsage.WithLabelValues(\"false\", ...)` at line 137 is reached whenever the cached permissions did not yield an allow \u2014 including the case where the permission cache *did* hit but the decision was deny. Conversely, a hit in the new `permDenialCache` (line 118) is reported as a `permissionCacheUsage` hit even though it is a different cache. The resulting hit-rate metric no longer measures permission-cache effectiveness and will look much worse than it is, making it useless for tuning TTLs; use a distinct label/metric for the denial cache and only count a permission-cache miss when the cache actually missed."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/authz/rbac.go",
+   "line": 103,
+   "severity": "low",
+   "category": "perf",
+   "title": "Disabling the in-proc client cache moves per-request cost onto the server path",
+   "body": "In-proc mode now passes `&NoopCache{}` to `authzlib.NewClient`, so no Check/List response is cached on the client side any more. Every authorization decision now goes through the in-proc channel into `Service.Check`, which reads the permission map out of the byte cache via `cacheWrap` and JSON-unmarshals it on every call. For users/service accounts with large permission sets (thousands of scopes) this adds a JSON decode of the whole scope map to every API request, where previously identical checks were served from the 30s client cache. Worth measuring before merge, or caching the decoded map in memory instead of re-decoding bytes per request."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 116,
+   "severity": "low",
+   "category": "perf",
+   "title": "Denial cache has unbounded key cardinality in a shared in-memory cache",
+   "body": "Denial entries are keyed per (namespace, subject, action, resource name, parent folder), so their cardinality grows with the number of distinct resources any subject is denied on. They are stored in the same unbounded `cache.NewLocalCache` instance as the identity/permission/folder caches (configured in-proc with `CleanupInterval: 10 * time.Minute`), so although entries expire after 30s they are only reclaimed every 10 minutes. A burst of denied checks across many resource names can therefore retain a large amount of memory in the Grafana process; consider a bounded cache or a shorter cleanup interval for this cache."
+  }
+ ],
+ "finding_count": 7
+}

@@ -1,0 +1,133 @@
+{
+ "run_id": "glm-5.3__default__sentry__77754__r3",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__77754",
+ "golden_url": "https://github.com/getsentry/sentry/pull/77754",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:17:27Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 79898,
+  "sha": "fe36b760bdb0b02b",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18744,
+    "output": 5280,
+    "reasoning": 4231,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0494736,
+   "latency_ms": 76582,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 4707,
+   "raw_usage": {
+    "completion_tokens": 5280,
+    "prompt_tokens": 18744,
+    "total_tokens": 24024,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 4231,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0494736,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0494736,
+     "upstream_inference_prompt_cost": 0.0262416,
+     "upstream_inference_completions_cost": 0.023232
+    }
+   },
+   "started_at": "2026-10-18T12:17:27Z",
+   "first_chunk_ms": 2521,
+   "first_text_ms": 65668,
+   "response_id": "gen-1792325847-B0jIZLRDGIV6nhMRsf2N",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18744,
+  "output": 5280,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4231
+ },
+ "cost_reported": 0.0494736,
+ "latency_ms": 76582,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 18, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"AssignmentSource.queued default is evaluated once at import time, not per instance\", \"body\": \"The dataclass field `queued: datetime = timezone.now()` evaluates `timezone.now()` when the module is imported, so every `AssignmentSource` created via `from_integration` (which never passes `queued`) gets the process-start timestamp instead of the time the change was actually queued. The field should be declared with `field(default_factory=timezone.now)`. Any future logic that relies on `queued` (e.g. expiring stale assignment sources to break long-running sync cycles, or logging latency) will be silently wrong, and the new test `test_to_dict` only asserts `queued is not None`, which masks the defect. Additionally, embedding a `datetime` in `assignment_source_dict` (via `to_dict()` in `sync_group_assignee_outbound.apply_async` kwargs) makes the task kwargs non-JSON-serializable; if the deployment's Celery task serializer is JSON, `apply_async` will raise, breaking all outbound assignee sync. Since `queued` is never consumed, either drop it or serialize it explicitly.\"}, {\"file\": \"src/sentry/integrations/services/assignment_source.py\", \"line\": 31, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"from_dict performs no type validation, so malformed data silently disables cycle protection\", \"body\": \"`AssignmentSource.from_dict` only catches `ValueError`/`TypeError` from the constructor, but the dataclass constructor performs no type checking. A dict like `{\\\"source_name\\\": \\\"x\\\", \\\"integration_id\\\": \\\"123\\\"}` (string id) or one where `queued` is a string (which is exactly what a JSON round-trip of `to_dict()` produces, since `datetime` serializes to a string) is accepted without error and yields an `AssignmentSource` whose `integration_id` is a `str`. In `IssueSyncIntegration.should_sync`, `sync_source.integration_id == self.org_integration.integration_id` then compares `str` to `int`, always evaluates False, and the same-integration outbound sync is NOT suppressed \u2014 reintroducing the sync loop this PR is meant to fix, with no error or log. `from_dict` should validate/coerce the types (or at minimum compare with `int(sync_source.integration_id)` at the check site).\"}, {\"file\": \"src/sentry/integrations/mixins/issues.py\", \"line\": 397, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Abstract sync_assignee_outbound signature not updated for the new assignment_source kwarg\", \"body\": \"The task `sync_assignee_outbound` now calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)`, and the abstract method `sync_status_outbound` in the same class was explicitly updated to declare `assignment_source: AssignmentSource | None = None`. However, the abstract `sync_assignee_outbound` (line 397) was NOT updated \u2014 it only tolerates the new kwarg through `**kwargs: Any`. Any provider implementation that shadows this method without `**kwargs` (or without an `assignment_source` parameter) will raise `TypeError: unexpected keyword argument 'assignment_source'` at runtime inside the Celery task; because `TypeError` is not in the task's retry exclude list, it will be retried 5 times before failing, generating noise and never syncing. The abstract signature should declare the parameter explicitly so implementers are forced to accept it.\"}, {\"file\": \"tests/sentry/models/test_groupassignee.py\", \"line\": 180, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test covers the actual inbound-webhook suppression path or cross-integration propagation\", \"body\": \"The only suppression test (`test_assignee_sync_outbound_assign_with_matching_source_integration`) constructs the `AssignmentSource` by hand and passes it directly to `GroupAssignee.objects.assign`, bypassing the real webhook plumbing. The end-to-end path the PR claims to fix \u2014 `sync_group_assignee_inbound` building the source from the integration, passing it through `GroupAssignee.objects.assign`, through `sync_group_assignee_outbound.apply_async` (including the dict serialization/deserialization via `AssignmentSource.to_dict`/`from_dict`), and finally the `should_sync` suppression in the task \u2014 is never exercised. This is exactly where the `from_dict` type/serialization defects would surface. Additionally, there is no test that a *different* integration's external issue still receives the outbound sync when an `assignment_source` is present (the \\\"should still allow other integrations to propagate changes outward\\\" behavior), so a regression that over-blocks propagation would go undetected.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 18,
+   "severity": "medium",
+   "category": "bug",
+   "title": "AssignmentSource.queued default is evaluated once at import time, not per instance",
+   "body": "The dataclass field `queued: datetime = timezone.now()` evaluates `timezone.now()` when the module is imported, so every `AssignmentSource` created via `from_integration` (which never passes `queued`) gets the process-start timestamp instead of the time the change was actually queued. The field should be declared with `field(default_factory=timezone.now)`. Any future logic that relies on `queued` (e.g. expiring stale assignment sources to break long-running sync cycles, or logging latency) will be silently wrong, and the new test `test_to_dict` only asserts `queued is not None`, which masks the defect. Additionally, embedding a `datetime` in `assignment_source_dict` (via `to_dict()` in `sync_group_assignee_outbound.apply_async` kwargs) makes the task kwargs non-JSON-serializable; if the deployment's Celery task serializer is JSON, `apply_async` will raise, breaking all outbound assignee sync. Since `queued` is never consumed, either drop it or serialize it explicitly."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/services/assignment_source.py",
+   "line": 31,
+   "severity": "low",
+   "category": "bug",
+   "title": "from_dict performs no type validation, so malformed data silently disables cycle protection",
+   "body": "`AssignmentSource.from_dict` only catches `ValueError`/`TypeError` from the constructor, but the dataclass constructor performs no type checking. A dict like `{\"source_name\": \"x\", \"integration_id\": \"123\"}` (string id) or one where `queued` is a string (which is exactly what a JSON round-trip of `to_dict()` produces, since `datetime` serializes to a string) is accepted without error and yields an `AssignmentSource` whose `integration_id` is a `str`. In `IssueSyncIntegration.should_sync`, `sync_source.integration_id == self.org_integration.integration_id` then compares `str` to `int`, always evaluates False, and the same-integration outbound sync is NOT suppressed \u2014 reintroducing the sync loop this PR is meant to fix, with no error or log. `from_dict` should validate/coerce the types (or at minimum compare with `int(sync_source.integration_id)` at the check site)."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/integrations/mixins/issues.py",
+   "line": 397,
+   "severity": "low",
+   "category": "api",
+   "title": "Abstract sync_assignee_outbound signature not updated for the new assignment_source kwarg",
+   "body": "The task `sync_assignee_outbound` now calls `installation.sync_assignee_outbound(external_issue, user, assign=assign, assignment_source=parsed_assignment_source)`, and the abstract method `sync_status_outbound` in the same class was explicitly updated to declare `assignment_source: AssignmentSource | None = None`. However, the abstract `sync_assignee_outbound` (line 397) was NOT updated \u2014 it only tolerates the new kwarg through `**kwargs: Any`. Any provider implementation that shadows this method without `**kwargs` (or without an `assignment_source` parameter) will raise `TypeError: unexpected keyword argument 'assignment_source'` at runtime inside the Celery task; because `TypeError` is not in the task's retry exclude list, it will be retried 5 times before failing, generating noise and never syncing. The abstract signature should declare the parameter explicitly so implementers are forced to accept it."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/models/test_groupassignee.py",
+   "line": 180,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test covers the actual inbound-webhook suppression path or cross-integration propagation",
+   "body": "The only suppression test (`test_assignee_sync_outbound_assign_with_matching_source_integration`) constructs the `AssignmentSource` by hand and passes it directly to `GroupAssignee.objects.assign`, bypassing the real webhook plumbing. The end-to-end path the PR claims to fix \u2014 `sync_group_assignee_inbound` building the source from the integration, passing it through `GroupAssignee.objects.assign`, through `sync_group_assignee_outbound.apply_async` (including the dict serialization/deserialization via `AssignmentSource.to_dict`/`from_dict`), and finally the `should_sync` suppression in the task \u2014 is never exercised. This is exactly where the `from_dict` type/serialization defects would surface. Additionally, there is no test that a *different* integration's external issue still receives the outbound sync when an `assignment_source` is present (the \"should still allow other integrations to propagate changes outward\" behavior), so a regression that over-blocks propagation would go undetected."
+  }
+ ],
+ "finding_count": 4
+}

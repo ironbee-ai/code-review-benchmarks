@@ -1,0 +1,188 @@
+{
+ "run_id": "grok-4.7__default__sentry-greptile__3__r1",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry-greptile__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-17T14:22:26Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 88660,
+  "sha": "d62ec561fe1b4a7e",
+  "patch_only": [
+   "sentry-repo",
+   "src/sentry/search/events/datasets/discover.py",
+   "src/sentry/testutils/factories.py",
+   "tests/snuba/api/endpoints/test_organization_events_stats.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 23399,
+    "output": 25898,
+    "reasoning": 23817,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.202762,
+   "latency_ms": 197409,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 8753,
+   "raw_usage": {
+    "completion_tokens": 25898,
+    "prompt_tokens": 24551,
+    "total_tokens": 50449,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 23817,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.202762,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.202762,
+     "upstream_inference_prompt_cost": 0.047374,
+     "upstream_inference_completions_cost": 0.155388
+    }
+   },
+   "started_at": "2026-10-17T14:22:26Z",
+   "first_chunk_ms": 3638,
+   "first_text_ms": 185781,
+   "response_id": "gen-1792246947-kNrRBj4iELtzDar5IXMI",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 23399,
+  "output": 25898,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 23817
+ },
+ "cost_reported": 0.202762,
+ "latency_ms": 197409,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 58, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Allowlist option is never registered and is read on every stats query\", \"body\": \"Every events-stats execution calls is_errors_query_for_error_upsampled_projects, which on a cache miss calls options.get(\\\"issues.client_error_sampling.project_allowlist\\\", []). This PR never registers that option (no defaults.py or options change). Sentry's options manager raises UnknownOption for unregistered keys even when a default is passed, so a cache miss 500s the whole organization events-stats endpoint, including non-error datasets and projects that should not be upsampled. If a deployment's options.get instead returns the default, the feature never turns on in production; the new tests hide that by mocking options. The lookup also does `project_id in allowlist` with no int/str normalization, so a JSON allowlist of string ids never matches int project ids (feature silently off), and a non-list value raises TypeError on this same hot path.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 95, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"count() is rewritten to a column string the field parser will not accept\", \"body\": \"When upsampling is enabled, count() is replaced with the literal \\\"upsampled_count() as count\\\" and passed as a selected column / y-axis. Sentry's field parser treats a column as a function only when the string ends with ')'; this value does not, so it is resolved as a raw column name rather than the new upsampled_count aggregate. Allowlisted error count() stats queries then fail field validation (or, if an alias were accepted, the result key would not stay the `count` field the events-stats contract and the new test expect). Charts, top-events, and any client requesting yAxis=count() for an allowlisted project break instead of returning an upsampled series.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1048, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Upsampled count sums sample_weight, but nothing stores the inverse sample rate\", \"body\": \"upsampled_count is toInt64(sum(sample_weight)) with no ifNull/coalesce. The only write-path change is the test factory, which copies contexts.error_sampling.client_sample_rate onto sample_rate (the rate itself, e.g. 0.1), not sample_weight, and production ingest is not updated at all. Events therefore have no sample_weight. ClickHouse sum of nulls is 0, so once the rewrite runs, allowlisted error counts become 0 instead of the real count or 1/sample_rate. That also cannot satisfy the new stats test, which stores client_sample_rate 0.1 and expects count == 10. toInt64 additionally truncates any fractional weight. Historical events and transactions that lack the column are zeroed or fail the query rather than falling back to count().\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 112, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Errors dataset always upsamples, but upsampled_count is only registered on discover\", \"body\": \"_should_apply_sample_weight_transform returns True for the errors snuba dataset with no query check, and the endpoint then rewrites count() to upsampled_count(). The new aggregate is added only to the discover dataset function_converter in this PR. Errors timeseries uses its own query builder/config; if that config does not inherit this converter, allowlisted dataset=errors count() requests fail with an unknown function. The new snuba tests never pass dataset=errors (they rely on discover plus event.type:error), so this path is untested and can 400/500 the errors stats API.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 137, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Error detection is a substring match and treats negated filters as errors\", \"body\": \"_is_error_focused_query lowercases the raw query and returns True if it contains the substring \\\"event.type:error\\\". That matches !event.type:error, !(event.type:error), event.type:error OR event.type:transaction, and the token as a prefix of a longer value or inside a message/tag search. For discover queries on allowlisted projects, count() is then rewritten to sum(sample_weight) even when the query is explicitly not errors. Transaction and other non-error events do not have a reliable sample_weight, so those stats queries either error or return zeros/inflated mixed counts. A search parser check for a positive event.type:error condition is required; substring matching is the opposite of the stated caution.\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 220, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Upsampling decision ignores the dataset and query actually executed\", \"body\": \"_get_event_stats decides upsampling from the closed-over request dataset and request.GET, not from scoped_dataset or the query argument. Dashboard widget splitting calls this helper with a different dataset and rewritten queries (errors-only \\\"!event.type:transaction\\\", transactions-only \\\"event.type:transaction\\\", and the original metrics dataset). A metrics/discover split therefore either skips upsampling on the errors subquery (outer dataset is not errors/discover) or, when the original request string looks like an error query, applies sum(sample_weight) to the transactions-only probe. Split detection uses those counts (has_errors / has_transactions), so widget discoverSplitDecision can be saved incorrectly, and transaction probes can throw if sample_weight is absent. The eligibility check has to use the dataset and query string passed into this call.\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 241, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Top-events ranking still uses raw count() while the series is rewritten\", \"body\": \"For topEvents, only the timeseries y-axis list is passed through transform_query_columns_for_error_upsampling. orderby still comes from get_orderby(request) and selected_columns from get_field_list, on both the RPC path (orderby around line 241) and top_events_timeseries (orderby around line 259). A request ordered by count() or -count() therefore ranks the top N groups by the sampled count while the returned series uses upsampled_count. Callers get the wrong groups, or the top-N query fails if it also references the rewritten alias. orderby and any count() in the top-N selected columns need the same transform as the timeseries columns.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 27, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Eligibility cache key uses process-randomized hash() and cannot be invalidated\", \"body\": \"The cache key is error_upsampling_eligible:{org}:{hash(tuple(sorted(project_ids)))}. Python hash() is salted per process (PYTHONHASHSEED), so workers do not share keys, invalidate_upsampling_cache deletes a different key than other processes wrote, and nothing in this PR calls that invalidator when the allowlist changes anyway. A collision of two project-id tuples in one process also serves the wrong eligibility for 60 seconds and rewrites count() for projects that are not fully allowlisted. Use a stable key (for example a sorted, joined id list) and hook invalidation to allowlist updates, or drop the cache; options.get is already an in-process read.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 30, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Every events-stats query now takes a remote cache round trip\", \"body\": \"is_errors_query_for_error_upsampled_projects always cache.get's before it knows the dataset is errors. That helper runs on every _get_event_stats call, including transaction, span, and metrics queries, and dashboard split runs it several times per request. options.get of the allowlist is already served from the in-process options cache; this adds a shared-cache RTT (and a hard dependency on that cache) on the events-stats hot path to avoid a cheaper lookup. A slow or failing cache delays or fails unrelated stats requests. The allowlist check should happen only after the dataset/query gate, and should not require a remote cache.\"}, {\"file\": \"sentry-repo\", \"line\": 1, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Accidental gitlink committed at the PR base commit\", \"body\": \"This change adds sentry-repo as a gitlink/submodule pointer to a5d290951def84afdcc4c88d2f1f20023fc36e2a (the PR base) with no .gitmodules entry and no relation to upsampling. Clones and CI that recurse into submodules, or tools that refuse gitlinks, will fail or nest a second checkout of this repo. The gitlink should be removed before merge.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 58,
+   "severity": "high",
+   "category": "bug",
+   "title": "Allowlist option is never registered and is read on every stats query",
+   "body": "Every events-stats execution calls is_errors_query_for_error_upsampled_projects, which on a cache miss calls options.get(\"issues.client_error_sampling.project_allowlist\", []). This PR never registers that option (no defaults.py or options change). Sentry's options manager raises UnknownOption for unregistered keys even when a default is passed, so a cache miss 500s the whole organization events-stats endpoint, including non-error datasets and projects that should not be upsampled. If a deployment's options.get instead returns the default, the feature never turns on in production; the new tests hide that by mocking options. The lookup also does `project_id in allowlist` with no int/str normalization, so a JSON allowlist of string ids never matches int project ids (feature silently off), and a non-list value raises TypeError on this same hot path."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 95,
+   "severity": "high",
+   "category": "bug",
+   "title": "count() is rewritten to a column string the field parser will not accept",
+   "body": "When upsampling is enabled, count() is replaced with the literal \"upsampled_count() as count\" and passed as a selected column / y-axis. Sentry's field parser treats a column as a function only when the string ends with ')'; this value does not, so it is resolved as a raw column name rather than the new upsampled_count aggregate. Allowlisted error count() stats queries then fail field validation (or, if an alias were accepted, the result key would not stay the `count` field the events-stats contract and the new test expect). Charts, top-events, and any client requesting yAxis=count() for an allowlisted project break instead of returning an upsampled series."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1048,
+   "severity": "high",
+   "category": "data",
+   "title": "Upsampled count sums sample_weight, but nothing stores the inverse sample rate",
+   "body": "upsampled_count is toInt64(sum(sample_weight)) with no ifNull/coalesce. The only write-path change is the test factory, which copies contexts.error_sampling.client_sample_rate onto sample_rate (the rate itself, e.g. 0.1), not sample_weight, and production ingest is not updated at all. Events therefore have no sample_weight. ClickHouse sum of nulls is 0, so once the rewrite runs, allowlisted error counts become 0 instead of the real count or 1/sample_rate. That also cannot satisfy the new stats test, which stores client_sample_rate 0.1 and expects count == 10. toInt64 additionally truncates any fractional weight. Historical events and transactions that lack the column are zeroed or fail the query rather than falling back to count()."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 112,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Errors dataset always upsamples, but upsampled_count is only registered on discover",
+   "body": "_should_apply_sample_weight_transform returns True for the errors snuba dataset with no query check, and the endpoint then rewrites count() to upsampled_count(). The new aggregate is added only to the discover dataset function_converter in this PR. Errors timeseries uses its own query builder/config; if that config does not inherit this converter, allowlisted dataset=errors count() requests fail with an unknown function. The new snuba tests never pass dataset=errors (they rely on discover plus event.type:error), so this path is untested and can 400/500 the errors stats API."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 137,
+   "severity": "high",
+   "category": "bug",
+   "title": "Error detection is a substring match and treats negated filters as errors",
+   "body": "_is_error_focused_query lowercases the raw query and returns True if it contains the substring \"event.type:error\". That matches !event.type:error, !(event.type:error), event.type:error OR event.type:transaction, and the token as a prefix of a longer value or inside a message/tag search. For discover queries on allowlisted projects, count() is then rewritten to sum(sample_weight) even when the query is explicitly not errors. Transaction and other non-error events do not have a reliable sample_weight, so those stats queries either error or return zeros/inflated mixed counts. A search parser check for a positive event.type:error condition is required; substring matching is the opposite of the stated caution."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 220,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Upsampling decision ignores the dataset and query actually executed",
+   "body": "_get_event_stats decides upsampling from the closed-over request dataset and request.GET, not from scoped_dataset or the query argument. Dashboard widget splitting calls this helper with a different dataset and rewritten queries (errors-only \"!event.type:transaction\", transactions-only \"event.type:transaction\", and the original metrics dataset). A metrics/discover split therefore either skips upsampling on the errors subquery (outer dataset is not errors/discover) or, when the original request string looks like an error query, applies sum(sample_weight) to the transactions-only probe. Split detection uses those counts (has_errors / has_transactions), so widget discoverSplitDecision can be saved incorrectly, and transaction probes can throw if sample_weight is absent. The eligibility check has to use the dataset and query string passed into this call."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 241,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Top-events ranking still uses raw count() while the series is rewritten",
+   "body": "For topEvents, only the timeseries y-axis list is passed through transform_query_columns_for_error_upsampling. orderby still comes from get_orderby(request) and selected_columns from get_field_list, on both the RPC path (orderby around line 241) and top_events_timeseries (orderby around line 259). A request ordered by count() or -count() therefore ranks the top N groups by the sampled count while the returned series uses upsampled_count. Callers get the wrong groups, or the top-N query fails if it also references the rewritten alias. orderby and any count() in the top-N selected columns need the same transform as the timeseries columns."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 27,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Eligibility cache key uses process-randomized hash() and cannot be invalidated",
+   "body": "The cache key is error_upsampling_eligible:{org}:{hash(tuple(sorted(project_ids)))}. Python hash() is salted per process (PYTHONHASHSEED), so workers do not share keys, invalidate_upsampling_cache deletes a different key than other processes wrote, and nothing in this PR calls that invalidator when the allowlist changes anyway. A collision of two project-id tuples in one process also serves the wrong eligibility for 60 seconds and rewrites count() for projects that are not fully allowlisted. Use a stable key (for example a sorted, joined id list) and hook invalidation to allowlist updates, or drop the cache; options.get is already an in-process read."
+  },
+  {
+   "index": 8,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 30,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Every events-stats query now takes a remote cache round trip",
+   "body": "is_errors_query_for_error_upsampled_projects always cache.get's before it knows the dataset is errors. That helper runs on every _get_event_stats call, including transaction, span, and metrics queries, and dashboard split runs it several times per request. options.get of the allowlist is already served from the in-process options cache; this adds a shared-cache RTT (and a hard dependency on that cache) on the events-stats hot path to avoid a cheaper lookup. A slow or failing cache delays or fails unrelated stats requests. The allowlist check should happen only after the dataset/query gate, and should not require a remote cache."
+  },
+  {
+   "index": 9,
+   "file": "sentry-repo",
+   "line": 1,
+   "severity": "low",
+   "category": "bug",
+   "title": "Accidental gitlink committed at the PR base commit",
+   "body": "This change adds sentry-repo as a gitlink/submodule pointer to a5d290951def84afdcc4c88d2f1f20023fc36e2a (the PR base) with no .gitmodules entry and no relation to upsampling. Clones and CI that recurse into submodules, or tools that refuse gitlinks, will fail or nest a second checkout of this repo. The gitlink should be removed before merge."
+  }
+ ],
+ "finding_count": 10
+}

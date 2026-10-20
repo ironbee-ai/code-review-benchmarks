@@ -1,0 +1,119 @@
+{
+ "run_id": "kimi-k3__default__discourse-graphite__9__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "discourse-graphite__9",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/9",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:40:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 34317,
+  "sha": "d4321d5a1d23a40d",
+  "patch_only": [
+   "config/initializers/pluralization.rb"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 9319,
+    "output": 22972,
+    "reasoning": 21894,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 938037,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4589,
+   "raw_usage": {
+    "completion_tokens": 22972,
+    "prompt_tokens": 9319,
+    "total_tokens": 32291,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 21894,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T12:40:04Z",
+   "first_chunk_ms": 3428,
+   "first_text_ms": 917918,
+   "response_id": "chatcmpl-jn2zv5p5alkg6ogwf2fvph7n6lrccqp72lswgriklaavnynzvxfq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 9319,
+  "output": 22972,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 21894
+ },
+ "cost_reported": null,
+ "latency_ms": 938037,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"lib/freedom_patches/translate_accelerator.rb\", \"line\": 72, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Translation LRU cache key ignores the site-specific fallback locale\", \"body\": \"The cache key for memoized translations is built only from the key, the current locale and the backend object id (`k = \\\"#{key}#{config.locale}#{config.backend.object_id}\\\"`). With this PR, the resolved value of a translation now also depends on `SiteSetting.default_locale` (via `FallbackLocaleList`), and that setting is per-site on multisite installs and can be changed at runtime \u2014 but it is not part of the cache key, and the cache itself (`@cache` on the I18n singleton) is process-global. Consequences: (1) on a multisite cluster sharing one process, a key missing in locale X is resolved through whichever site's default locale populated the cache first \u2014 e.g. a user on a site whose default is German can be served the French fallback string cached for another site, until the 300-entry LRU happens to evict it; (2) on a single site, after an admin changes `default_locale`, fallback strings in the old language keep being served from the cache until eviction. Previously (`config.i18n.fallbacks = true`) the fallback target was the global `I18n.default_locale`, so cached entries were consistent. Include `SiteSetting.default_locale` (or the resolved fallback chain) in the cache key, or clear `I18n`'s cache when the setting changes.\"}, {\"file\": \"app/controllers/application_controller.rb\", \"line\": 159, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Fallback locale files are only loaded for controller requests, so fallbacks silently fail in jobs/mailers/rake\", \"body\": \"`I18n.fallbacks.ensure_loaded!` is only invoked from the `set_locale` before_filter, i.e. only for HTTP requests through ApplicationController. The translate accelerator's `translate` only ever loads yml files for `config.locale` (`load_locale(config.locale)`); it never loads the fallback locales itself. Any server-side code that translates outside a web request \u2014 Sidekiq jobs, ActionMailer views, rake tasks, console \u2014 with `I18n.locale` set to a non-English locale will walk the fallback chain (locale \u2192 site default \u2192 :en), find that no translations were ever loaded for the fallback locales, and render \\\"translation missing: xx.yyy\\\" instead of the site-default/English string. So the feature this PR adds silently does not work in exactly the server-side contexts that don't pass through a controller. Load the fallback locales inside the accelerator instead (e.g. have `I18n.ensure_loaded!`/`translate` load every locale in `I18n.fallbacks[locale]`), or route jobs/mailers through the same ensure_loaded! step.\"}, {\"file\": \"config/initializers/i18n.rb\", \"line\": 17, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"FallbackLocaleList#[] does a SiteSetting read and several array allocations on every interpolated translation\", \"body\": \"The i18n fallbacks backend calls `I18n.fallbacks[locale]` on every backend lookup, and `FallbackLocaleList#[]` performs a `SiteSetting.default_locale` read plus `[locale, ...].uniq.compact` (multiple array allocations) each time. The translate accelerator only memoizes argument-free lookups \u2014 every `I18n.t` call with interpolation options (the common case in this codebase, e.g. anything with `count:` or a username) bypasses the LRU cache and pays this cost per call, in a code path that exists specifically to make translation fast. Consider memoizing the computed list keyed by (locale, default_locale) and invalidating when the setting changes.\"}, {\"file\": \"config/initializers/i18n.rb\", \"line\": 12, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the new fallback semantics, which now apply to all environments\", \"body\": \"This PR rewrites how fallbacks are computed (new `FallbackLocaleList`, new `I18n.ensure_loaded!`, per-request `I18n.fallbacks.ensure_loaded!`) and, as a side effect, enables fallbacks in every environment \u2014 previously they were only turned on via `config.i18n.fallbacks = true` in the production-like configs, so in development/test a key present in English but missing in the active locale now silently renders the English text instead of a \\\"translation missing\\\" message. No specs cover any of this. At minimum, add coverage that `I18n.fallbacks[:xx]` returns `[xx, SiteSetting.default_locale.to_sym, :en].uniq`, that a key missing in the active locale resolves through the site default and then English, and that the fallback locale files are actually loaded (the `ensure_loaded!` path).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "lib/freedom_patches/translate_accelerator.rb",
+   "line": 72,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Translation LRU cache key ignores the site-specific fallback locale",
+   "body": "The cache key for memoized translations is built only from the key, the current locale and the backend object id (`k = \"#{key}#{config.locale}#{config.backend.object_id}\"`). With this PR, the resolved value of a translation now also depends on `SiteSetting.default_locale` (via `FallbackLocaleList`), and that setting is per-site on multisite installs and can be changed at runtime \u2014 but it is not part of the cache key, and the cache itself (`@cache` on the I18n singleton) is process-global. Consequences: (1) on a multisite cluster sharing one process, a key missing in locale X is resolved through whichever site's default locale populated the cache first \u2014 e.g. a user on a site whose default is German can be served the French fallback string cached for another site, until the 300-entry LRU happens to evict it; (2) on a single site, after an admin changes `default_locale`, fallback strings in the old language keep being served from the cache until eviction. Previously (`config.i18n.fallbacks = true`) the fallback target was the global `I18n.default_locale`, so cached entries were consistent. Include `SiteSetting.default_locale` (or the resolved fallback chain) in the cache key, or clear `I18n`'s cache when the setting changes."
+  },
+  {
+   "index": 1,
+   "file": "app/controllers/application_controller.rb",
+   "line": 159,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Fallback locale files are only loaded for controller requests, so fallbacks silently fail in jobs/mailers/rake",
+   "body": "`I18n.fallbacks.ensure_loaded!` is only invoked from the `set_locale` before_filter, i.e. only for HTTP requests through ApplicationController. The translate accelerator's `translate` only ever loads yml files for `config.locale` (`load_locale(config.locale)`); it never loads the fallback locales itself. Any server-side code that translates outside a web request \u2014 Sidekiq jobs, ActionMailer views, rake tasks, console \u2014 with `I18n.locale` set to a non-English locale will walk the fallback chain (locale \u2192 site default \u2192 :en), find that no translations were ever loaded for the fallback locales, and render \"translation missing: xx.yyy\" instead of the site-default/English string. So the feature this PR adds silently does not work in exactly the server-side contexts that don't pass through a controller. Load the fallback locales inside the accelerator instead (e.g. have `I18n.ensure_loaded!`/`translate` load every locale in `I18n.fallbacks[locale]`), or route jobs/mailers through the same ensure_loaded! step."
+  },
+  {
+   "index": 2,
+   "file": "config/initializers/i18n.rb",
+   "line": 17,
+   "severity": "low",
+   "category": "perf",
+   "title": "FallbackLocaleList#[] does a SiteSetting read and several array allocations on every interpolated translation",
+   "body": "The i18n fallbacks backend calls `I18n.fallbacks[locale]` on every backend lookup, and `FallbackLocaleList#[]` performs a `SiteSetting.default_locale` read plus `[locale, ...].uniq.compact` (multiple array allocations) each time. The translate accelerator only memoizes argument-free lookups \u2014 every `I18n.t` call with interpolation options (the common case in this codebase, e.g. anything with `count:` or a username) bypasses the LRU cache and pays this cost per call, in a code path that exists specifically to make translation fast. Consider memoizing the computed list keyed by (locale, default_locale) and invalidating when the setting changes."
+  },
+  {
+   "index": 3,
+   "file": "config/initializers/i18n.rb",
+   "line": 12,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the new fallback semantics, which now apply to all environments",
+   "body": "This PR rewrites how fallbacks are computed (new `FallbackLocaleList`, new `I18n.ensure_loaded!`, per-request `I18n.fallbacks.ensure_loaded!`) and, as a side effect, enables fallbacks in every environment \u2014 previously they were only turned on via `config.i18n.fallbacks = true` in the production-like configs, so in development/test a key present in English but missing in the active locale now silently renders the English text instead of a \"translation missing\" message. No specs cover any of this. At minimum, add coverage that `I18n.fallbacks[:xx]` returns `[xx, SiteSetting.default_locale.to_sym, :en].uniq`, that a key missing in the active locale resolves through the site default and then English, and that the fallback locale files are actually loaded (the `ensure_loaded!` path)."
+  }
+ ],
+ "finding_count": 4
+}

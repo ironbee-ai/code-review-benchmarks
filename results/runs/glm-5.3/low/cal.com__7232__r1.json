@@ -1,0 +1,160 @@
+{
+ "run_id": "glm-5.3__low__cal.com__7232__r1",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:21:53Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 72182,
+    "output": 3262,
+    "reasoning": 1936,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.1154076,
+   "latency_ms": 95885,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5931,
+   "raw_usage": {
+    "completion_tokens": 3262,
+    "prompt_tokens": 72182,
+    "total_tokens": 75444,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 1936,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.1154076,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.1154076,
+     "upstream_inference_prompt_cost": 0.1010548,
+     "upstream_inference_completions_cost": 0.0143528
+    }
+   },
+   "started_at": "2026-10-17T11:21:53Z",
+   "first_chunk_ms": 10494,
+   "first_text_ms": 69331,
+   "response_id": "gen-1792236113-xyw2BuCjaPQtMASrod7p",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 72182,
+  "output": 3262,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 1936
+ },
+ "cost_reported": 0.1154076,
+ "latency_ms": 95885,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 80, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cron re-schedules and sends emails for reminders already marked cancelled\", \"body\": \"The query that finds unscheduled email reminders to schedule (around line 80) filters only on method=EMAIL, scheduled=false and scheduledDate <= now+72h, but does not exclude reminders with cancelled=true. When a booking is cancelled, deleteScheduledEmailReminder only sets cancelled=true on the DB row; if the reminder was not yet scheduled (referenceId null, scheduledDate >72h out at booking time), the row stays in the DB with cancelled=true and scheduled=false. The CRON job will then pick it up in the 'unscheduledReminders' query and schedule/send the email anyway \u2014 exactly the bug this PR claims to fix. The where clause needs `cancelled: false` (or cancelled: null), and cancelled-but-unscheduled rows should be deleted.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 44, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cancel query includes SMS reminders and reminders without a referenceId, and one SendGrid error aborts all cancellations\", \"body\": \"The remindersToCancel query (line 44) has no method filter, so cancelled SMS reminders (whose referenceId is a Twilio SID) are POSTed to SendGrid's /v3/user/scheduled_sends endpoint, which will fail. Likewise, cancelled reminders with referenceId=null (never scheduled) produce a batch_id of null and SendGrid returns an error. Because the loop `await client.request(...)` throws on the first failure, execution jumps to the catch block, so the accumulated workflowReminder.delete() promises collected so far are never executed and all remaining reminders in the list are not cancelled that run. Filter on method=EMAIL and referenceId not null, and handle per-reminder errors instead of aborting the batch.\"}, {\"file\": \"packages/features/bookings/lib/handleNewBooking.ts\", \"line\": 966, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Try/catch around reminder cancellation is ineffective; promises are fire-and-forget and cancellation can be lost\", \"body\": \"In the reschedule path, deleteScheduledEmailReminder/deleteScheduledSMSReminder are async functions invoked inside a synchronous forEach without await. The surrounding try/catch can never catch anything since no promise is awaited; if the serverless function returns and the process is frozen/terminated before the pending DB updates or SendGrid/Twilio calls complete, the old booking's reminders remain active and are sent for the cancelled slot. The calls should be awaited (e.g. Promise.all over the mapped promises).\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 485, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Reminder cancellation on booking cancel is fire-and-forget and unawaited\", \"body\": \"The forEach at line 485 calls async deleteScheduledEmailReminder/deleteScheduledSMSReminder without awaiting them. If the request handler completes (or the serverless invocation ends) before those promises resolve, the `cancelled: true` flag is never written and the scheduled email/SMS is still sent for the cancelled booking. These calls set the DB state that the CRON job depends on, so they must be awaited before responding.\"}, {\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 213, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"immediateDelete path cancels at SendGrid but leaves the DB row as scheduled=true with a live referenceId\", \"body\": \"When immediateDelete is set (workflow deletion, deleted/edited steps, reschedule in handleNewBooking), the function POSTs the cancel to SendGrid and returns without deleting or flagging the WorkflowReminder row. The row remains scheduled=true with its referenceId until the CRON's `deleteMany where scheduledDate <= now` cleanup runs (which only happens for email reminders whose date has passed). Until then, any other code that iterates a booking's or workflow's reminders (e.g. a subsequent reschedule, or workflows.update's edited-step path) will try to cancel the same batch again and can hit errors, and the stale rows misrepresent state. The row should be deleted (or at least marked cancelled) in this branch too.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 105, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Cron schedules reminders with scheduledDate less than 60 minutes (or in the past) away, defeating the cancellation design\", \"body\": \"The unscheduledReminders loop calls sgMail.send with sendAt = scheduledDate.unix() without verifying the SendGrid minimum of 60 minutes in the future (the check exists only in scheduleEmailReminder at booking time). A reminder whose scheduledDate is now+10 minutes is scheduled with a sendAt in the near past, which SendGrid processes immediately \u2014 so if a booking is cancelled right after a cron run, the cancellation (which only happens on the next 15-minute cron run) cannot win the race and the email is still sent, the exact bug being fixed. Reminders with scheduledDate < now+1h should not be scheduled via sendAt (send immediately is intended only for non-scheduled triggers).\"}, {\"file\": \"packages/trpc/server/routers/viewer/workflows.tsx\", \"line\": 9, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Unused Prisma import and noisy re-indentation of commented-out code\", \"body\": \"The `Prisma` value imported from @prisma/client (line 9) is no longer used after the Prisma.BatchPayload delete logic was removed, which will fail lint/TS noUnusedLocals in stricter configs. Additionally, the diff re-indents a large block of commented-out (/* */) code in the testAction section, adding review noise and churn with no functional change; prefer leaving commented-out code untouched or deleting it.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 80,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cron re-schedules and sends emails for reminders already marked cancelled",
+   "body": "The query that finds unscheduled email reminders to schedule (around line 80) filters only on method=EMAIL, scheduled=false and scheduledDate <= now+72h, but does not exclude reminders with cancelled=true. When a booking is cancelled, deleteScheduledEmailReminder only sets cancelled=true on the DB row; if the reminder was not yet scheduled (referenceId null, scheduledDate >72h out at booking time), the row stays in the DB with cancelled=true and scheduled=false. The CRON job will then pick it up in the 'unscheduledReminders' query and schedule/send the email anyway \u2014 exactly the bug this PR claims to fix. The where clause needs `cancelled: false` (or cancelled: null), and cancelled-but-unscheduled rows should be deleted."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 44,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cancel query includes SMS reminders and reminders without a referenceId, and one SendGrid error aborts all cancellations",
+   "body": "The remindersToCancel query (line 44) has no method filter, so cancelled SMS reminders (whose referenceId is a Twilio SID) are POSTed to SendGrid's /v3/user/scheduled_sends endpoint, which will fail. Likewise, cancelled reminders with referenceId=null (never scheduled) produce a batch_id of null and SendGrid returns an error. Because the loop `await client.request(...)` throws on the first failure, execution jumps to the catch block, so the accumulated workflowReminder.delete() promises collected so far are never executed and all remaining reminders in the list are not cancelled that run. Filter on method=EMAIL and referenceId not null, and handle per-reminder errors instead of aborting the batch."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 966,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Try/catch around reminder cancellation is ineffective; promises are fire-and-forget and cancellation can be lost",
+   "body": "In the reschedule path, deleteScheduledEmailReminder/deleteScheduledSMSReminder are async functions invoked inside a synchronous forEach without await. The surrounding try/catch can never catch anything since no promise is awaited; if the serverless function returns and the process is frozen/terminated before the pending DB updates or SendGrid/Twilio calls complete, the old booking's reminders remain active and are sent for the cancelled slot. The calls should be awaited (e.g. Promise.all over the mapped promises)."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reminder cancellation on booking cancel is fire-and-forget and unawaited",
+   "body": "The forEach at line 485 calls async deleteScheduledEmailReminder/deleteScheduledSMSReminder without awaiting them. If the request handler completes (or the serverless invocation ends) before those promises resolve, the `cancelled: true` flag is never written and the scheduled email/SMS is still sent for the cancelled booking. These calls set the DB state that the CRON job depends on, so they must be awaited before responding."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "medium",
+   "category": "bug",
+   "title": "immediateDelete path cancels at SendGrid but leaves the DB row as scheduled=true with a live referenceId",
+   "body": "When immediateDelete is set (workflow deletion, deleted/edited steps, reschedule in handleNewBooking), the function POSTs the cancel to SendGrid and returns without deleting or flagging the WorkflowReminder row. The row remains scheduled=true with its referenceId until the CRON's `deleteMany where scheduledDate <= now` cleanup runs (which only happens for email reminders whose date has passed). Until then, any other code that iterates a booking's or workflow's reminders (e.g. a subsequent reschedule, or workflows.update's edited-step path) will try to cancel the same batch again and can hit errors, and the stale rows misrepresent state. The row should be deleted (or at least marked cancelled) in this branch too."
+  },
+  {
+   "index": 5,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 105,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Cron schedules reminders with scheduledDate less than 60 minutes (or in the past) away, defeating the cancellation design",
+   "body": "The unscheduledReminders loop calls sgMail.send with sendAt = scheduledDate.unix() without verifying the SendGrid minimum of 60 minutes in the future (the check exists only in scheduleEmailReminder at booking time). A reminder whose scheduledDate is now+10 minutes is scheduled with a sendAt in the near past, which SendGrid processes immediately \u2014 so if a booking is cancelled right after a cron run, the cancellation (which only happens on the next 15-minute cron run) cannot win the race and the email is still sent, the exact bug being fixed. Reminders with scheduledDate < now+1h should not be scheduled via sendAt (send immediately is intended only for non-scheduled triggers)."
+  },
+  {
+   "index": 6,
+   "file": "packages/trpc/server/routers/viewer/workflows.tsx",
+   "line": 9,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Unused Prisma import and noisy re-indentation of commented-out code",
+   "body": "The `Prisma` value imported from @prisma/client (line 9) is no longer used after the Prisma.BatchPayload delete logic was removed, which will fail lint/TS noUnusedLocals in stricter configs. Additionally, the diff re-indents a large block of commented-out (/* */) code in the testAction section, adding review noise and churn with no functional change; prefer leaving commented-out code untouched or deleting it."
+  }
+ ],
+ "finding_count": 7
+}

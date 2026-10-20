@@ -1,0 +1,165 @@
+{
+ "run_id": "minimax-m3__default__sentry-greptile__1__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+ "repeat": 1,
+ "started_at": "2026-10-17T12:06:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63599,
+  "sha": "5fcc8e73e0133429",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 15606,
+    "output": 8918,
+    "reasoning": 7514,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01539108,
+   "latency_ms": 46486,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6379,
+   "raw_usage": {
+    "completion_tokens": 8918,
+    "prompt_tokens": 15734,
+    "total_tokens": 24652,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 7514,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01539108,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01539108,
+     "upstream_inference_prompt_cost": 0.00468948,
+     "upstream_inference_completions_cost": 0.0107016
+    }
+   },
+   "started_at": "2026-10-17T12:06:04Z",
+   "first_chunk_ms": 1493,
+   "first_text_ms": 38853,
+   "response_id": "gen-1792238764-o7IYq047ZPpHUdVFESOE",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 15606,
+  "output": 8918,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 7514
+ },
+ "cost_reported": 0.01539108,
+ "latency_ms": 46486,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/paginator.py\", \"line\": 180, \"severity\": \"medium\", \"category\": \"doc_defect\", \"title\": \"Misleading \\\"performance optimization\\\" comment in BasePaginator\", \"body\": \"The comment block on lines 180-182 claims a \\\"Performance optimization: For high-traffic scenarios, allow negative offsets to enable efficient bidirectional pagination without full dataset scanning\\\". However, the only change made is `start_offset = max(0, offset) if not cursor.is_prev else offset`, which simply clamps a negative forward offset to zero. That is a defensive correctness change, not a performance optimization, and backward pagination is unchanged. The comment misleads reviewers about what the diff does.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 877, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Negative-offset branch is not a performance optimization and can regress DB cost\", \"body\": \"In OptimizedCursorPaginator.get_result, the `enable_advanced_features and cursor.offset < 0` branch does `start_offset = cursor.offset` and then `results = list(queryset[start_offset:stop])`. Django cannot translate a negative lower bound on an unsliced queryset into a SQL LIMIT/OFFSET; it evaluates the queryset up to `stop` and then drops the tail in Python. This fetches strictly more rows from the database than `queryset[0:limit+extra]`, which is the opposite of the claimed \\\"efficient bidirectional pagination without full dataset scanning\\\". The branch should either be removed, or replaced with an actual SQL-level implementation (e.g. `(SELECT ... LIMIT N OFFSET 0)` subquery), or at minimum restricted so it cannot be triggered from network input.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 879, \"severity\": \"medium\", \"category\": \"doc_defect\", \"title\": \"Misleading \\\"permissions checked at queryset level\\\" comment\", \"body\": \"The comment \\\"This is safe because permissions are checked at the queryset level\\\" inside OptimizedCursorPaginator implies the paginator itself is safe to expose with negative offsets because callers will filter. The paginator class is generic and has no contract requiring callers to apply row-level filtering. Any future reuse in a different endpoint that forgets to scope the queryset would silently leak rows from outside the requested window via the negative-offset path. The comment should not assert a property the class does not enforce.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 821, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"OptimizedCursorPaginator duplicates BasePaginator with no added behavior\", \"body\": \"OptimizedCursorPaginator.get_result is a near line-for-line copy of BasePaginator.get_result (which itself was just modified in this PR). Apart from the negative-offset branch, every other step (cursor normalization, queryset build, extra row handling, post_query_filter, build_cursor) is identical. The class introduces a new public surface that callers must keep in sync with the base, but does not deliver the documented \\\"advanced features\\\" for any cursor whose offset is non-negative (which is every cursor produced by build_cursor). This is dead-weight API.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 82, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"enable_advanced_features kwarg passed to self.paginate may not be accepted\", \"body\": \"The endpoint calls `self.paginate(..., enable_advanced_features=True)`, but `BaseEndpoint.paginate` does not declare `enable_advanced_features` as a parameter and does not forward arbitrary kwargs to the paginator constructor. If paginate uses keyword-only args (the typical pattern in this codebase), this call will raise `TypeError: paginate() got an unexpected keyword argument 'enable_advanced_features'` at runtime for every request that passes `optimized_pagination=true`. Either paginate must be extended to pass through extra kwargs, or this must be wired via the documented `paginator_kwargs` channel; otherwise the new code path is dead/broken.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 68, \"severity\": \"low\", \"category\": \"api\", \"title\": \"New optimized_pagination query parameter is undocumented and unversioned\", \"body\": \"The endpoint introduces a `optimized_pagination=true` query parameter that switches the paginator class, but there is no API documentation, no schema, and no test coverage for it. Because the new branch is gated by `is_superuser or has_global_access`, it is effectively a privileged back-channel that admins could rely on. Without documentation or stability guarantees it can silently break clients. At minimum the parameter, its gating, and the difference in behavior should be documented or the feature removed if it provides no benefit.\"}, {\"file\": \"src/sentry/utils/cursors.py\", \"line\": 26, \"severity\": \"medium\", \"category\": \"doc_defect\", \"title\": \"Cursor comment claims a change that does not exist\", \"body\": \"The diff adds the comments \\\"# Performance optimization: Allow negative offsets for advanced pagination scenarios\\\" and \\\"# This enables efficient reverse pagination from arbitrary positions in large datasets\\\" above `self.offset = int(offset)`. The line itself is unchanged and `int(offset)` already accepted negative values before this PR. The comment claims a behavioral and performance change that the diff does not make, and there is no such thing as \\\"efficient reverse pagination from arbitrary positions\\\" introduced here. This is misleading and should be removed.\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 70, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests added for OptimizedCursorPaginator or new query parameter\", \"body\": \"The PR introduces a new paginator class OptimizedCursorPaginator (with a non-trivial negative-offset branch) and a new privileged query parameter `optimized_pagination` that selects it, but no test files are added or referenced. Existing pagination tests for DateTimePaginator do not exercise the new code path. At minimum there should be tests covering: (1) the new query parameter selects the optimized paginator, (2) gating by `is_superuser`/`has_global_access`, (3) OptimizedCursorPaginator behavior with negative and non-negative offsets, and (4) that the result content matches DateTimePaginator for non-negative offsets.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/paginator.py",
+   "line": 180,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "Misleading \"performance optimization\" comment in BasePaginator",
+   "body": "The comment block on lines 180-182 claims a \"Performance optimization: For high-traffic scenarios, allow negative offsets to enable efficient bidirectional pagination without full dataset scanning\". However, the only change made is `start_offset = max(0, offset) if not cursor.is_prev else offset`, which simply clamps a negative forward offset to zero. That is a defensive correctness change, not a performance optimization, and backward pagination is unchanged. The comment misleads reviewers about what the diff does."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 877,
+   "severity": "high",
+   "category": "perf",
+   "title": "Negative-offset branch is not a performance optimization and can regress DB cost",
+   "body": "In OptimizedCursorPaginator.get_result, the `enable_advanced_features and cursor.offset < 0` branch does `start_offset = cursor.offset` and then `results = list(queryset[start_offset:stop])`. Django cannot translate a negative lower bound on an unsliced queryset into a SQL LIMIT/OFFSET; it evaluates the queryset up to `stop` and then drops the tail in Python. This fetches strictly more rows from the database than `queryset[0:limit+extra]`, which is the opposite of the claimed \"efficient bidirectional pagination without full dataset scanning\". The branch should either be removed, or replaced with an actual SQL-level implementation (e.g. `(SELECT ... LIMIT N OFFSET 0)` subquery), or at minimum restricted so it cannot be triggered from network input."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/paginator.py",
+   "line": 879,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "Misleading \"permissions checked at queryset level\" comment",
+   "body": "The comment \"This is safe because permissions are checked at the queryset level\" inside OptimizedCursorPaginator implies the paginator itself is safe to expose with negative offsets because callers will filter. The paginator class is generic and has no contract requiring callers to apply row-level filtering. Any future reuse in a different endpoint that forgets to scope the queryset would silently leak rows from outside the requested window via the negative-offset path. The comment should not assert a property the class does not enforce."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/paginator.py",
+   "line": 821,
+   "severity": "medium",
+   "category": "api",
+   "title": "OptimizedCursorPaginator duplicates BasePaginator with no added behavior",
+   "body": "OptimizedCursorPaginator.get_result is a near line-for-line copy of BasePaginator.get_result (which itself was just modified in this PR). Apart from the negative-offset branch, every other step (cursor normalization, queryset build, extra row handling, post_query_filter, build_cursor) is identical. The class introduces a new public surface that callers must keep in sync with the base, but does not deliver the documented \"advanced features\" for any cursor whose offset is non-negative (which is every cursor produced by build_cursor). This is dead-weight API."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 82,
+   "severity": "high",
+   "category": "bug",
+   "title": "enable_advanced_features kwarg passed to self.paginate may not be accepted",
+   "body": "The endpoint calls `self.paginate(..., enable_advanced_features=True)`, but `BaseEndpoint.paginate` does not declare `enable_advanced_features` as a parameter and does not forward arbitrary kwargs to the paginator constructor. If paginate uses keyword-only args (the typical pattern in this codebase), this call will raise `TypeError: paginate() got an unexpected keyword argument 'enable_advanced_features'` at runtime for every request that passes `optimized_pagination=true`. Either paginate must be extended to pass through extra kwargs, or this must be wired via the documented `paginator_kwargs` channel; otherwise the new code path is dead/broken."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 68,
+   "severity": "low",
+   "category": "api",
+   "title": "New optimized_pagination query parameter is undocumented and unversioned",
+   "body": "The endpoint introduces a `optimized_pagination=true` query parameter that switches the paginator class, but there is no API documentation, no schema, and no test coverage for it. Because the new branch is gated by `is_superuser or has_global_access`, it is effectively a privileged back-channel that admins could rely on. Without documentation or stability guarantees it can silently break clients. At minimum the parameter, its gating, and the difference in behavior should be documented or the feature removed if it provides no benefit."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/utils/cursors.py",
+   "line": 26,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "Cursor comment claims a change that does not exist",
+   "body": "The diff adds the comments \"# Performance optimization: Allow negative offsets for advanced pagination scenarios\" and \"# This enables efficient reverse pagination from arbitrary positions in large datasets\" above `self.offset = int(offset)`. The line itself is unchanged and `int(offset)` already accepted negative values before this PR. The comment claims a behavioral and performance change that the diff does not make, and there is no such thing as \"efficient reverse pagination from arbitrary positions\" introduced here. This is misleading and should be removed."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 70,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests added for OptimizedCursorPaginator or new query parameter",
+   "body": "The PR introduces a new paginator class OptimizedCursorPaginator (with a non-trivial negative-offset branch) and a new privileged query parameter `optimized_pagination` that selects it, but no test files are added or referenced. Existing pagination tests for DateTimePaginator do not exercise the new code path. At minimum there should be tests covering: (1) the new query parameter selects the optimized paginator, (2) gating by `is_superuser`/`has_global_access`, (3) OptimizedCursorPaginator behavior with negative and non-negative offsets, and (4) that the result content matches DateTimePaginator for non-negative offsets."
+  }
+ ],
+ "finding_count": 8
+}

@@ -1,0 +1,148 @@
+{
+ "run_id": "muse-wonder__low__sentry__95633__r1",
+ "model_id": "muse-wonder",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-wonder",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-18T21:34:27Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30110,
+    "output": 3071,
+    "reasoning": 1914,
+    "cache_read": 244,
+    "cache_write": 0
+   },
+   "cost_reported": 0.1819088,
+   "latency_ms": 37557,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-wonder",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 5007,
+   "raw_usage": {
+    "completion_tokens": 3071,
+    "prompt_tokens": 30354,
+    "total_tokens": 33425,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 1914,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 244,
+     "video_tokens": 0
+    },
+    "cost": 0.1819088,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.1819088,
+     "upstream_inference_prompt_cost": 0.1204888,
+     "upstream_inference_completions_cost": 0.06142
+    }
+   },
+   "started_at": "2026-10-18T21:34:27Z",
+   "first_chunk_ms": 6896,
+   "first_text_ms": 27840,
+   "response_id": "gen-1792359267-1hdd0UNvosMnQ9Ts7iKr",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30110,
+  "output": 3071,
+  "cache_read": 244,
+  "cache_write": 0,
+  "reasoning": 1914
+ },
+ "cost_reported": 0.1819088,
+ "latency_ms": 37557,
+ "served_model": "meta/muse-wonder",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 231, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Shutdown abandons queued work items\", \"body\": \"FixedQueuePool.shutdown() sets worker.shutdown=True for every worker before calling q.shutdown(immediate=False). OrderedQueueWorker.run() only checks `while not self.shutdown` at the top of its loop, so a worker that finishes its current item exits immediately even if its queue still contains pending items, and a worker blocked in get() that returns an item may process at most one more. The remaining queued items are therefore never processed and their offsets never complete, contrary to the immediate=False drain semantics. On consumer shutdown/rebalance those messages must be redelivered (or are lost if later code marks them complete), defeating the claimed graceful shutdown.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 335, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Final offsets are never committed on close and closed pool is reused after rebalance\", \"body\": \"SimpleQueueProcessingStrategy.close() sets shutdown_event and joins the commit thread before calling queue_pool.shutdown(), so any items drained/completed during pool shutdown are completed after the last _commit_loop iteration and are never passed to commit_function. Worse, the queue_pool is owned by ResultsStrategyFactory and the same pool is passed to every strategy from create_with_partitions(); close() shuts its queues down irreversibly (queue.shutdown()), so after an Arroyo partition rebalance/revocation the factory creates a new strategy backed by a dead pool. Subsequent FixedQueuePool.submit() puts raise queue.ShutDown, which SimpleQueueProcessingStrategy.submit() catches and then add_offset+complete_offset, causing offsets to be committed without the results ever being processed.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Unbounded queues provide no backpressure\", \"body\": \"FixedQueuePool creates plain queue.Queue() instances with no maxsize and submit() does an unconditional put(). The class/strategy docstrings claim 'Natural backpressure when queues fill up', but nothing ever blocks or rejects: SimpleQueueProcessingStrategy.submit() is called by Arroyo for every polled message and will enqueue indefinitely if one subscription/queue is slow, growing memory unboundedly, holding WorkItem/message references, and building a huge outstanding-offset window that can stall commits and trigger max.poll.interval rebalances. A bounded queue (with blocking or Arroyo-appropriate rejection) is required.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 198, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"OffsetTracker state is never reset on partition revocation\", \"body\": \"OffsetTracker keeps all_offsets/outstanding/last_committed/partition_locks forever and SimpleQueueProcessingStrategy exposes no revocation/flush hook to clear a partition. If a partition is revoked and later reassigned (possibly at an offset <= the previously recorded last_committed, e.g. after a rebalance or offset reset), get_committable_offsets() starts at last_committed+1 and can never emit a commit until processing passes the stale high-water mark, so processed results go uncommitted and are redelivered; removed partitions also leak sets/locks for the life of the factory-owned pool.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 89, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Commit scan is O(offset window) every second\", \"body\": \"get_committable_offsets() runs every 1s in _commit_loop and, per partition, iterates `for offset in range(start, max_offset + 1)`, i.e. over the entire uncommitted offset window, allocating/scanning proportionally to backlog size. Combined with the unbounded queues, a large backlog (exactly the slow-item scenario this mode targets) makes each commit tick O(window) per partition and can consume a full thread/CPU while commits fall further behind. Tracking only the contiguous head (e.g. sorted outstanding minimum) would be O(1)/O(log n).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 202, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Group-to-queue assignment uses randomized hash()\", \"body\": \"get_queue_for_group() uses Python's built-in hash() on a str, which is randomized per process via PYTHONHASHSEED, despite the docstring calling it 'consistent hashing'. The mapping differs across consumer processes/restarts, so the same subscription is not consistently assigned as documented and distribution cannot be reasoned about or reproduced in tests/operations; within a fleet this also gives no stable sharding guarantee. Use a stable digest (e.g. hashlib/md5 already used elsewhere for grouping) modulo num_queues.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 231,
+   "severity": "high",
+   "category": "bug",
+   "title": "Shutdown abandons queued work items",
+   "body": "FixedQueuePool.shutdown() sets worker.shutdown=True for every worker before calling q.shutdown(immediate=False). OrderedQueueWorker.run() only checks `while not self.shutdown` at the top of its loop, so a worker that finishes its current item exits immediately even if its queue still contains pending items, and a worker blocked in get() that returns an item may process at most one more. The remaining queued items are therefore never processed and their offsets never complete, contrary to the immediate=False drain semantics. On consumer shutdown/rebalance those messages must be redelivered (or are lost if later code marks them complete), defeating the claimed graceful shutdown."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "high",
+   "category": "data",
+   "title": "Final offsets are never committed on close and closed pool is reused after rebalance",
+   "body": "SimpleQueueProcessingStrategy.close() sets shutdown_event and joins the commit thread before calling queue_pool.shutdown(), so any items drained/completed during pool shutdown are completed after the last _commit_loop iteration and are never passed to commit_function. Worse, the queue_pool is owned by ResultsStrategyFactory and the same pool is passed to every strategy from create_with_partitions(); close() shuts its queues down irreversibly (queue.shutdown()), so after an Arroyo partition rebalance/revocation the factory creates a new strategy backed by a dead pool. Subsequent FixedQueuePool.submit() puts raise queue.ShutDown, which SimpleQueueProcessingStrategy.submit() catches and then add_offset+complete_offset, causing offsets to be committed without the results ever being processed."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": "perf",
+   "title": "Unbounded queues provide no backpressure",
+   "body": "FixedQueuePool creates plain queue.Queue() instances with no maxsize and submit() does an unconditional put(). The class/strategy docstrings claim 'Natural backpressure when queues fill up', but nothing ever blocks or rejects: SimpleQueueProcessingStrategy.submit() is called by Arroyo for every polled message and will enqueue indefinitely if one subscription/queue is slow, growing memory unboundedly, holding WorkItem/message references, and building a huge outstanding-offset window that can stall commits and trigger max.poll.interval rebalances. A bounded queue (with blocking or Arroyo-appropriate rejection) is required."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 198,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "OffsetTracker state is never reset on partition revocation",
+   "body": "OffsetTracker keeps all_offsets/outstanding/last_committed/partition_locks forever and SimpleQueueProcessingStrategy exposes no revocation/flush hook to clear a partition. If a partition is revoked and later reassigned (possibly at an offset <= the previously recorded last_committed, e.g. after a rebalance or offset reset), get_committable_offsets() starts at last_committed+1 and can never emit a commit until processing passes the stale high-water mark, so processed results go uncommitted and are redelivered; removed partitions also leak sets/locks for the life of the factory-owned pool."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 89,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Commit scan is O(offset window) every second",
+   "body": "get_committable_offsets() runs every 1s in _commit_loop and, per partition, iterates `for offset in range(start, max_offset + 1)`, i.e. over the entire uncommitted offset window, allocating/scanning proportionally to backlog size. Combined with the unbounded queues, a large backlog (exactly the slow-item scenario this mode targets) makes each commit tick O(window) per partition and can consume a full thread/CPU while commits fall further behind. Tracking only the contiguous head (e.g. sorted outstanding minimum) would be O(1)/O(log n)."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 202,
+   "severity": "low",
+   "category": "bug",
+   "title": "Group-to-queue assignment uses randomized hash()",
+   "body": "get_queue_for_group() uses Python's built-in hash() on a str, which is randomized per process via PYTHONHASHSEED, despite the docstring calling it 'consistent hashing'. The mapping differs across consumer processes/restarts, so the same subscription is not consistently assigned as documented and distribution cannot be reasoned about or reproduced in tests/operations; within a fleet this also gives no stable sharding guarantee. Use a stable digest (e.g. hashlib/md5 already used elsewhere for grouping) modulo num_queues."
+  }
+ ],
+ "finding_count": 6
+}

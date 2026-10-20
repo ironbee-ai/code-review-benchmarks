@@ -1,0 +1,120 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__keycloak__32918__r3",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "keycloak__32918",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/32918",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:55:59Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103546,
+  "sha": "a57687892c97cff0",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 41356,
+    "output": 13662,
+    "reasoning": 11797,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 136291,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4913,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 41356,
+    "output_tokens": 13662,
+    "output_tokens_details": {
+     "thinking_tokens": 11797
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:55:59Z",
+   "first_chunk_ms": 9868,
+   "first_text_ms": 120173,
+   "response_id": "msg_bdrk_sj4swoqtmhwu3vkau3lk7mzy4t5dt4tphrthsohi5ewxkp3g3wmq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 41356,
+  "output": 13662,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 11797
+ },
+ "cost_reported": null,
+ "latency_ms": 136291,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 93, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Update decides login-cache invalidation using the org-aware model, which disagrees with what the cached list contains\", \"body\": \"In `update`, the 'original' IDP comes from `getById()` (line 91). That method returns `createOrganizationAwareIdentityProviderModel(...)`, whose `isEnabled()` returns false when the linked organization is disabled, or when organizations are disabled for the realm.\\n\\nThe cached login ID lists, however, are filled from `idpDelegate.getForLogin(...)`. That is a raw DB query on the ENABLED/LINK_ONLY/HIDE_ON_LOGIN/BROKER_PUBLIC columns and ignores organization status.\\n\\nExample: an org is disabled and one of its public, enabled IDPs is in the cached list. An admin then sets that IDP to hideOnLogin=true, linkOnly=true, or removes BROKER_PUBLIC. `getLoginPredicate().test(original)` is false because the wrapped `isEnabled()` is false. `test(updated)` is also false. So `registerIDPLoginInvalidationOnUpdate` returns early (line 405) and nothing is invalidated.\\n\\nThe stale ID stays in the cached list. Once the org is re-enabled, `getForLogin` keeps returning it. `OrganizationAwareIdentityProviderBean` only re-checks `isEnabled()`, so a hidden, link-only, or non-public broker appears on the login page until some other change invalidates the cache.\\n\\nFix: evaluate the original with the raw model (e.g. `idpDelegate.getById(...)`), so the comparison uses the same view as the cached query.\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 239, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Merging a previously read query can re-insert stale search results after a concurrent invalidation\", \"body\": \"When the cached `IdentityProviderListQuery` exists but lacks the current `searchKey`, the code proceeds in this order:\\n1. It reads `query` (line 222).\\n2. It calls `cache.invalidateObject(cacheKey)`.\\n3. It reads a fresh revision.\\n4. It builds a new query that copies all of the old query's searches (`new IdentityProviderListQuery(..., query)`).\\n5. It adds the result with `cache.getCurrentCounter()`.\\n\\nIf another transaction invalidates `cacheKey` between steps 1 and 2, the old searches are already stale. They still get merged in and stored with an up-to-date revision, so `addRevisioned` accepts them. Typical triggers are creating, removing, or relinking a login IDP.\\n\\nThe login cache can then keep serving outdated ID lists for other organizations: newly added brokers go missing, or brokers that became hidden or unlinked still show. This copies the pattern from `getByOrganization`, but it now affects the login page. The merge should be dropped, or the code should verify the entry was not invalidated between the read and the re-add.\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java\", \"line\": 223, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Single cache entry per fetch mode accumulates one result set per organization and is rebuilt on every new org\", \"body\": \"The cache key is only realm + FetchMode, and the organization ID is used as a search key inside one `IdentityProviderListQuery`. For `ALL`/`ORG_ONLY` with an organizationId, each organization not yet seen does three things:\\n- triggers `invalidateObject` on the shared entry,\\n- copies the entire existing map of searches,\\n- re-adds it.\\n\\nIn realms with many organizations, this entry grows without bound, since it holds a set per org. It is also repeatedly invalidated and copied during normal login traffic. Any login-relevant IDP change then discards all of it at once. Consider keying the cache entry by organization (as `getByOrganization` does with `cacheKeyOrgId`), or bounding the stored searches.\"}, {\"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java\", \"line\": 381, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Test cleanup removes IDP with literal alias \\\"alias\\\" instead of the created IDPs\", \"body\": \"`getCleanup().addCleanup(testRealm().identityProviders().get(\\\"alias\\\")::remove);` points at an IDP named \\\"alias\\\", which does not exist. The same mistake appears again at line 425. None of the 21 IDPs created by `testCacheIDPForLogin` (`idp-alias-0`..`idp-alias-20`) are ever cleaned up.\\n\\nIf the realm is not re-imported, they leak into other tests. Re-running the test would also make the `create(...)` calls fail with conflicts that go unnoticed, because the responses are closed without checking status. The cleanup should use the real alias (e.g. `get(\\\"idp-alias-\\\" + i)`).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 93,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Update decides login-cache invalidation using the org-aware model, which disagrees with what the cached list contains",
+   "body": "In `update`, the 'original' IDP comes from `getById()` (line 91). That method returns `createOrganizationAwareIdentityProviderModel(...)`, whose `isEnabled()` returns false when the linked organization is disabled, or when organizations are disabled for the realm.\n\nThe cached login ID lists, however, are filled from `idpDelegate.getForLogin(...)`. That is a raw DB query on the ENABLED/LINK_ONLY/HIDE_ON_LOGIN/BROKER_PUBLIC columns and ignores organization status.\n\nExample: an org is disabled and one of its public, enabled IDPs is in the cached list. An admin then sets that IDP to hideOnLogin=true, linkOnly=true, or removes BROKER_PUBLIC. `getLoginPredicate().test(original)` is false because the wrapped `isEnabled()` is false. `test(updated)` is also false. So `registerIDPLoginInvalidationOnUpdate` returns early (line 405) and nothing is invalidated.\n\nThe stale ID stays in the cached list. Once the org is re-enabled, `getForLogin` keeps returning it. `OrganizationAwareIdentityProviderBean` only re-checks `isEnabled()`, so a hidden, link-only, or non-public broker appears on the login page until some other change invalidates the cache.\n\nFix: evaluate the original with the raw model (e.g. `idpDelegate.getById(...)`), so the comparison uses the same view as the cached query."
+  },
+  {
+   "index": 1,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 239,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Merging a previously read query can re-insert stale search results after a concurrent invalidation",
+   "body": "When the cached `IdentityProviderListQuery` exists but lacks the current `searchKey`, the code proceeds in this order:\n1. It reads `query` (line 222).\n2. It calls `cache.invalidateObject(cacheKey)`.\n3. It reads a fresh revision.\n4. It builds a new query that copies all of the old query's searches (`new IdentityProviderListQuery(..., query)`).\n5. It adds the result with `cache.getCurrentCounter()`.\n\nIf another transaction invalidates `cacheKey` between steps 1 and 2, the old searches are already stale. They still get merged in and stored with an up-to-date revision, so `addRevisioned` accepts them. Typical triggers are creating, removing, or relinking a login IDP.\n\nThe login cache can then keep serving outdated ID lists for other organizations: newly added brokers go missing, or brokers that became hidden or unlinked still show. This copies the pattern from `getByOrganization`, but it now affects the login page. The merge should be dropped, or the code should verify the entry was not invalidated between the read and the re-add."
+  },
+  {
+   "index": 2,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/idp/InfinispanIdentityProviderStorageProvider.java",
+   "line": 223,
+   "severity": "low",
+   "category": "perf",
+   "title": "Single cache entry per fetch mode accumulates one result set per organization and is rebuilt on every new org",
+   "body": "The cache key is only realm + FetchMode, and the organization ID is used as a search key inside one `IdentityProviderListQuery`. For `ALL`/`ORG_ONLY` with an organizationId, each organization not yet seen does three things:\n- triggers `invalidateObject` on the shared entry,\n- copies the entire existing map of searches,\n- re-adds it.\n\nIn realms with many organizations, this entry grows without bound, since it holds a set per org. It is also repeatedly invalidated and copied during normal login traffic. Any login-relevant IDP change then discards all of it at once. Consider keying the cache entry by organization (as `getByOrganization` does with `cacheKeyOrgId`), or bounding the stored searches."
+  },
+  {
+   "index": 3,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/organization/cache/OrganizationCacheTest.java",
+   "line": 381,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test cleanup removes IDP with literal alias \"alias\" instead of the created IDPs",
+   "body": "`getCleanup().addCleanup(testRealm().identityProviders().get(\"alias\")::remove);` points at an IDP named \"alias\", which does not exist. The same mistake appears again at line 425. None of the 21 IDPs created by `testCacheIDPForLogin` (`idp-alias-0`..`idp-alias-20`) are ever cleaned up.\n\nIf the realm is not re-imported, they leak into other tests. Re-running the test would also make the `create(...)` calls fail with conflicts that go unnoticed, because the responses are closed without checking status. The cleanup should use the real alias (e.g. `get(\"idp-alias-\" + i)`)."
+  }
+ ],
+ "finding_count": 4
+}

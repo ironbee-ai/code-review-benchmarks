@@ -1,0 +1,129 @@
+{
+ "run_id": "claude-sonnet-5__default__sentry__95633__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:25:20Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 16358,
+    "reasoning": 14455,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 168328,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5163,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 16358,
+    "output_tokens_details": {
+     "thinking_tokens": 14455
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:25:20Z",
+   "first_chunk_ms": 6390,
+   "first_text_ms": 151038,
+   "response_id": "msg_bdrk_7uqdiqxrvfzouow24g2k25tsqjqwh253iaz3ikdtl2vae7rdx6tq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 16358,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 14455
+ },
+ "cost_reported": null,
+ "latency_ms": 168328,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 335, \"severity\": \"critical\", \"title\": \"Shared FixedQueuePool is permanently destroyed by per-rebalance strategy close()/terminate()\", \"category\": \"bug\", \"body\": \"ResultsStrategyFactory creates a single `FixedQueuePool` instance once in `__init__` (result_consumer.py, inside `ResultsStrategyFactory.__init__`, `self.queue_pool = FixedQueuePool(...)`), intended to live for the lifetime of the consumer process and be reused across partition rebalances. However, `create_with_partitions` builds a brand-new `SimpleQueueProcessingStrategy` every time it is called (e.g. on every rebalance), and that strategy's `close()`/`terminate()` methods (queue_consumer.py lines 335-342) call `self.queue_pool.shutdown()`, which sets every worker thread's `shutdown` flag and shuts down every underlying `queue.Queue`. Arroyo calls `close()`/`terminate()` on the active strategy whenever partitions are revoked (which happens on every consumer group rebalance), and then calls `create_with_partitions` again for the new assignment. Because the factory still holds the same (now permanently dead) `queue_pool` object, the new strategy submits work items into queues whose worker threads have already exited, so no further messages are ever processed after the first rebalance - the consumer silently stalls without raising any error, with no new offsets being committed from that point forward.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"title\": \"Work queues are unbounded, so claimed back-pressure does not exist\", \"category\": \"perf\", \"body\": \"`FixedQueuePool.__init__` creates each `queue.Queue()` with no `maxsize` (line 185), and `submit()` (`work_queue.put(work_item)`) never blocks or applies any limit. The class docstrings for `FixedQueuePool` and `SimpleQueueProcessingStrategy` explicitly claim 'Natural backpressure when queues fill up,' but since the queues are unbounded, a single slow/stuck group (which this PR's description cites as the motivating problem) will cause its queue to grow without bound while the main consumer thread keeps accepting and enqueuing new messages. This can lead to unbounded memory growth (queued `WorkItem`s also retain the original `Message` object) and an ever-growing `OffsetTracker.all_offsets`/`outstanding` set, defeating the stated goal of avoiding backlog/parallelism problems.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 74, \"severity\": \"medium\", \"title\": \"Unsynchronized dict mutation/iteration race in OffsetTracker\", \"category\": \"concurrency\", \"body\": \"`OffsetTracker` protects each partition's offset *set* with a per-partition lock, but the outer dictionaries (`all_offsets`, `outstanding`, `last_committed`, `partition_locks`) have no lock guarding structural changes. `get_committable_offsets()` does `for partition in list(self.all_offsets.keys())` (line 74) while `add_offset()` (called from the consumer thread) can concurrently insert a brand-new partition key into the same defaultdict via `self.all_offsets[partition]`. Mutating a dict's size while another thread is iterating/snapshotting its keys can intermittently raise `RuntimeError: dictionary changed size during iteration` in CPython, since `add_offset` and `get_committable_offsets`/`mark_committed` run on different threads (main consumer thread vs. the dedicated commit thread) without a shared lock around the top-level containers.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 375, \"severity\": \"medium\", \"title\": \"No test coverage for partition revocation/reassignment (rebalance)\", \"category\": \"test_gap\", \"body\": \"None of the new tests in test_queue_consumer.py or the thread-queue-parallel tests added to tests/sentry/uptime/consumers/test_results_consumer.py exercise calling `create_with_partitions` more than once on the same `ResultsStrategyFactory`/`queue_pool`, or calling `close()`/`terminate()` on the returned `SimpleQueueProcessingStrategy` followed by a second `create_with_partitions` call (which is what happens on a real Kafka consumer group rebalance). This leaves the critical bug where `strategy.close()` kills the shared `FixedQueuePool` permanently (see queue_consumer.py close()/terminate()) completely uncovered by tests, even though rebalances are a normal and frequent occurrence in production Kafka consumers.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 253, \"severity\": \"low\", \"title\": \"Misleading docstring claiming backpressure that doesn't exist\", \"category\": \"doc_defect\", \"body\": \"The docstring of `SimpleQueueProcessingStrategy` (and similarly `FixedQueuePool`) states 'Natural backpressure when queues fill up' as a guaranteed property, but the underlying `queue.Queue` objects are created with no `maxsize`, so they never 'fill up' and no backpressure is ever applied to the Kafka consumer. This documentation is inaccurate and could mislead future maintainers into believing memory/backlog growth is bounded when it is not.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 335,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Shared FixedQueuePool is permanently destroyed by per-rebalance strategy close()/terminate()",
+   "body": "ResultsStrategyFactory creates a single `FixedQueuePool` instance once in `__init__` (result_consumer.py, inside `ResultsStrategyFactory.__init__`, `self.queue_pool = FixedQueuePool(...)`), intended to live for the lifetime of the consumer process and be reused across partition rebalances. However, `create_with_partitions` builds a brand-new `SimpleQueueProcessingStrategy` every time it is called (e.g. on every rebalance), and that strategy's `close()`/`terminate()` methods (queue_consumer.py lines 335-342) call `self.queue_pool.shutdown()`, which sets every worker thread's `shutdown` flag and shuts down every underlying `queue.Queue`. Arroyo calls `close()`/`terminate()` on the active strategy whenever partitions are revoked (which happens on every consumer group rebalance), and then calls `create_with_partitions` again for the new assignment. Because the factory still holds the same (now permanently dead) `queue_pool` object, the new strategy submits work items into queues whose worker threads have already exited, so no further messages are ever processed after the first rebalance - the consumer silently stalls without raising any error, with no new offsets being committed from that point forward."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Work queues are unbounded, so claimed back-pressure does not exist",
+   "body": "`FixedQueuePool.__init__` creates each `queue.Queue()` with no `maxsize` (line 185), and `submit()` (`work_queue.put(work_item)`) never blocks or applies any limit. The class docstrings for `FixedQueuePool` and `SimpleQueueProcessingStrategy` explicitly claim 'Natural backpressure when queues fill up,' but since the queues are unbounded, a single slow/stuck group (which this PR's description cites as the motivating problem) will cause its queue to grow without bound while the main consumer thread keeps accepting and enqueuing new messages. This can lead to unbounded memory growth (queued `WorkItem`s also retain the original `Message` object) and an ever-growing `OffsetTracker.all_offsets`/`outstanding` set, defeating the stated goal of avoiding backlog/parallelism problems."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 74,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Unsynchronized dict mutation/iteration race in OffsetTracker",
+   "body": "`OffsetTracker` protects each partition's offset *set* with a per-partition lock, but the outer dictionaries (`all_offsets`, `outstanding`, `last_committed`, `partition_locks`) have no lock guarding structural changes. `get_committable_offsets()` does `for partition in list(self.all_offsets.keys())` (line 74) while `add_offset()` (called from the consumer thread) can concurrently insert a brand-new partition key into the same defaultdict via `self.all_offsets[partition]`. Mutating a dict's size while another thread is iterating/snapshotting its keys can intermittently raise `RuntimeError: dictionary changed size during iteration` in CPython, since `add_offset` and `get_committable_offsets`/`mark_committed` run on different threads (main consumer thread vs. the dedicated commit thread) without a shared lock around the top-level containers."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 375,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test coverage for partition revocation/reassignment (rebalance)",
+   "body": "None of the new tests in test_queue_consumer.py or the thread-queue-parallel tests added to tests/sentry/uptime/consumers/test_results_consumer.py exercise calling `create_with_partitions` more than once on the same `ResultsStrategyFactory`/`queue_pool`, or calling `close()`/`terminate()` on the returned `SimpleQueueProcessingStrategy` followed by a second `create_with_partitions` call (which is what happens on a real Kafka consumer group rebalance). This leaves the critical bug where `strategy.close()` kills the shared `FixedQueuePool` permanently (see queue_consumer.py close()/terminate()) completely uncovered by tests, even though rebalances are a normal and frequent occurrence in production Kafka consumers."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 253,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Misleading docstring claiming backpressure that doesn't exist",
+   "body": "The docstring of `SimpleQueueProcessingStrategy` (and similarly `FixedQueuePool`) states 'Natural backpressure when queues fill up' as a guaranteed property, but the underlying `queue.Queue` objects are created with no `maxsize`, so they never 'fill up' and no backpressure is ever applied to the Kafka consumer. This documentation is inaccurate and could mislead future maintainers into believing memory/backlog growth is bounded when it is not."
+  }
+ ],
+ "finding_count": 5
+}

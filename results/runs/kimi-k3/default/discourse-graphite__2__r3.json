@@ -1,0 +1,138 @@
+{
+ "run_id": "kimi-k3__default__discourse-graphite__2__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "discourse-graphite__2",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/2",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:24:40Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 173648,
+  "sha": "e5fcbd838582ddf4",
+  "patch_only": [
+   "config/locales/client.en.yml",
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 47553,
+    "output": 17289,
+    "reasoning": 15874,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 636577,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6289,
+   "raw_usage": {
+    "completion_tokens": 17289,
+    "prompt_tokens": 47553,
+    "total_tokens": 64842,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 15874,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T12:24:40Z",
+   "first_chunk_ms": 8215,
+   "first_text_ms": 602172,
+   "response_id": "chatcmpl-6nitoxh5ixlfou3fg3gm3h7k5gthzdg6iqexh2pctauqmouvx62a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 47553,
+  "output": 17289,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 15874
+ },
+ "cost_reported": null,
+ "latency_ms": 636577,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"config/routes.rb\", \"line\": 440, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Topic unsubscribe mutates user state via an unprotected GET request\", \"body\": \"The new `topics#unsubscribe` action is routed as `GET /t/:slug/:topic_id/unsubscribe` and `GET /t/:topic_id/unsubscribe`, and it changes the current user's TopicUser notification level (demoting tracking/watching to regular, or muting) as a side effect of a plain GET. Rails does not verify CSRF tokens on GET requests, and the controller also skips `check_xhr` for this action, so any content that causes a logged-in user's browser to request that URL will silently change their subscription state. Concretely: an attacker can embed `<img src=\\\"https://forum.example.com/t/slug/123/unsubscribe\\\">` in a post, PM, or external page and every logged-in viewer gets muted/unsubscribed from topic 123. Additionally, corporate email gateways and security link-scanners that fetch URLs found in incoming mail will trigger the unsubscribe without the user ever clicking. The GET should render a confirmation page only, with the actual change performed via a POST/PUT (protected by the CSRF token) or via a signed one-click-unsubscribe token.\"}, {\"file\": \"app/controllers/topics_controller.rb\", \"line\": 107, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unsubscribe toggle is not idempotent \u2014 reloading the page changes state again\", \"body\": \"In `topics#unsubscribe`, the new level is computed by toggling off the current level: if `tu.notification_level > regular` it is set to `regular`, otherwise it is set to `muted`. Because the mutation runs on every GET of the unsubscribe URL, repeating the request keeps changing the user's state: a watching user is demoted to regular on first load and then fully muted if they simply refresh the confirmation page (or hit back/forward, or a prefetcher re-fetches the link). Meanwhile the page text says \\\"You will stop receiving notifications for \u2026\\\", which no longer matches the state the user actually ends up in after a reload. The action should set a deterministic target level (e.g., always mute, or always regular) or defer the change to an explicit form submission, so repeated visits are harmless.\"}, {\"file\": \"app/controllers/topics_controller.rb\", \"line\": 105, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unsubscribe crashes when no TopicUser row exists and bypasses TopicUser.change bookkeeping\", \"body\": \"`tu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])` can return nil (the user may have no row for that topic \u2014 e.g., it was never created or was removed), and the very next line dereferences `tu.notification_level`, producing a NoMethodError and a 500 instead of unsubscribing. Separately, assigning `notification_level` directly and calling `save!` skips what `TopicUser.change` does: it does not set `notifications_reason_id`/`notifications_changed_at` and does not publish the MessageBus `notification_level_change` event. Because `notifications_reason_id` remains NULL, the auto-track SQL in `TopicUser.update_last_read` (`when tu.notifications_reason_id is null and total_msecs_viewed > threshold then :tracking`) will silently flip the user back to tracking the next time they read posts in that topic, undoing their explicit unsubscribe, and other open browser tabs will show stale notification state. Use `TopicUser.change(current_user.id, topic_id, notification_level: ...)`, which upserts safely (no nil crash), records the reason, and broadcasts the change.\"}, {\"file\": \"app/assets/javascripts/discourse/routes/topic-unsubscribe.js.es6\", \"line\": 4, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Client-side navigation to /t/:slug/:id/unsubscribe claims the user was unsubscribed without unsubscribing them\", \"body\": \"The actual unsubscribe only happens server-side in `topics#unsubscribe` during a full page load. The new Ember route's model hook merely loads the topic (`PostStream.loadTopicView`) and never calls any unsubscribe endpoint, yet its template states \\\"You will stop receiving notifications for <topic>\\\". Discourse intercepts clicks on same-origin links (for example an unsubscribe URL posted inside a topic or PM) and transitions client-side without a server round-trip, so a user arriving that way sees a message asserting they were unsubscribed when nothing changed \u2014 the opposite result from opening the same URL in a new tab, which does unsubscribe them. The route should either perform the change (e.g., via the notifications endpoint) or the copy should not claim notifications have stopped.\"}, {\"file\": \"app/controllers/topics_controller.rb\", \"line\": 98, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No request specs for the new state-changing topics#unsubscribe endpoint\", \"body\": \"This PR adds a new public, state-changing controller action plus routes, but the only spec touched is `spec/components/email/message_builder_spec.rb` (passing an extra `unsubscribe_url` option). There is no controller/request coverage for: unsubscribing from each starting level (watching/tracking/regular/muted), behavior when no TopicUser row exists, the 301 slug redirect, or the login requirement. Given the non-idempotent toggle logic and the nil-handling risk in this action, the endpoint needs request specs before merge.\"}, {\"file\": \"config/locales/server.en.yml\", \"line\": 1852, \"severity\": \"low\", \"category\": \"api\", \"title\": \"unsubscribe_link now requires an %{unsubscribe_url} interpolation argument, breaking other add_unsubscribe_link callers\", \"body\": \"The default `unsubscribe_link` text now embeds `%{unsubscribe_url}`. `Email::MessageBuilder#body` and `#html_part` render it via `I18n.t('unsubscribe_link', template_args)` for every email built with `add_unsubscribe_link: true`. All core notification mailers were updated to pass `unsubscribe_url`, but any other existing or future caller that sets `add_unsubscribe_link: true` without also passing `unsubscribe_url` (e.g., plugin mailers) will now raise `I18n::MissingInterpolationArgument` and fail to send, where previously it worked. Consider putting the per-topic sentence in a separate optional translation key or defaulting `unsubscribe_url` (e.g., to the user preferences URL) inside MessageBuilder.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "config/routes.rb",
+   "line": 440,
+   "severity": "high",
+   "category": "security",
+   "title": "Topic unsubscribe mutates user state via an unprotected GET request",
+   "body": "The new `topics#unsubscribe` action is routed as `GET /t/:slug/:topic_id/unsubscribe` and `GET /t/:topic_id/unsubscribe`, and it changes the current user's TopicUser notification level (demoting tracking/watching to regular, or muting) as a side effect of a plain GET. Rails does not verify CSRF tokens on GET requests, and the controller also skips `check_xhr` for this action, so any content that causes a logged-in user's browser to request that URL will silently change their subscription state. Concretely: an attacker can embed `<img src=\"https://forum.example.com/t/slug/123/unsubscribe\">` in a post, PM, or external page and every logged-in viewer gets muted/unsubscribed from topic 123. Additionally, corporate email gateways and security link-scanners that fetch URLs found in incoming mail will trigger the unsubscribe without the user ever clicking. The GET should render a confirmation page only, with the actual change performed via a POST/PUT (protected by the CSRF token) or via a signed one-click-unsubscribe token."
+  },
+  {
+   "index": 1,
+   "file": "app/controllers/topics_controller.rb",
+   "line": 107,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unsubscribe toggle is not idempotent \u2014 reloading the page changes state again",
+   "body": "In `topics#unsubscribe`, the new level is computed by toggling off the current level: if `tu.notification_level > regular` it is set to `regular`, otherwise it is set to `muted`. Because the mutation runs on every GET of the unsubscribe URL, repeating the request keeps changing the user's state: a watching user is demoted to regular on first load and then fully muted if they simply refresh the confirmation page (or hit back/forward, or a prefetcher re-fetches the link). Meanwhile the page text says \"You will stop receiving notifications for \u2026\", which no longer matches the state the user actually ends up in after a reload. The action should set a deterministic target level (e.g., always mute, or always regular) or defer the change to an explicit form submission, so repeated visits are harmless."
+  },
+  {
+   "index": 2,
+   "file": "app/controllers/topics_controller.rb",
+   "line": 105,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unsubscribe crashes when no TopicUser row exists and bypasses TopicUser.change bookkeeping",
+   "body": "`tu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])` can return nil (the user may have no row for that topic \u2014 e.g., it was never created or was removed), and the very next line dereferences `tu.notification_level`, producing a NoMethodError and a 500 instead of unsubscribing. Separately, assigning `notification_level` directly and calling `save!` skips what `TopicUser.change` does: it does not set `notifications_reason_id`/`notifications_changed_at` and does not publish the MessageBus `notification_level_change` event. Because `notifications_reason_id` remains NULL, the auto-track SQL in `TopicUser.update_last_read` (`when tu.notifications_reason_id is null and total_msecs_viewed > threshold then :tracking`) will silently flip the user back to tracking the next time they read posts in that topic, undoing their explicit unsubscribe, and other open browser tabs will show stale notification state. Use `TopicUser.change(current_user.id, topic_id, notification_level: ...)`, which upserts safely (no nil crash), records the reason, and broadcasts the change."
+  },
+  {
+   "index": 3,
+   "file": "app/assets/javascripts/discourse/routes/topic-unsubscribe.js.es6",
+   "line": 4,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Client-side navigation to /t/:slug/:id/unsubscribe claims the user was unsubscribed without unsubscribing them",
+   "body": "The actual unsubscribe only happens server-side in `topics#unsubscribe` during a full page load. The new Ember route's model hook merely loads the topic (`PostStream.loadTopicView`) and never calls any unsubscribe endpoint, yet its template states \"You will stop receiving notifications for <topic>\". Discourse intercepts clicks on same-origin links (for example an unsubscribe URL posted inside a topic or PM) and transitions client-side without a server round-trip, so a user arriving that way sees a message asserting they were unsubscribed when nothing changed \u2014 the opposite result from opening the same URL in a new tab, which does unsubscribe them. The route should either perform the change (e.g., via the notifications endpoint) or the copy should not claim notifications have stopped."
+  },
+  {
+   "index": 4,
+   "file": "app/controllers/topics_controller.rb",
+   "line": 98,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No request specs for the new state-changing topics#unsubscribe endpoint",
+   "body": "This PR adds a new public, state-changing controller action plus routes, but the only spec touched is `spec/components/email/message_builder_spec.rb` (passing an extra `unsubscribe_url` option). There is no controller/request coverage for: unsubscribing from each starting level (watching/tracking/regular/muted), behavior when no TopicUser row exists, the 301 slug redirect, or the login requirement. Given the non-idempotent toggle logic and the nil-handling risk in this action, the endpoint needs request specs before merge."
+  },
+  {
+   "index": 5,
+   "file": "config/locales/server.en.yml",
+   "line": 1852,
+   "severity": "low",
+   "category": "api",
+   "title": "unsubscribe_link now requires an %{unsubscribe_url} interpolation argument, breaking other add_unsubscribe_link callers",
+   "body": "The default `unsubscribe_link` text now embeds `%{unsubscribe_url}`. `Email::MessageBuilder#body` and `#html_part` render it via `I18n.t('unsubscribe_link', template_args)` for every email built with `add_unsubscribe_link: true`. All core notification mailers were updated to pass `unsubscribe_url`, but any other existing or future caller that sets `add_unsubscribe_link: true` without also passing `unsubscribe_url` (e.g., plugin mailers) will now raise `I18n::MissingInterpolationArgument` and fail to send, where previously it worked. Consider putting the per-topic sentence in a separate optional translation key or defaulting `unsubscribe_url` (e.g., to the user preferences URL) inside MessageBuilder."
+  }
+ ],
+ "finding_count": 6
+}

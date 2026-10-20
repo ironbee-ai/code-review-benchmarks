@@ -1,0 +1,153 @@
+{
+ "run_id": "gemini-4-argon__xhigh__sentry__95633__r2",
+ "model_id": "gemini-4-argon",
+ "family": "google",
+ "route": "openrouter",
+ "provider_model": "google/gemini-4-argon",
+ "provider_pin": {
+  "order": [
+   "google-ai-studio"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:12:47Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 40505,
+    "output": 22302,
+    "reasoning": 20708,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.30403,
+   "latency_ms": 245362,
+   "finish_reason": "stop",
+   "served_model": "google/gemini-4-argon",
+   "provider_served": "Google AI Studio",
+   "http_attempts": 1,
+   "text_chars": 6039,
+   "raw_usage": {
+    "completion_tokens": 22302,
+    "prompt_tokens": 40505,
+    "total_tokens": 62807,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 20708,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.30403,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.30403,
+     "upstream_inference_prompt_cost": 0.08101,
+     "upstream_inference_completions_cost": 0.22302
+    }
+   },
+   "started_at": "2026-10-17T21:12:47Z",
+   "first_chunk_ms": 5288,
+   "first_text_ms": 227934,
+   "response_id": "gen-1792271567-1CHXcPgVKRTn9gvyco5N",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 40505,
+  "output": 22302,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 20708
+ },
+ "cost_reported": 0.30403,
+ "latency_ms": 245362,
+ "served_model": "google/gemini-4-argon",
+ "provider_served": "Google AI Studio",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 254, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"Reusing shut-down FixedQueuePool across rebalances silently drops all messages and commits their offsets\", \"body\": \"`ResultsStrategyFactory.__init__` creates a single `self.queue_pool = FixedQueuePool(...)` instance, which `create_thread_queue_parallel_worker` passes to `SimpleQueueProcessingStrategy`. When Arroyo's `StreamProcessor` rebalances partitions, it calls ` close()`/`join()` (or `terminate()`) on the active strategy and then calls `factory.create_with_partitions(...)` for the new assignment. Because `SimpleQueueProcessingStrategy.close()` and `terminate()` call `self.queue_pool.shutdown()`, all queues in `self.queue_pool` are permanently shut down (`q.shutdown()`) and all worker threads exit. On the subsequent `create_with_partitions` call, the factory reuses the same shut-down `self.queue_pool` (along with its stale `OffsetTracker` state). From that point on, every `work_queue.put(work_item)` call in `submit()` raises `queue.ShutDown` (a subclass of `Exception`), which `SimpleQueueProcessingStrategy.submit()` catches in `except Exception:` (lines 317-325 of `queue_consumer.py`), logs, and marks as completed via `add_offset` + `complete_offset`\u2014causing all messages after a rebalance to be dropped while their offsets are committed to Kafka.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 86, \"severity\": \"high\", \"category\": \"data\", \"title\": \"OffsetTracker.get_committable_offsets commits past offset gaps on the cycle after mark_committed\", \"body\": \"In `OffsetTracker.get_committable_offsets()`, `start` is computed as `max(last_committed + 1, min_offset)`. Meanwhile, `mark_committed()` removes all offsets `<= offset` from `self.all_offsets[partition]`. If offsets `100`, `102`, and `103` finish while `101` has not been seen yet, the first call to `get_committable_offsets()` returns `100` (because `100` is in `all_offsets`, so `min_offset == 100`) and `mark_committed(partition, 100)` removes `100`, leaving `all_offsets = {102, 103}`. On the very next commit tick (1 second later, with `101` still missing), `min_offset` is now `102`, so `start = max(101, 102) = 102`, and the loop commits offset `103`, skipping right past the uncommitted gap at `101`. Once a partition has a `last_committed` value, `start` must be `last_committed + 1` rather than `max(last_committed + 1, min_offset)`.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 231, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Shutdown drops queued items without draining and stops the commit thread before workers finish\", \"body\": \"There are two ordering bugs in the shutdown sequence:\\n\\n1. `FixedQueuePool.shutdown()` sets `worker.shutdown = True` on all workers before calling `q.shutdown(immediate=False)`. Because `OrderedQueueWorker.run()` checks `while not self.shutdown:` on each loop iteration, workers exit as soon as they finish their current in-flight item instead of draining remaining queued items until `work_queue.get()` raises `queue.ShutDown`.\\n2. `SimpleQueueProcessingStrategy.close()` sets `self.shutdown_event` and joins `self.commit_thread` *before* calling `self.queue_pool.shutdown()`, and never performs a final commit afterwards. Any offsets completed while workers finish in-flight items during shutdown (or after the last commit loop iteration) are never committed.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Queues are unbounded and never apply backpressure to the Kafka consumer\", \"body\": \"`SimpleQueueProcessingStrategy`'s docstring states that it provides \\\"Natural backpressure when queues fill up\\\", but `FixedQueuePool.__init__` creates each queue with `queue.Queue()` (`maxsize=0`, i.e. unbounded) and `SimpleQueueProcessingStrategy.submit()` never raises Arroyo's `MessageRejected`. If worker threads fall behind Kafka polling (e.g. due to slow database/network calls), the consumer thread will buffer an unbounded number of work items\u2014including the unused raw `WorkItem.message` payload\u2014in memory.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 322, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts that offsets were not committed and leaks commit threads\", \"body\": \"`test_thread_queue_parallel_error_handling` states in its docstring: \\\"Test that errors in processing don't block offset commits for other messages.\\\" Because `OrderedQueueWorker.run()` calls `complete_offset` in its `finally` block, both offset 100 (which raised an exception) and offset 101 (which succeeded) are marked complete and are committable. However, the test exits its wait loop after ~0.2s (before `SimpleQueueProcessingStrategy._commit_loop`'s 1.0s sleep elapses) and asserts `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`\u2014the opposite of the intended behavior, and flaky if the test takes >= 1s. Additionally, all of the `test_thread_queue_parallel*` tests in this file only call `factory.shutdown()` and never call `consumer.close()`, leaving `consumer.commit_thread` running in the background for the rest of the test process.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Race condition in test_stats_reporting when workers drain items before get_stats() runs\", \"body\": \"In `TestFixedQueuePool.test_stats_reporting`, 3 worker threads are already running a fast in-memory callback (`result_processor` only appends to a list) while the test loop submits 10 items. If the worker threads dequeue all 10 items before `stats = self.pool.get_stats()` executes on line 199, `stats[\\\"total_items\\\"]` will be `0` and `assert stats[\\\"total_items\\\"] > 0` will fail intermittently.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 254,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Reusing shut-down FixedQueuePool across rebalances silently drops all messages and commits their offsets",
+   "body": "`ResultsStrategyFactory.__init__` creates a single `self.queue_pool = FixedQueuePool(...)` instance, which `create_thread_queue_parallel_worker` passes to `SimpleQueueProcessingStrategy`. When Arroyo's `StreamProcessor` rebalances partitions, it calls ` close()`/`join()` (or `terminate()`) on the active strategy and then calls `factory.create_with_partitions(...)` for the new assignment. Because `SimpleQueueProcessingStrategy.close()` and `terminate()` call `self.queue_pool.shutdown()`, all queues in `self.queue_pool` are permanently shut down (`q.shutdown()`) and all worker threads exit. On the subsequent `create_with_partitions` call, the factory reuses the same shut-down `self.queue_pool` (along with its stale `OffsetTracker` state). From that point on, every `work_queue.put(work_item)` call in `submit()` raises `queue.ShutDown` (a subclass of `Exception`), which `SimpleQueueProcessingStrategy.submit()` catches in `except Exception:` (lines 317-325 of `queue_consumer.py`), logs, and marks as completed via `add_offset` + `complete_offset`\u2014causing all messages after a rebalance to be dropped while their offsets are committed to Kafka."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 86,
+   "severity": "high",
+   "category": "data",
+   "title": "OffsetTracker.get_committable_offsets commits past offset gaps on the cycle after mark_committed",
+   "body": "In `OffsetTracker.get_committable_offsets()`, `start` is computed as `max(last_committed + 1, min_offset)`. Meanwhile, `mark_committed()` removes all offsets `<= offset` from `self.all_offsets[partition]`. If offsets `100`, `102`, and `103` finish while `101` has not been seen yet, the first call to `get_committable_offsets()` returns `100` (because `100` is in `all_offsets`, so `min_offset == 100`) and `mark_committed(partition, 100)` removes `100`, leaving `all_offsets = {102, 103}`. On the very next commit tick (1 second later, with `101` still missing), `min_offset` is now `102`, so `start = max(101, 102) = 102`, and the loop commits offset `103`, skipping right past the uncommitted gap at `101`. Once a partition has a `last_committed` value, `start` must be `last_committed + 1` rather than `max(last_committed + 1, min_offset)`."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 231,
+   "severity": "high",
+   "category": "bug",
+   "title": "Shutdown drops queued items without draining and stops the commit thread before workers finish",
+   "body": "There are two ordering bugs in the shutdown sequence:\n\n1. `FixedQueuePool.shutdown()` sets `worker.shutdown = True` on all workers before calling `q.shutdown(immediate=False)`. Because `OrderedQueueWorker.run()` checks `while not self.shutdown:` on each loop iteration, workers exit as soon as they finish their current in-flight item instead of draining remaining queued items until `work_queue.get()` raises `queue.ShutDown`.\n2. `SimpleQueueProcessingStrategy.close()` sets `self.shutdown_event` and joins `self.commit_thread` *before* calling `self.queue_pool.shutdown()`, and never performs a final commit afterwards. Any offsets completed while workers finish in-flight items during shutdown (or after the last commit loop iteration) are never committed."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Queues are unbounded and never apply backpressure to the Kafka consumer",
+   "body": "`SimpleQueueProcessingStrategy`'s docstring states that it provides \"Natural backpressure when queues fill up\", but `FixedQueuePool.__init__` creates each queue with `queue.Queue()` (`maxsize=0`, i.e. unbounded) and `SimpleQueueProcessingStrategy.submit()` never raises Arroyo's `MessageRejected`. If worker threads fall behind Kafka polling (e.g. due to slow database/network calls), the consumer thread will buffer an unbounded number of work items\u2014including the unused raw `WorkItem.message` payload\u2014in memory."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 322,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts that offsets were not committed and leaks commit threads",
+   "body": "`test_thread_queue_parallel_error_handling` states in its docstring: \"Test that errors in processing don't block offset commits for other messages.\" Because `OrderedQueueWorker.run()` calls `complete_offset` in its `finally` block, both offset 100 (which raised an exception) and offset 101 (which succeeded) are marked complete and are committable. However, the test exits its wait loop after ~0.2s (before `SimpleQueueProcessingStrategy._commit_loop`'s 1.0s sleep elapses) and asserts `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`\u2014the opposite of the intended behavior, and flaky if the test takes >= 1s. Additionally, all of the `test_thread_queue_parallel*` tests in this file only call `factory.shutdown()` and never call `consumer.close()`, leaving `consumer.commit_thread` running in the background for the rest of the test process."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 199,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Race condition in test_stats_reporting when workers drain items before get_stats() runs",
+   "body": "In `TestFixedQueuePool.test_stats_reporting`, 3 worker threads are already running a fast in-memory callback (`result_processor` only appends to a list) while the test loop submits 10 items. If the worker threads dequeue all 10 items before `stats = self.pool.get_stats()` executes on line 199, `stats[\"total_items\"]` will be `0` and `assert stats[\"total_items\"] > 0` will fail intermittently."
+  }
+ ],
+ "finding_count": 6
+}

@@ -1,0 +1,147 @@
+{
+ "run_id": "minimax-m3__default__cal.com__8330__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__8330",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8330",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:59:07Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 98948,
+  "sha": "ea327e75345e8def",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 27780,
+    "output": 55973,
+    "reasoning": 54447,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.07552926,
+   "latency_ms": 223973,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6386,
+   "raw_usage": {
+    "completion_tokens": 55973,
+    "prompt_tokens": 28241,
+    "total_tokens": 84214,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 54447,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.07552926,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.07552926,
+     "upstream_inference_prompt_cost": 0.00836166,
+     "upstream_inference_completions_cost": 0.0671676
+    }
+   },
+   "started_at": "2026-10-17T20:59:07Z",
+   "first_chunk_ms": 1957,
+   "first_text_ms": 216968,
+   "response_id": "gen-1792270747-RCS01IakR0xh9ViBVgLJ",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 27780,
+  "output": 55973,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 54447
+ },
+ "cost_reported": 0.07552926,
+ "latency_ms": 223973,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to analyze the changes for bugs, especially the new logic added in `checkIfIsAvailable` and the date override timezone handling.\n\nKey issues I found:\n\n1. **In `checkIfIsAvailable`**: The `end` variable on line 142 is identical to `start`, missing `eventLength`.\n\n2. **In `checkIfIsAvailable`**: `slotStartTime = time.utc()` converts to UTC, but is compared with working hours and date overrides that are in organizer's timezone.\n\n3. **Date comparison inconsistency**: The `format(\"YYYY MM DD\")` uses system's local timezone, giving different results depending on the server's timezone.\n\n4. **Missing fixed-host test**: The PR's stated primary fix (fixed hosts in round-robin) isn't covered by the new test.\n\n```json\n{\"findings\": [{\"file\": \"packages/trpc/server/routers/viewer/slots.ts\", \"line\": 142, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Working hours check uses identical start/end, ignoring eventLength\", \"body\": \"In checkIfIsAvailable the local variables `start` and `end` are both set to `slotStartTime.hour() * 60 + slotStartTime.minute()`. The intent is clearly to compare the slot's start and end (start + eventLength) against workingHour.startTime/endTime, but because `end` is identical to `start`, the slot's duration is never checked. A slot that begins inside the working window but extends past workingHour.endTime (e.g. a 60-min event at 16:30 with working hours 9:00-17:00, ending at 17:30) will be accepted as within working hours. This directly breaks the fixed-host round-robin fix: fixed hosts can be booked for slots that run past the end of their working hours.\"}, {\"file\": \"packages/trpc/server/routers/viewer/slots.ts\", \"line\": 100, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"checkIfIsAvailable compares UTC slot times against organizer's timezone values\", \"body\": \"slotStartTime is computed as `time.utc()`, putting it in UTC mode, while workingHour.days/startTime/endTime and the override's start/end are in the organizer's timezone. The day-of-week test `workingHour.days.includes(slotStartTime.day())` therefore compares a UTC day against the organizer's days array, and `slotStartTime.hour()/minute()` return UTC values that are compared against minutes-since-midnight in the organizer's tz. For a host in IST (+5:30), a slot at 14:00 IST (08:30 UTC) is in workingHour.days for Monday in IST but slotStartTime.day() reports the UTC day, and slotStartTime.hour() returns 8 which is less than workingHour.startTime=540 (9:00 IST) - the slot is wrongly marked outside working hours. Same mismatch affects the override range check, so the date-override fix is broken for any non-UTC host.\"}, {\"file\": \"packages/trpc/server/routers/viewer/slots.ts\", \"line\": 110, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Date comparison uses system local timezone, giving inconsistent results across servers\", \"body\": \"Both sides of the comparison `dayjs(date.start).add(utcOffset, \\\"minutes\\\").format(\\\"YYYY MM DD\\\") === slotStartTime.format(\\\"YYYY MM DD\\\")` rely on the dayjs default (system local) timezone. When the server's timezone differs from organizerTimeZone, a slot that falls on the next day in the organizer's tz can still format to the same date string as the override on a UTC server, causing an incorrect match. The check should explicitly format in the organizer's timezone (e.g. `.tz(organizerTimeZone).format(...)` on both sides).\"}, {\"file\": \"packages/trpc/server/routers/viewer/slots.ts\", \"line\": 107, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"checkIfIsAvailable ignores dateOverride.timeZone added by the new TimeRange type\", \"body\": \"The PR adds `timeZone?: string` to the TimeRange type, and the router populates it from availability.timeZone (and now respects each override's own timeZone if set). But checkIfIsAvailable only takes `organizerTimeZone` into account and the `dateOverrides` parameter type is declared as `{ start: Date; end: Date; }[]` with no timeZone field, so the override's own timeZone is inaccessible. For overrides whose stored timeZone differs from the host's current timeZone (e.g. user created an override while travelling), `dayjs.tz(date.start, organizerTimeZone)` will compute the wrong utcOffset and the override will be matched against the wrong time range. The type should be widened to include `timeZone?: string` and the body should prefer `date.timeZone ?? organizerTimeZone`.\"}, {\"file\": \"apps/web/test/lib/getSchedule.test.ts\", \"line\": 742, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test for the fixed-host round-robin date override scenario the PR claims to fix\", \"body\": \"The PR description and the linked issues (#8207, #8329) state that the bug being fixed is that date overrides on fixed hosts were not honoured for round-robin events. The only test added in this PR extends the existing single-user test with a second timezone check; it does not create a round-robin event type with a fixed host and a non-fixed host, set a date override on the fixed host, and assert that slots are restricted to times when the fixed host is available. Without such a test the primary fix is unverified and regressions in checkIfIsAvailable (such as the UTC/organizer-tz mismatch above) will not be caught.\"}, {\"file\": \"packages/lib/slots.ts\", \"line\": 212, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"override.timeZone is dereferenced without a fallback, despite being optional in TimeRange\", \"body\": \"The new code calls `dayjs(override.start.toString()).tz(override.timeZone).utcOffset()`. The TimeRange type declares `timeZone?: string`, and the only place in the codebase that supplies it is the trpc router (`timeZone: availability.timeZone`). If any other caller of `getSlots` (or legacy date-override rows that don't carry timeZone through whatever fetcher is used) supplies an override without timeZone, `.tz(undefined)` will fall back to the system timezone (or throw depending on dayjs-tz behaviour) and the conversion `offset = inviteeUtcOffset - organizerUtcOffset` will be wrong for every override on that event type, silently producing bogus slots. A safe fallback like `override.timeZone ?? timeZone` or requiring callers to always provide it would prevent this. The same applies to the new `WorkingHours` import and the call signature in the router, which should document or enforce the timezone expectation.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 142,
+   "severity": "high",
+   "category": "bug",
+   "title": "Working hours check uses identical start/end, ignoring eventLength",
+   "body": "In checkIfIsAvailable the local variables `start` and `end` are both set to `slotStartTime.hour() * 60 + slotStartTime.minute()`. The intent is clearly to compare the slot's start and end (start + eventLength) against workingHour.startTime/endTime, but because `end` is identical to `start`, the slot's duration is never checked. A slot that begins inside the working window but extends past workingHour.endTime (e.g. a 60-min event at 16:30 with working hours 9:00-17:00, ending at 17:30) will be accepted as within working hours. This directly breaks the fixed-host round-robin fix: fixed hosts can be booked for slots that run past the end of their working hours."
+  },
+  {
+   "index": 1,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 100,
+   "severity": "high",
+   "category": "bug",
+   "title": "checkIfIsAvailable compares UTC slot times against organizer's timezone values",
+   "body": "slotStartTime is computed as `time.utc()`, putting it in UTC mode, while workingHour.days/startTime/endTime and the override's start/end are in the organizer's timezone. The day-of-week test `workingHour.days.includes(slotStartTime.day())` therefore compares a UTC day against the organizer's days array, and `slotStartTime.hour()/minute()` return UTC values that are compared against minutes-since-midnight in the organizer's tz. For a host in IST (+5:30), a slot at 14:00 IST (08:30 UTC) is in workingHour.days for Monday in IST but slotStartTime.day() reports the UTC day, and slotStartTime.hour() returns 8 which is less than workingHour.startTime=540 (9:00 IST) - the slot is wrongly marked outside working hours. Same mismatch affects the override range check, so the date-override fix is broken for any non-UTC host."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 110,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Date comparison uses system local timezone, giving inconsistent results across servers",
+   "body": "Both sides of the comparison `dayjs(date.start).add(utcOffset, \"minutes\").format(\"YYYY MM DD\") === slotStartTime.format(\"YYYY MM DD\")` rely on the dayjs default (system local) timezone. When the server's timezone differs from organizerTimeZone, a slot that falls on the next day in the organizer's tz can still format to the same date string as the override on a UTC server, causing an incorrect match. The check should explicitly format in the organizer's timezone (e.g. `.tz(organizerTimeZone).format(...)` on both sides)."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 107,
+   "severity": "medium",
+   "category": "bug",
+   "title": "checkIfIsAvailable ignores dateOverride.timeZone added by the new TimeRange type",
+   "body": "The PR adds `timeZone?: string` to the TimeRange type, and the router populates it from availability.timeZone (and now respects each override's own timeZone if set). But checkIfIsAvailable only takes `organizerTimeZone` into account and the `dateOverrides` parameter type is declared as `{ start: Date; end: Date; }[]` with no timeZone field, so the override's own timeZone is inaccessible. For overrides whose stored timeZone differs from the host's current timeZone (e.g. user created an override while travelling), `dayjs.tz(date.start, organizerTimeZone)` will compute the wrong utcOffset and the override will be matched against the wrong time range. The type should be widened to include `timeZone?: string` and the body should prefer `date.timeZone ?? organizerTimeZone`."
+  },
+  {
+   "index": 4,
+   "file": "apps/web/test/lib/getSchedule.test.ts",
+   "line": 742,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test for the fixed-host round-robin date override scenario the PR claims to fix",
+   "body": "The PR description and the linked issues (#8207, #8329) state that the bug being fixed is that date overrides on fixed hosts were not honoured for round-robin events. The only test added in this PR extends the existing single-user test with a second timezone check; it does not create a round-robin event type with a fixed host and a non-fixed host, set a date override on the fixed host, and assert that slots are restricted to times when the fixed host is available. Without such a test the primary fix is unverified and regressions in checkIfIsAvailable (such as the UTC/organizer-tz mismatch above) will not be caught."
+  },
+  {
+   "index": 5,
+   "file": "packages/lib/slots.ts",
+   "line": 212,
+   "severity": "medium",
+   "category": "data",
+   "title": "override.timeZone is dereferenced without a fallback, despite being optional in TimeRange",
+   "body": "The new code calls `dayjs(override.start.toString()).tz(override.timeZone).utcOffset()`. The TimeRange type declares `timeZone?: string`, and the only place in the codebase that supplies it is the trpc router (`timeZone: availability.timeZone`). If any other caller of `getSlots` (or legacy date-override rows that don't carry timeZone through whatever fetcher is used) supplies an override without timeZone, `.tz(undefined)` will fall back to the system timezone (or throw depending on dayjs-tz behaviour) and the conversion `offset = inviteeUtcOffset - organizerUtcOffset` will be wrong for every override on that event type, silently producing bogus slots. A safe fallback like `override.timeZone ?? timeZone` or requiring callers to always provide it would prevent this. The same applies to the new `WorkingHours` import and the call signature in the router, which should document or enforce the timezone expectation."
+  }
+ ],
+ "finding_count": 6
+}

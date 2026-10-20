@@ -1,0 +1,158 @@
+{
+ "run_id": "minimax-m3__default__grafana__79265__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:58:26Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29947,
+    "output": 16308,
+    "reasoning": 14957,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02856138,
+   "latency_ms": 66142,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6029,
+   "raw_usage": {
+    "completion_tokens": 16308,
+    "prompt_tokens": 30075,
+    "total_tokens": 46383,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 14957,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.02856138,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02856138,
+     "upstream_inference_prompt_cost": 0.00899178,
+     "upstream_inference_completions_cost": 0.0195696
+    }
+   },
+   "started_at": "2026-10-17T11:58:26Z",
+   "first_chunk_ms": 2372,
+   "first_text_ms": 60664,
+   "response_id": "gen-1792238307-eNwogr6J02im9n1Lanl8",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29947,
+  "output": 16308,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 14957
+ },
+ "cost_reported": 0.02856138,
+ "latency_ms": 66142,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/impl.go\",\n      \"line\": 87,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Local cache set before DB call lets user bypass device limit on retry\",\n      \"body\": \"In tagDeviceUI the local cache entry is written *before* a.anonStore.CreateOrUpdateDevice is invoked, and the same method returns nil on a subsequent cache hit without ever touching the database. Once the first CreateOrUpdateDevice returns ErrDeviceLimitReached, the cache still holds the key, so the very next request from the same device (within the 29 minute TTL) returns nil from tagDeviceUI, TagDevice returns nil, and Anonymous.Authenticate falls through to the success branch and admits the user even though they were never persisted to anon_device. In other words the device_limit enforcement only blocks the first attempt and is silently bypassed from then on. The cache write must be moved to after a successful CreateOrUpdateDevice, or only set on success.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 109,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"TOCTOU race between CountDevices and the INSERT in CreateOrUpdateDevice\",\n      \"body\": \"CreateOrUpdateDevice reads SELECT COUNT(*) and then conditionally issues an INSERT ... ON CONFLICT DO UPDATE, with no transaction or row lock around the pair. Two concurrent anonymous auths can both observe count == deviceLimit-1 and both succeed at the INSERT, leaving N+1 rows. With a small device_limit and any concurrent burst the advertised cap is silently exceeded. The check and the insert need to be done atomically (e.g. SERIALIZABLE transaction, SELECT ... FOR UPDATE on a sentinel row, or push the cap into a single INSERT ... WHERE (SELECT COUNT(*)) < ?).\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/client.go\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"perf\",\n      \"title\": \"Anonymous authentication now blocks on a DB write per request\",\n      \"body\": \"The previous implementation did the device tagging inside a goroutine with its own context.WithTimeout(context.Background(), timeoutTag), so anonymous auth never paid the cost of the INSERT/UPDATE. The new code calls a.anonDeviceService.TagDevice synchronously on the request context. Every anonymous request now waits on a database round trip (and a COUNT(*) when device_limit > 0) before issuing the authn.Identity, which is a clear latency regression under load. Consider preserving the async path for the happy case and only awaiting the result when the limit is actually close to being reached, or returning ErrDeviceLimitReached asynchronously.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/client.go\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Lost panic recovery on the synchronous tagging path\",\n      \"body\": \"The old goroutine wrapped TagDevice in defer recover(){...} so a panic in the device tagging code only produced a log warning. The new synchronous call has no recovery, so any panic from a.anonDeviceService.TagDevice (or anything it calls) will now propagate up through Anonymous.Authenticate into the authn pipeline and crash the request handler. The recover() needs to be restored (e.g. with a named return) so a tagging panic cannot take down an anonymous auth request.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 78,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"updateDevice silently locks out devices older than the 30 day window\",\n      \"body\": \"The UPDATE statement only matches rows whose updated_at is BETWEEN (new UpdatedAt - anonymousDeviceExpiration) AND (new UpdatedAt + time.Minute). Devices that are older than 30 days but younger than the 61 day cleanup threshold still occupy a row but never count toward CountDevices and never match this WHERE. If the limit is reached (by fresh devices) and a previously active user returns after ~30 days, they hit ErrDeviceLimitReached even though they used to have a valid device, and there is no way for them to renew their slot until the cleanup job happens to run. The WHERE should probably match any existing row with the given device_id (or at least include the stale window) so users can refresh an old device instead of being permanently locked out.\"\n    },\n    {\n      \"file\": \"pkg/setting/setting.go\",\n      \"line\": 1649,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"device_limit setting is parsed but not documented anywhere\",\n      \"body\": \"cfg.AnonymousDeviceLimit is now read from auth.anonymous.device_limit, but the diff does not add the new key to the conf.ini spec file, the sample ini, or any docs page. Operators have no way to learn the option exists, what value 0 means (it disables the limit), or how the 30 day window interacts with the cap. Without documentation this feature is effectively invisible and any default a maintainer intends to ship will not be communicated.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\",\n      \"line\": 51,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test exercises concurrent requests against the device limit\",\n      \"body\": \"TestIntegrationBeyondDeviceLimit only checks the single threaded flow: insert one device, then expect the second CreateOrUpdateDevice to return ErrDeviceLimitReached. It does not exercise the concurrent case that the new TOCTOU window in CreateOrUpdateDevice is most likely to fail in, and it does not exercise AnonDeviceService end to end (so the cache-bypass bug described in impl.go goes undetected). A goroutine based test that fans out more than device_limit parallel CreateOrUpdateDevice calls (and one that drives TagDevice through the service to verify the Authenticate behavior on limit hit) is needed.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Local cache set before DB call lets user bypass device limit on retry",
+   "body": "In tagDeviceUI the local cache entry is written *before* a.anonStore.CreateOrUpdateDevice is invoked, and the same method returns nil on a subsequent cache hit without ever touching the database. Once the first CreateOrUpdateDevice returns ErrDeviceLimitReached, the cache still holds the key, so the very next request from the same device (within the 29 minute TTL) returns nil from tagDeviceUI, TagDevice returns nil, and Anonymous.Authenticate falls through to the success branch and admits the user even though they were never persisted to anon_device. In other words the device_limit enforcement only blocks the first attempt and is silently bypassed from then on. The cache write must be moved to after a successful CreateOrUpdateDevice, or only set on success."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TOCTOU race between CountDevices and the INSERT in CreateOrUpdateDevice",
+   "body": "CreateOrUpdateDevice reads SELECT COUNT(*) and then conditionally issues an INSERT ... ON CONFLICT DO UPDATE, with no transaction or row lock around the pair. Two concurrent anonymous auths can both observe count == deviceLimit-1 and both succeed at the INSERT, leaving N+1 rows. With a small device_limit and any concurrent burst the advertised cap is silently exceeded. The check and the insert need to be done atomically (e.g. SERIALIZABLE transaction, SELECT ... FOR UPDATE on a sentinel row, or push the cap into a single INSERT ... WHERE (SELECT COUNT(*)) < ?)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Anonymous authentication now blocks on a DB write per request",
+   "body": "The previous implementation did the device tagging inside a goroutine with its own context.WithTimeout(context.Background(), timeoutTag), so anonymous auth never paid the cost of the INSERT/UPDATE. The new code calls a.anonDeviceService.TagDevice synchronously on the request context. Every anonymous request now waits on a database round trip (and a COUNT(*) when device_limit > 0) before issuing the authn.Identity, which is a clear latency regression under load. Consider preserving the async path for the happy case and only awaiting the result when the limit is actually close to being reached, or returning ErrDeviceLimitReached asynchronously."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Lost panic recovery on the synchronous tagging path",
+   "body": "The old goroutine wrapped TagDevice in defer recover(){...} so a panic in the device tagging code only produced a log warning. The new synchronous call has no recovery, so any panic from a.anonDeviceService.TagDevice (or anything it calls) will now propagate up through Anonymous.Authenticate into the authn pipeline and crash the request handler. The recover() needs to be restored (e.g. with a named return) so a tagging panic cannot take down an anonymous auth request."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 78,
+   "severity": "low",
+   "category": "bug",
+   "title": "updateDevice silently locks out devices older than the 30 day window",
+   "body": "The UPDATE statement only matches rows whose updated_at is BETWEEN (new UpdatedAt - anonymousDeviceExpiration) AND (new UpdatedAt + time.Minute). Devices that are older than 30 days but younger than the 61 day cleanup threshold still occupy a row but never count toward CountDevices and never match this WHERE. If the limit is reached (by fresh devices) and a previously active user returns after ~30 days, they hit ErrDeviceLimitReached even though they used to have a valid device, and there is no way for them to renew their slot until the cleanup job happens to run. The WHERE should probably match any existing row with the given device_id (or at least include the stale window) so users can refresh an old device instead of being permanently locked out."
+  },
+  {
+   "index": 5,
+   "file": "pkg/setting/setting.go",
+   "line": 1649,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "device_limit setting is parsed but not documented anywhere",
+   "body": "cfg.AnonymousDeviceLimit is now read from auth.anonymous.device_limit, but the diff does not add the new key to the conf.ini spec file, the sample ini, or any docs page. Operators have no way to learn the option exists, what value 0 means (it disables the limit), or how the 30 day window interacts with the cap. Without documentation this feature is effectively invisible and any default a maintainer intends to ship will not be communicated."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test exercises concurrent requests against the device limit",
+   "body": "TestIntegrationBeyondDeviceLimit only checks the single threaded flow: insert one device, then expect the second CreateOrUpdateDevice to return ErrDeviceLimitReached. It does not exercise the concurrent case that the new TOCTOU window in CreateOrUpdateDevice is most likely to fail in, and it does not exercise AnonDeviceService end to end (so the cache-bypass bug described in impl.go goes undetected). A goroutine based test that fans out more than device_limit parallel CreateOrUpdateDevice calls (and one that drives TagDevice through the service to verify the Authenticate behavior on limit hit) is needed."
+  }
+ ],
+ "finding_count": 7
+}

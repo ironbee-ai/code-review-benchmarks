@@ -1,0 +1,114 @@
+{
+ "run_id": "kimi-k3__default__sentry__93824__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 1,
+ "started_at": "2026-10-16T13:28:49Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25083,
+    "output": 20089,
+    "reasoning": 18624,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 638529,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6161
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25083,
+  "output": 20089,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 18624
+ },
+ "cost_reported": null,
+ "latency_ms": 638529,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 254, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"isinstance check against multiprocessing.Process is always False for spawn processes, so hung flushers are never killed\", \"body\": \"`isinstance(process, multiprocessing.Process)` is never true for the processes this class creates. The flusher uses `multiprocessing.get_context(\\\"spawn\\\")`, whose `Process` class is `multiprocessing.context.SpawnProcess` \u2014 a sibling of `multiprocessing.Process` (which is the fork-context flavor), not a subclass of it. The type annotation on `self.processes` (`SpawnProcess | threading.Thread`) even acknowledges this. Consequences: (1) In `_ensure_processes_alive`, when a flusher process is deemed unhealthy due to a hang, `process.kill()` is silently skipped before the replacement process is started \u2014 previously the kill was unconditional, so this is a regression. The hung process keeps running indefinitely: it keeps flushing the same shards as its replacement, and because the restart reuses the same shared `healthy_since` Value for that process slot, a still-looping zombie can keep refreshing `healthy_since` and permanently mask the hang from the health check. (2) The same wrong check at line 346 means `join()` never calls `terminate()` on spawn processes that outlive the deadline. Fix by checking `not isinstance(process, threading.Thread)` or by calling `kill()`/`terminate()` unconditionally as before.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 51, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"Unset max_processes defaults to one process per shard instead of preserving old single-process behavior\", \"body\": \"`self.max_processes = max_processes or len(buffer.assigned_shards)` makes an unset value mean \\\"one process per shard\\\", the most aggressive setting. The new `--flusher-processes` click option defaults to 1, which preserves the previous single-flusher-process behavior, but any construction path that does not pass the new parameter gets the aggressive behavior: for example an ops override of the `process-spans` entry in `SENTRY_KAFKA_CONSUMERS` that still uses the old `click_options` shape (the ops repo is deployed independently of this code), or any direct Python instantiation of `ProcessSpansStrategyFactory`/`SpanFlusher`. Such deployments would silently go from 1 flusher process to N spawned processes and N Kafka producers per consumer on upgrade, contrary to the PR's stated gradual-rollout intent. The default for `flusher_processes=None` should be 1, with per-shard scaling opt-in via the option.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 60, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"--flusher-processes is not validated; 0 is silently treated as per-shard and a negative value crashes startup with KeyError\", \"body\": \"The new `--flusher-processes` option (and `SpanFlusher`'s `max_processes`) accepts any integer without validation. Passing 0 is silently treated as \\\"one process per shard\\\" because `0 or len(buffer.assigned_shards)` takes the shard count. Passing a negative number is worse: `self.num_processes = min(-1, len(shards))` is negative, so `process_to_shards_map` is built from `range(-1)` and is empty, and the very first shard assignment `self.process_to_shards_map[0].append(shard)` raises a bare `KeyError`, crashing the consumer at startup with no useful message. The option should be validated as `>= 1` (in the click callback or the constructor) and 0 should either be rejected or documented.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Inconsistent metrics tag keys: \\\"shard\\\" vs \\\"shards\\\", and comma-joined multi-shard tag values\", \"body\": \"The new per-process metrics tagging is inconsistent: `spans.buffer.flusher.produce` (line 185) and `spans.buffer.segment_size_bytes` (line 196) are tagged with key `\\\"shard\\\"`, while `spans.buffer.flusher.wait_produce` (line 199) uses key `\\\"shards\\\"`, so dashboards or monitors grouping/filtering by `shard` will silently miss the wait_produce timer. Additionally, when `max_processes < len(assigned_shards)` a process handles multiple shards and the tag value is a comma-joined list like \\\"0,2,4\\\", whereas `spans.buffer.flusher_unhealthy` (line 243) emits one data point per individual shard integer \u2014 two different conventions for the same dimension that cannot be correlated in metrics queries.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 62, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Added time.sleep(0.1) is a no-op because the test monkeypatches time.sleep\", \"body\": \"`test_basic` monkeypatches `time.sleep` to a no-op at the top of the test (`monkeypatch.setattr(\\\"time.sleep\\\", lambda _: None)`), so the newly added `time.sleep(0.1)` with the comment \\\"Give flusher threads time to process after drift change\\\" provides no synchronization whatsoever. The test still depends on the racing flusher thread observing `current_drift.value = 9000` and completing a flush+produce before `step.join()` sets `stopped.value`; if the flusher thread's next loop iteration starts after `stopped` is set, it exits without flushing and `(msg,) = messages` fails on an empty list. If the intent was to deflake the test, this doesn't do it \u2014 the flusher's completion needs to be awaited deterministically (e.g., poll `messages` with a real timeout loop, since the fake sleep also makes the flusher's own `time.sleep(1)` a hot spin).\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 127, \"severity\": \"low\", \"category\": \"style\", \"title\": \"Dead method _create_process_for_shard left over from per-shard design\", \"body\": \"`_create_process_for_shard(self, shard)` is never called anywhere: the restart path in `_ensure_processes_alive` calls `_create_process_for_shards(process_index, shards)` directly. This leftover single-shard helper is misleading (it suggests per-shard restarts are possible when a restart actually recreates the whole multi-shard process) and should be removed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 254,
+   "severity": "high",
+   "category": "bug",
+   "title": "isinstance check against multiprocessing.Process is always False for spawn processes, so hung flushers are never killed",
+   "body": "`isinstance(process, multiprocessing.Process)` is never true for the processes this class creates. The flusher uses `multiprocessing.get_context(\"spawn\")`, whose `Process` class is `multiprocessing.context.SpawnProcess` \u2014 a sibling of `multiprocessing.Process` (which is the fork-context flavor), not a subclass of it. The type annotation on `self.processes` (`SpawnProcess | threading.Thread`) even acknowledges this. Consequences: (1) In `_ensure_processes_alive`, when a flusher process is deemed unhealthy due to a hang, `process.kill()` is silently skipped before the replacement process is started \u2014 previously the kill was unconditional, so this is a regression. The hung process keeps running indefinitely: it keeps flushing the same shards as its replacement, and because the restart reuses the same shared `healthy_since` Value for that process slot, a still-looping zombie can keep refreshing `healthy_since` and permanently mask the hang from the health check. (2) The same wrong check at line 346 means `join()` never calls `terminate()` on spawn processes that outlive the deadline. Fix by checking `not isinstance(process, threading.Thread)` or by calling `kill()`/`terminate()` unconditionally as before."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 51,
+   "severity": "medium",
+   "category": "api",
+   "title": "Unset max_processes defaults to one process per shard instead of preserving old single-process behavior",
+   "body": "`self.max_processes = max_processes or len(buffer.assigned_shards)` makes an unset value mean \"one process per shard\", the most aggressive setting. The new `--flusher-processes` click option defaults to 1, which preserves the previous single-flusher-process behavior, but any construction path that does not pass the new parameter gets the aggressive behavior: for example an ops override of the `process-spans` entry in `SENTRY_KAFKA_CONSUMERS` that still uses the old `click_options` shape (the ops repo is deployed independently of this code), or any direct Python instantiation of `ProcessSpansStrategyFactory`/`SpanFlusher`. Such deployments would silently go from 1 flusher process to N spawned processes and N Kafka producers per consumer on upgrade, contrary to the PR's stated gradual-rollout intent. The default for `flusher_processes=None` should be 1, with per-shard scaling opt-in via the option."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 60,
+   "severity": "low",
+   "category": "bug",
+   "title": "--flusher-processes is not validated; 0 is silently treated as per-shard and a negative value crashes startup with KeyError",
+   "body": "The new `--flusher-processes` option (and `SpanFlusher`'s `max_processes`) accepts any integer without validation. Passing 0 is silently treated as \"one process per shard\" because `0 or len(buffer.assigned_shards)` takes the shard count. Passing a negative number is worse: `self.num_processes = min(-1, len(shards))` is negative, so `process_to_shards_map` is built from `range(-1)` and is empty, and the very first shard assignment `self.process_to_shards_map[0].append(shard)` raises a bare `KeyError`, crashing the consumer at startup with no useful message. The option should be validated as `>= 1` (in the click callback or the constructor) and 0 should either be rejected or documented."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 199,
+   "severity": "low",
+   "category": "data",
+   "title": "Inconsistent metrics tag keys: \"shard\" vs \"shards\", and comma-joined multi-shard tag values",
+   "body": "The new per-process metrics tagging is inconsistent: `spans.buffer.flusher.produce` (line 185) and `spans.buffer.segment_size_bytes` (line 196) are tagged with key `\"shard\"`, while `spans.buffer.flusher.wait_produce` (line 199) uses key `\"shards\"`, so dashboards or monitors grouping/filtering by `shard` will silently miss the wait_produce timer. Additionally, when `max_processes < len(assigned_shards)` a process handles multiple shards and the tag value is a comma-joined list like \"0,2,4\", whereas `spans.buffer.flusher_unhealthy` (line 243) emits one data point per individual shard integer \u2014 two different conventions for the same dimension that cannot be correlated in metrics queries."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Added time.sleep(0.1) is a no-op because the test monkeypatches time.sleep",
+   "body": "`test_basic` monkeypatches `time.sleep` to a no-op at the top of the test (`monkeypatch.setattr(\"time.sleep\", lambda _: None)`), so the newly added `time.sleep(0.1)` with the comment \"Give flusher threads time to process after drift change\" provides no synchronization whatsoever. The test still depends on the racing flusher thread observing `current_drift.value = 9000` and completing a flush+produce before `step.join()` sets `stopped.value`; if the flusher thread's next loop iteration starts after `stopped` is set, it exits without flushing and `(msg,) = messages` fails on an empty list. If the intent was to deflake the test, this doesn't do it \u2014 the flusher's completion needs to be awaited deterministically (e.g., poll `messages` with a real timeout loop, since the fake sleep also makes the flusher's own `time.sleep(1)` a hot spin)."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "style",
+   "title": "Dead method _create_process_for_shard left over from per-shard design",
+   "body": "`_create_process_for_shard(self, shard)` is never called anywhere: the restart path in `_ensure_processes_alive` calls `_create_process_for_shards(process_index, shards)` directly. This leftover single-shard helper is misleading (it suggests per-shard restarts are possible when a restart actually recreates the whole multi-shard process) and should be removed."
+  }
+ ],
+ "finding_count": 6,
+ "provider_pin": null
+}

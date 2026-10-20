@@ -1,0 +1,147 @@
+{
+ "run_id": "minimax-m3__default__grafana__97529__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:19:17Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33771,
+    "output": 15370,
+    "reasoning": 13924,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02858298,
+   "latency_ms": 83250,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6309,
+   "raw_usage": {
+    "completion_tokens": 15370,
+    "prompt_tokens": 33899,
+    "total_tokens": 49269,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 13924,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.02858298,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02858298,
+     "upstream_inference_prompt_cost": 0.01013898,
+     "upstream_inference_completions_cost": 0.018444
+    }
+   },
+   "started_at": "2026-10-18T12:19:17Z",
+   "first_chunk_ms": 3101,
+   "first_text_ms": 76450,
+   "response_id": "gen-1792325959-ZQ9s9SOTuq1ZR5oDoXfh",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33771,
+  "output": 15370,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 13924
+ },
+ "cost_reported": 0.02858298,
+ "latency_ms": 83250,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 258,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Goroutine and resource leak when NewResourceServer init fails\",\n      \"body\": \"After constructing the server struct (which creates a cancellable ctx/cancel pair stored on the struct), NewResourceServer now eagerly calls s.Init(ctx). If Init returns an error (e.g., search.init fails partway through, or s.initWatcher fails), the function logs the error and returns nil, err. Because s is nil and cancel was never invoked, any goroutines that Init started cannot be cleaned up: the s.initWatcher goroutine + SQL poller run on s.ctx and will keep polling the database; the search.init watch goroutine (see search.go) runs on context.Background() and is not tied to s.ctx at all, so it is orphaned regardless. There is no way for the caller of NewResourceServer to stop them. Before this PR Init was idempotently deferred to the first RPC, where they would only be retained on the returned server. The fix is to defer cancel() at the top of NewResourceServer (and ideally make search.init's watchctx derive from s.ctx), so a partial init always tears its goroutines down.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/search.go\",\n      \"line\": 202,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"search.init's watcher uses context.Background(), preventing server.Stop from stopping it\",\n      \"body\": \"In searchSupport.init the watch is set up with `watchctx := context.Background() // new context?` and the resulting events channel is consumed by `go func() { for { v := <-events; s.handleEvent(watchctx, v) } }()`. The author even left a question mark in the comment. Because watchctx is background, calling server.Stop (which cancels s.ctx) does not stop this goroutine or its underlying storage backend poller; it will only exit if the storage backend itself is independently stopped. The symmetric watcher created by initWatcher in server.go uses s.ctx and so is cancelled correctly. This asymmetry is also what makes the Init failure leak above worse: even calling cancel after a failed Init cannot reach this watch. search.init should accept and use the long-lived s.ctx (or a child of it) for both WatchWriteEvents and the goroutine, so a single Stop cleans up everything.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/search.go\",\n      \"line\": 287,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"Concurrent searches for the same NamespacedResource can trigger duplicate full index builds\",\n      \"body\": \"getOrCreateIndex reads s.search.GetIndex (which checks a non-locked-ish cache via RWMutex) and, if nil, calls s.build, which in turn invokes SearchBackend.BuildIndex. There is no per-key synchronization. Two concurrent callers for the same key therefore both see a cache miss, both run the full document builder (potentially listing and indexing millions of rows), both flush, and the second write to b.cache[key] wins. The first caller's *ResourceIndex is still valid, but the cost of building was paid twice and the second build can also starve the watcher of resources. The pre-existing TODO right above the function (`// TODO??? // We want to block while building the index and return the same index for the key`) acknowledges this. The PR's change in bleve.go (releasing cacheMu before building) is correct for different keys but does nothing for same-key races; with the move from lazy to eager init the probability of overlapping first-request races goes up. At minimum the PR should add per-key locking around the GetIndex + BuildIndex sequence (e.g., singleflight.Group, or a sync.Map of per-key *sync.Mutex).\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/sql/backend.go\",\n      \"line\": 158,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Trace propagation fix is inconsistent across the sql backend\",\n      \"body\": \"The PR correctly changes GetResourceStats from `_, span := b.tracer.Start(...)` to `ctx, span := b.tracer.Start(...)` so the span context flows into the WithTx call below it. The same broken pattern is left in place in this same file for WriteEvent (line 158), create (174), update (236), delete (298), ReadResource (353), ListIterator (388), poller (580), listLatestRVs (619), poll (664) and resourceVersionAtomicInc (718). All of them discard the returned ctx, so the OpenTelemetry spans they start are not parents of the SQL calls made inside them. The fix in GetResourceStats was presumably driven by tracing the new eager index build; the same one-line fix should be applied to all the other methods that start a span and then perform work under that context, otherwise half the storage trace tree is broken.\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/resource/server.go\",\n      \"line\": 313,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Init error is logged twice\",\n      \"body\": \"Init already logs `s.log.Error(\\\"error initializing resource server\\\", \\\"error\\\", s.initErr)` inside the s.once.Do block, and the new caller in NewResourceServer then logs the same error again with the same message right before returning nil, err. Pick one site and drop the other to avoid the duplicate entry and to keep the error format consistent with the other NewResourceServer error paths (which only return).\"\n    },\n    {\n      \"file\": \"pkg/storage/unified/search/bleve.go\",\n      \"line\": 88,\n      \"severity\": \"low\",\n      \"category\": \"perf\",\n      \"title\": \"BuildIndex still shadows the trace context with its span\",\n      \"body\": \"Unlike search.go and sql/backend.go's GetResourceStats, bleve.go's BuildIndex uses `_, span := b.tracer.Start(ctx, tracingPrexfixBleve+\\\"BuildIndex\\\")` and discards the returned ctx. The same trace-propagation bug the PR is trying to fix elsewhere therefore remains in this hot path: the call to `builder(idx)` (which runs the entire list-iterator + builder loop) does not see the BuildIndex span as its parent, and traces of the index build will be missing the bleve-level span. The same one-character fix (`ctx, span := ...`) should be applied here for consistency with the other files in the PR.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Goroutine and resource leak when NewResourceServer init fails",
+   "body": "After constructing the server struct (which creates a cancellable ctx/cancel pair stored on the struct), NewResourceServer now eagerly calls s.Init(ctx). If Init returns an error (e.g., search.init fails partway through, or s.initWatcher fails), the function logs the error and returns nil, err. Because s is nil and cancel was never invoked, any goroutines that Init started cannot be cleaned up: the s.initWatcher goroutine + SQL poller run on s.ctx and will keep polling the database; the search.init watch goroutine (see search.go) runs on context.Background() and is not tied to s.ctx at all, so it is orphaned regardless. There is no way for the caller of NewResourceServer to stop them. Before this PR Init was idempotently deferred to the first RPC, where they would only be retained on the returned server. The fix is to defer cancel() at the top of NewResourceServer (and ideally make search.init's watchctx derive from s.ctx), so a partial init always tears its goroutines down."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 202,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "search.init's watcher uses context.Background(), preventing server.Stop from stopping it",
+   "body": "In searchSupport.init the watch is set up with `watchctx := context.Background() // new context?` and the resulting events channel is consumed by `go func() { for { v := <-events; s.handleEvent(watchctx, v) } }()`. The author even left a question mark in the comment. Because watchctx is background, calling server.Stop (which cancels s.ctx) does not stop this goroutine or its underlying storage backend poller; it will only exit if the storage backend itself is independently stopped. The symmetric watcher created by initWatcher in server.go uses s.ctx and so is cancelled correctly. This asymmetry is also what makes the Init failure leak above worse: even calling cancel after a failed Init cannot reach this watch. search.init should accept and use the long-lived s.ctx (or a child of it) for both WatchWriteEvents and the goroutine, so a single Stop cleans up everything."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 287,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Concurrent searches for the same NamespacedResource can trigger duplicate full index builds",
+   "body": "getOrCreateIndex reads s.search.GetIndex (which checks a non-locked-ish cache via RWMutex) and, if nil, calls s.build, which in turn invokes SearchBackend.BuildIndex. There is no per-key synchronization. Two concurrent callers for the same key therefore both see a cache miss, both run the full document builder (potentially listing and indexing millions of rows), both flush, and the second write to b.cache[key] wins. The first caller's *ResourceIndex is still valid, but the cost of building was paid twice and the second build can also starve the watcher of resources. The pre-existing TODO right above the function (`// TODO??? // We want to block while building the index and return the same index for the key`) acknowledges this. The PR's change in bleve.go (releasing cacheMu before building) is correct for different keys but does nothing for same-key races; with the move from lazy to eager init the probability of overlapping first-request races goes up. At minimum the PR should add per-key locking around the GetIndex + BuildIndex sequence (e.g., singleflight.Group, or a sync.Map of per-key *sync.Mutex)."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/sql/backend.go",
+   "line": 158,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Trace propagation fix is inconsistent across the sql backend",
+   "body": "The PR correctly changes GetResourceStats from `_, span := b.tracer.Start(...)` to `ctx, span := b.tracer.Start(...)` so the span context flows into the WithTx call below it. The same broken pattern is left in place in this same file for WriteEvent (line 158), create (174), update (236), delete (298), ReadResource (353), ListIterator (388), poller (580), listLatestRVs (619), poll (664) and resourceVersionAtomicInc (718). All of them discard the returned ctx, so the OpenTelemetry spans they start are not parents of the SQL calls made inside them. The fix in GetResourceStats was presumably driven by tracing the new eager index build; the same one-line fix should be applied to all the other methods that start a span and then perform work under that context, otherwise half the storage trace tree is broken."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 313,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Init error is logged twice",
+   "body": "Init already logs `s.log.Error(\"error initializing resource server\", \"error\", s.initErr)` inside the s.once.Do block, and the new caller in NewResourceServer then logs the same error again with the same message right before returning nil, err. Pick one site and drop the other to avoid the duplicate entry and to keep the error format consistent with the other NewResourceServer error paths (which only return)."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "low",
+   "category": "perf",
+   "title": "BuildIndex still shadows the trace context with its span",
+   "body": "Unlike search.go and sql/backend.go's GetResourceStats, bleve.go's BuildIndex uses `_, span := b.tracer.Start(ctx, tracingPrexfixBleve+\"BuildIndex\")` and discards the returned ctx. The same trace-propagation bug the PR is trying to fix elsewhere therefore remains in this hot path: the call to `builder(idx)` (which runs the entire list-iterator + builder loop) does not see the BuildIndex span as its parent, and traces of the index build will be missing the bleve-level span. The same one-character fix (`ctx, span := ...`) should be applied here for consistency with the other files in the PR."
+  }
+ ],
+ "finding_count": 6
+}

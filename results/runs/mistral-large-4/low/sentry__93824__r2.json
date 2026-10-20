@@ -1,0 +1,206 @@
+{
+ "run_id": "mistral-large-4__low__sentry__93824__r2",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:56:20Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25754,
+    "output": 3413,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02464589,
+   "latency_ms": 72000,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 13733,
+   "raw_usage": {
+    "completion_tokens": 3413,
+    "prompt_tokens": 25754,
+    "total_tokens": 29167,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.02464589,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02464589,
+     "upstream_inference_prompt_cost": 0.01751272,
+     "upstream_inference_completions_cost": 0.00713317
+    }
+   },
+   "started_at": "2026-10-17T20:56:20Z",
+   "first_chunk_ms": 3087,
+   "first_text_ms": 3087,
+   "response_id": "gen-1792270581-iOqQlj0UKEwa7Dh2KHV9",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25754,
+  "output": 3413,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.02464589,
+ "latency_ms": 72000,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 51,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"max_processes=0 silently disables all flusher processes\",\n      \"body\": \"`self.max_processes = max_processes or len(buffer.assigned_shards)` treats a falsy `max_processes` (0) the same as `None`, falling back to one process per shard. More importantly, the CLI option `--flusher-processes` in `src/sentry/consumers/__init__.py` (line 433) has `default=1` and no validation that it is >= 1, so an operator passing `--flusher-processes 0` (or a negative value) gets `num_processes = min(0, len(shards)) = 0`, an empty `process_to_shards_map`, zero spawned processes, and a flusher that never flushes anything \u2014 segments accumulate in Redis until the hard backpressure path rejects all messages. There is no guard rejecting non-positive values, and no test covers this case.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 60,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Shard-to-process assignment is not stable across rebalances, causing duplicate/missing flush ownership\",\n      \"body\": \"`process_index = i % self.num_processes` assigns shards to processes by their position in `buffer.assigned_shards` (the iteration order of the `partitions` mapping passed to `create_with_partitions`). When the consumer rebalances and the set/order of assigned partitions changes, the same Redis shard can be mapped to a different process index, and \u2014 critically \u2014 the *old* SpanFlusher instance's processes are never terminated on rebalance: `close()` (line 322) explicitly does not shut down the flusher, and `create_with_partitions` creates a brand-new SpanFlusher with new processes while the old ones keep running (they are daemon processes, so they survive until the whole consumer exits). Two processes can then flush the same shard concurrently, racing on `flush_segments`/`done_flush_segments` in Redis and potentially producing duplicate segments to the buffered-segments topic or corrupting segment state. The old code had a single process per SpanFlusher instance with the same close() behavior, but with one process per shard the blast radius of a leaked flusher is much larger (N leaked processes per rebalance, each holding a Kafka producer).\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 93,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Per-shard SpansBuffer instances in the parent process are never used for flushing and create a second set of Redis connections\",\n      \"body\": \"In `_create_process_for_shards`, a new `SpansBuffer(shards)` is created in the parent process and stored in `self.buffers[process_index]` (line 125). This parent-side buffer is only used in `submit()` for `record_stored_segments()` (line 270) and `get_memory_info()` (line 301). However, the actual flushing is done by a *separately pickled* `shard_buffer` inside the child process (line 97-104), which maintains its own Redis client pool and its own internal segment bookkeeping. This means: (1) the parent's `record_stored_segments()` updates statistics on a buffer whose Redis state is not the one being flushed, so backpressure decisions based on `any_shard_at_limit` in the child (line 172) and memory info from the parent (line 301) may be inconsistent; (2) the parent now holds N extra SpansBuffer objects each with Redis connection pools, doubling Redis connection usage; (3) `record_stored_segments` on the parent buffer tracks segments that the child buffer flushes, so the parent's view of stored segments drifts from reality. The original design had a single shared buffer; the multiprocessed version needs the bookkeeping to live in exactly one place.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 199,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Inconsistent metrics tag key: 'shard' vs 'shards'\",\n      \"body\": \"The `spans.buffer.flusher.wait_produce` timer at line 199 uses `tags={\\\"shards\\\": shard_tag}` while the `spans.buffer.flusher.produce` timer at line 185 and `spans.buffer.segment_size_bytes` at line 192 use `tags={\\\"shard\\\": shard_tag}`. This inconsistency breaks dashboards/alerts that group by a single tag key, and makes it impossible to join produce-time and wait-produce-time series per shard. One of the two keys is wrong; they should be unified (likely `shard`, matching the singular form used elsewhere and the per-shard `spans.buffer.flusher_unhealthy` metric at line 243).\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 254,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Thread-based test processes are never killable, and kill() is skipped for them in production restart path\",\n      \"body\": \"In `_ensure_processes_alive`, the restart path calls `process.kill()` only `if isinstance(process, multiprocessing.Process)` (line 254). When `produce_to_pipe` is set, processes are `threading.Thread` instances (line 108), which have no `kill()` \u2014 so a hung thread-based flusher is never stopped before `_create_process_for_shards` spawns a replacement (line 259), leaking the old thread. In production this branch is not hit (real processes are used), but the asymmetry means the health-check/restart logic is only half-implemented for the thread mode that tests rely on, and any future use of thread mode in production would leak hung threads indefinitely. Additionally, `threading.Thread` has no `exitcode` attribute, so `getattr(process, \\\"exitcode\\\", \\\"unknown\\\")` at line 229 always yields \\\"unknown\\\" for threads, degrading the `no_process_unknown` metric cause.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 127,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Dead code: _create_process_for_shard is never called\",\n      \"body\": \"`_create_process_for_shard(self, shard: int)` (lines 127-132) is defined but never referenced anywhere in the file \u2014 `_ensure_processes_alive` restarts via `_create_process_for_shards(process_index, shards)` directly. It appears to be leftover from an earlier per-shard restart design. Dead code in a concurrency-critical class invites confusion about which restart path is authoritative.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 60,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"Shard assignment uses modulo on list position, not on shard id \u2014 shard ownership changes when partition set changes\",\n      \"body\": \"The mapping `process_index = i % self.num_processes` where `i` is the enumeration index of `buffer.assigned_shards` means shard ownership is a function of *which other shards are assigned*, not of the shard id itself. If the consumer is assigned partitions {0,1,2,3} with num_processes=2, shard 0\u2192proc0, 1\u2192proc1, 2\u2192proc0, 3\u2192proc1. After a rebalance to {1,2,3}, shard 1\u2192proc0, 2\u2192proc1, 3\u2192proc0 \u2014 shard 1 moved from proc1 to proc0. Since each process has its own SpansBuffer with its own Redis segment state and its own Kafka producer, a shard changing owner means the new owner starts with an empty in-memory view of that shard's segments while the old owner may still hold unflushed state. Combined with the fact that old processes are not stopped on rebalance (see close() finding), this can cause the same shard's segments to be flushed by two different buffers concurrently, producing duplicate or interleaved segments in the buffered-segments topic. A stable hash of the shard id (e.g., `shard % num_processes`) would keep ownership stable across rebalances as long as num_processes is unchanged.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/flusher.py\",\n      \"line\": 328,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"join() terminates processes without joining them, risking lost in-flight Kafka produces\",\n      \"body\": \"In `join()` (lines 328-348), after waiting for each process to exit (or the deadline to expire), the code calls `process.terminate()` (line 347) if it is still alive. `terminate()` sends SIGTERM, which kills the child immediately \u2014 any spans already produced to the Kafka producer's internal buffer but not yet acked (the `producer_futures` at line 200 are only awaited inside the main loop) are lost, and any segments already popped from Redis by `flush_segments` but not yet `done_flush_segments`-ed (line 205) are lost from Redis without being written to Kafka. The original single-process code had the same terminate() call, but with N processes the window for losing in-flight data is N times larger. A graceful shutdown would close the producer (flushing pending futures) before terminating, or at least join with a short grace period before SIGTERM.\"\n    },\n    {\n      \"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\",\n      \"line\": 85,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"New multiprocessed flusher test only checks process count, not that shards are actually flushed by the right process\",\n      \"body\": \"`test_flusher_processes_limit` asserts `len(flusher.processes) == 2` and that 4 shards are distributed across the map, but never submits any spans, never advances the drift, and never asserts that any message is produced. It would pass even if the flusher processes crashed immediately on startup (they are daemon threads in test mode). There is no test that verifies: (1) each shard's segments are flushed exactly once when multiple shards share a process; (2) the per-process backpressure/health values are independent; (3) restart logic works per-process; (4) the `max_processes` default (None \u2192 one process per shard) behaves correctly. The existing `test_basic` only covers a single shard, so the multi-shard sharing path \u2014 the core new behavior of this PR \u2014 is effectively untested for correctness.\"\n    },\n    {\n      \"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\",\n      \"line\": 62,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"Flaky synchronization in test_basic: fixed 0.1s sleep instead of polling for the expected message\",\n      \"body\": \"The new lines 60-62 add `step.poll()` followed by a hardcoded `time.sleep(0.1)` to 'give flusher threads time to process after drift change'. The flusher thread loop sleeps 1 second between iterations when there is nothing to flush (line 182 of flusher.py, though monkeypatched to no-op in the test), but the thread scheduling is still non-deterministic \u2014 under CI load, 0.1s may not be enough for the thread to wake, flush, and append to `messages` before `step.join()` and the `(msg,) = messages` unpacking at line 66. A polling loop (e.g., wait up to N seconds for `len(messages) == 1`) would be robust. This is a classic source of flaky tests in multiprocessed/threaded code.\"\n    },\n    {\n      \"file\": \"src/sentry/spans/consumers/process/factory.py\",\n      \"line\": 67,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Main consumer buffer and flusher shard buffers can diverge: process_spans writes to one buffer, flusher reads from another\",\n      \"body\": \"`create_with_partitions` creates `buffer = SpansBuffer(assigned_shards=[p.index for p in partitions])` (line 67) which is passed to `process_batch` (line 79/90) \u2014 this is the buffer that `process_spans` writes segments into. Separately, `SpanFlusher.__init__` creates its own per-process `SpansBuffer(shards)` instances (flusher.py line 93) that the child processes use to call `flush_segments`. These are different Python objects with different Redis client pools, but they point at the same Redis keys. The critical question is whether `SpansBuffer` keeps any in-memory state that must be shared between the writer (process_batch) and the flusher (child process). Looking at the original single-process design, the same `buffer` object was shared between `process_batch` and the flusher thread, so any in-memory segment index maintained by SpansBuffer was consistent. Now the flusher uses a fresh SpansBuffer that never saw the `process_spans` calls \u2014 if SpansBuffer maintains an in-memory registry of stored segments (e.g., for `record_stored_segments` or segment size tracking), the flusher's buffer will have no knowledge of segments written by the main buffer, potentially causing segments to never be flushed or to be flushed with incorrect metadata. This needs verification against SpansBuffer's implementation; if SpansBuffer is purely Redis-backed this is fine, but the parent-side `self.buffers` used for `record_stored_segments` (flusher.py line 270) suggests there is in-memory state that is now split across three sets of objects.\"\n    },\n    {\n      \"file\": \"src/sentry/consumers/__init__.py\",\n      \"line\": 433,\n      \"severity\": \"low\",\n      \"category\": \"api\",\n      \"title\": \"--flusher-processes CLI option lacks validation for non-positive values\",\n      \"body\": \"The `--flusher-processes` click option (lines 432-437) accepts any integer with no `click.IntRange(min=1)` or callback validation. Passing 0 results in `num_processes = 0` (see flusher.py line 60: `min(0, len(shards))`), which creates zero flusher processes and silently stops all flushing \u2014 segments accumulate in Redis until backpressure rejects all incoming messages, effectively halting span ingestion with no error surfaced until the Redis memory limit is hit. A `click.IntRange(min=1)` would fail fast at startup with a clear error message.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 51,
+   "severity": "high",
+   "category": "bug",
+   "title": "max_processes=0 silently disables all flusher processes",
+   "body": "`self.max_processes = max_processes or len(buffer.assigned_shards)` treats a falsy `max_processes` (0) the same as `None`, falling back to one process per shard. More importantly, the CLI option `--flusher-processes` in `src/sentry/consumers/__init__.py` (line 433) has `default=1` and no validation that it is >= 1, so an operator passing `--flusher-processes 0` (or a negative value) gets `num_processes = min(0, len(shards)) = 0`, an empty `process_to_shards_map`, zero spawned processes, and a flusher that never flushes anything \u2014 segments accumulate in Redis until the hard backpressure path rejects all messages. There is no guard rejecting non-positive values, and no test covers this case."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 60,
+   "severity": "high",
+   "category": "bug",
+   "title": "Shard-to-process assignment is not stable across rebalances, causing duplicate/missing flush ownership",
+   "body": "`process_index = i % self.num_processes` assigns shards to processes by their position in `buffer.assigned_shards` (the iteration order of the `partitions` mapping passed to `create_with_partitions`). When the consumer rebalances and the set/order of assigned partitions changes, the same Redis shard can be mapped to a different process index, and \u2014 critically \u2014 the *old* SpanFlusher instance's processes are never terminated on rebalance: `close()` (line 322) explicitly does not shut down the flusher, and `create_with_partitions` creates a brand-new SpanFlusher with new processes while the old ones keep running (they are daemon processes, so they survive until the whole consumer exits). Two processes can then flush the same shard concurrently, racing on `flush_segments`/`done_flush_segments` in Redis and potentially producing duplicate segments to the buffered-segments topic or corrupting segment state. The old code had a single process per SpanFlusher instance with the same close() behavior, but with one process per shard the blast radius of a leaked flusher is much larger (N leaked processes per rebalance, each holding a Kafka producer)."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 93,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Per-shard SpansBuffer instances in the parent process are never used for flushing and create a second set of Redis connections",
+   "body": "In `_create_process_for_shards`, a new `SpansBuffer(shards)` is created in the parent process and stored in `self.buffers[process_index]` (line 125). This parent-side buffer is only used in `submit()` for `record_stored_segments()` (line 270) and `get_memory_info()` (line 301). However, the actual flushing is done by a *separately pickled* `shard_buffer` inside the child process (line 97-104), which maintains its own Redis client pool and its own internal segment bookkeeping. This means: (1) the parent's `record_stored_segments()` updates statistics on a buffer whose Redis state is not the one being flushed, so backpressure decisions based on `any_shard_at_limit` in the child (line 172) and memory info from the parent (line 301) may be inconsistent; (2) the parent now holds N extra SpansBuffer objects each with Redis connection pools, doubling Redis connection usage; (3) `record_stored_segments` on the parent buffer tracks segments that the child buffer flushes, so the parent's view of stored segments drifts from reality. The original design had a single shared buffer; the multiprocessed version needs the bookkeeping to live in exactly one place."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 199,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Inconsistent metrics tag key: 'shard' vs 'shards'",
+   "body": "The `spans.buffer.flusher.wait_produce` timer at line 199 uses `tags={\"shards\": shard_tag}` while the `spans.buffer.flusher.produce` timer at line 185 and `spans.buffer.segment_size_bytes` at line 192 use `tags={\"shard\": shard_tag}`. This inconsistency breaks dashboards/alerts that group by a single tag key, and makes it impossible to join produce-time and wait-produce-time series per shard. One of the two keys is wrong; they should be unified (likely `shard`, matching the singular form used elsewhere and the per-shard `spans.buffer.flusher_unhealthy` metric at line 243)."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 254,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Thread-based test processes are never killable, and kill() is skipped for them in production restart path",
+   "body": "In `_ensure_processes_alive`, the restart path calls `process.kill()` only `if isinstance(process, multiprocessing.Process)` (line 254). When `produce_to_pipe` is set, processes are `threading.Thread` instances (line 108), which have no `kill()` \u2014 so a hung thread-based flusher is never stopped before `_create_process_for_shards` spawns a replacement (line 259), leaking the old thread. In production this branch is not hit (real processes are used), but the asymmetry means the health-check/restart logic is only half-implemented for the thread mode that tests rely on, and any future use of thread mode in production would leak hung threads indefinitely. Additionally, `threading.Thread` has no `exitcode` attribute, so `getattr(process, \"exitcode\", \"unknown\")` at line 229 always yields \"unknown\" for threads, degrading the `no_process_unknown` metric cause."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 127,
+   "severity": "low",
+   "category": "bug",
+   "title": "Dead code: _create_process_for_shard is never called",
+   "body": "`_create_process_for_shard(self, shard: int)` (lines 127-132) is defined but never referenced anywhere in the file \u2014 `_ensure_processes_alive` restarts via `_create_process_for_shards(process_index, shards)` directly. It appears to be leftover from an earlier per-shard restart design. Dead code in a concurrency-critical class invites confusion about which restart path is authoritative."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 60,
+   "severity": "medium",
+   "category": "data",
+   "title": "Shard assignment uses modulo on list position, not on shard id \u2014 shard ownership changes when partition set changes",
+   "body": "The mapping `process_index = i % self.num_processes` where `i` is the enumeration index of `buffer.assigned_shards` means shard ownership is a function of *which other shards are assigned*, not of the shard id itself. If the consumer is assigned partitions {0,1,2,3} with num_processes=2, shard 0\u2192proc0, 1\u2192proc1, 2\u2192proc0, 3\u2192proc1. After a rebalance to {1,2,3}, shard 1\u2192proc0, 2\u2192proc1, 3\u2192proc0 \u2014 shard 1 moved from proc1 to proc0. Since each process has its own SpansBuffer with its own Redis segment state and its own Kafka producer, a shard changing owner means the new owner starts with an empty in-memory view of that shard's segments while the old owner may still hold unflushed state. Combined with the fact that old processes are not stopped on rebalance (see close() finding), this can cause the same shard's segments to be flushed by two different buffers concurrently, producing duplicate or interleaved segments in the buffered-segments topic. A stable hash of the shard id (e.g., `shard % num_processes`) would keep ownership stable across rebalances as long as num_processes is unchanged."
+  },
+  {
+   "index": 7,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 328,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "join() terminates processes without joining them, risking lost in-flight Kafka produces",
+   "body": "In `join()` (lines 328-348), after waiting for each process to exit (or the deadline to expire), the code calls `process.terminate()` (line 347) if it is still alive. `terminate()` sends SIGTERM, which kills the child immediately \u2014 any spans already produced to the Kafka producer's internal buffer but not yet acked (the `producer_futures` at line 200 are only awaited inside the main loop) are lost, and any segments already popped from Redis by `flush_segments` but not yet `done_flush_segments`-ed (line 205) are lost from Redis without being written to Kafka. The original single-process code had the same terminate() call, but with N processes the window for losing in-flight data is N times larger. A graceful shutdown would close the producer (flushing pending futures) before terminating, or at least join with a short grace period before SIGTERM."
+  },
+  {
+   "index": 8,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 85,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "New multiprocessed flusher test only checks process count, not that shards are actually flushed by the right process",
+   "body": "`test_flusher_processes_limit` asserts `len(flusher.processes) == 2` and that 4 shards are distributed across the map, but never submits any spans, never advances the drift, and never asserts that any message is produced. It would pass even if the flusher processes crashed immediately on startup (they are daemon threads in test mode). There is no test that verifies: (1) each shard's segments are flushed exactly once when multiple shards share a process; (2) the per-process backpressure/health values are independent; (3) restart logic works per-process; (4) the `max_processes` default (None \u2192 one process per shard) behaves correctly. The existing `test_basic` only covers a single shard, so the multi-shard sharing path \u2014 the core new behavior of this PR \u2014 is effectively untested for correctness."
+  },
+  {
+   "index": 9,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Flaky synchronization in test_basic: fixed 0.1s sleep instead of polling for the expected message",
+   "body": "The new lines 60-62 add `step.poll()` followed by a hardcoded `time.sleep(0.1)` to 'give flusher threads time to process after drift change'. The flusher thread loop sleeps 1 second between iterations when there is nothing to flush (line 182 of flusher.py, though monkeypatched to no-op in the test), but the thread scheduling is still non-deterministic \u2014 under CI load, 0.1s may not be enough for the thread to wake, flush, and append to `messages` before `step.join()` and the `(msg,) = messages` unpacking at line 66. A polling loop (e.g., wait up to N seconds for `len(messages) == 1`) would be robust. This is a classic source of flaky tests in multiprocessed/threaded code."
+  },
+  {
+   "index": 10,
+   "file": "src/sentry/spans/consumers/process/factory.py",
+   "line": 67,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Main consumer buffer and flusher shard buffers can diverge: process_spans writes to one buffer, flusher reads from another",
+   "body": "`create_with_partitions` creates `buffer = SpansBuffer(assigned_shards=[p.index for p in partitions])` (line 67) which is passed to `process_batch` (line 79/90) \u2014 this is the buffer that `process_spans` writes segments into. Separately, `SpanFlusher.__init__` creates its own per-process `SpansBuffer(shards)` instances (flusher.py line 93) that the child processes use to call `flush_segments`. These are different Python objects with different Redis client pools, but they point at the same Redis keys. The critical question is whether `SpansBuffer` keeps any in-memory state that must be shared between the writer (process_batch) and the flusher (child process). Looking at the original single-process design, the same `buffer` object was shared between `process_batch` and the flusher thread, so any in-memory segment index maintained by SpansBuffer was consistent. Now the flusher uses a fresh SpansBuffer that never saw the `process_spans` calls \u2014 if SpansBuffer maintains an in-memory registry of stored segments (e.g., for `record_stored_segments` or segment size tracking), the flusher's buffer will have no knowledge of segments written by the main buffer, potentially causing segments to never be flushed or to be flushed with incorrect metadata. This needs verification against SpansBuffer's implementation; if SpansBuffer is purely Redis-backed this is fine, but the parent-side `self.buffers` used for `record_stored_segments` (flusher.py line 270) suggests there is in-memory state that is now split across three sets of objects."
+  },
+  {
+   "index": 11,
+   "file": "src/sentry/consumers/__init__.py",
+   "line": 433,
+   "severity": "low",
+   "category": "api",
+   "title": "--flusher-processes CLI option lacks validation for non-positive values",
+   "body": "The `--flusher-processes` click option (lines 432-437) accepts any integer with no `click.IntRange(min=1)` or callback validation. Passing 0 results in `num_processes = 0` (see flusher.py line 60: `min(0, len(shards))`), which creates zero flusher processes and silently stops all flushing \u2014 segments accumulate in Redis until backpressure rejects all incoming messages, effectively halting span ingestion with no error surfaced until the Redis memory limit is hit. A `click.IntRange(min=1)` would fail fast at startup with a clear error message."
+  }
+ ],
+ "finding_count": 12
+}

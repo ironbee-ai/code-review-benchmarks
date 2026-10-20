@@ -1,0 +1,134 @@
+{
+ "run_id": "mistral-large-4__low__grafana__90939__r1",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__90939",
+ "golden_url": "https://github.com/grafana/grafana/pull/90939",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:34:11Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 8361,
+  "sha": "ef06331fc331b983",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 2639,
+    "output": 1044,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.00397648,
+   "latency_ms": 24545,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 4384,
+   "raw_usage": {
+    "completion_tokens": 1044,
+    "prompt_tokens": 2639,
+    "total_tokens": 3683,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.00397648,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.00397648,
+     "upstream_inference_prompt_cost": 0.00179452,
+     "upstream_inference_completions_cost": 0.00218196
+    }
+   },
+   "started_at": "2026-10-17T11:34:11Z",
+   "first_chunk_ms": 728,
+   "first_text_ms": 728,
+   "response_id": "gen-1792236851-HJP0kmlz9IM5AtUllKe7",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 2639,
+  "output": 1044,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.00397648,
+ "latency_ms": 24545,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/api/webassets/webassets.go\",\n      \"line\": 45,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"TOCTOU race: cache check and cache write are not atomic, allowing duplicate work and stale reads in dev mode\",\n      \"body\": \"The fast-path read (lines 41-43) and the write (line 69) are protected by separate lock acquisitions, so the check-then-act sequence is not atomic. In dev mode (cfg.Env == setting.Dev), the fast path is skipped entirely and every concurrent caller acquires the write lock and re-reads the manifest from disk, which is wasteful but not incorrect. More importantly, in non-dev mode, two goroutines can both observe ret == nil, both take the write lock sequentially, and both perform the file read; the second overwrites the first result. This is not a data race (the mutex does protect the variable), but it is a TOCTOU logic flaw: the double-checked locking pattern is incomplete because the second check of entryPointAssetsCache inside the write lock is missing. The consequence is redundant disk I/O and CDN requests under concurrency, and in dev mode every request hits the filesystem. The fix is to re-check entryPointAssetsCache after acquiring the write lock (standard double-checked locking), or use sync.Once for the non-dev path.\"\n    },\n    {\n      \"file\": \"pkg/api/webassets/webassets.go\",\n      \"line\": 69,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"Cache is populated even when reading the manifest fails, poisoning the cache with nil and a non-nil error\",\n      \"body\": \"Line 69 unconditionally assigns `entryPointAssetsCache = result` before returning, even when `result` is nil due to an error from readWebAssetsFromFile (line 60) or readWebAssetsFromCDN (line 56). On the next call in non-dev mode, the fast path at line 45 checks `ret != nil`, so a nil cache entry means the error is not cached and the read is retried \u2014 that part is benign. However, if `err != nil` but `result != nil` (which cannot happen with the current code paths, but the contract is fragile), a partially-initialized or error-associated result would be cached. More concretely, the function returns `entryPointAssetsCache, err` (line 70) rather than `result, err`; this is equivalent today but couples the return value to the global, making the function's behavior depend on global state mutation order. If a future change makes readWebAssetsFromFile return a non-nil result alongside an error, that broken result would be permanently cached for the process lifetime in non-dev mode, causing all subsequent requests to receive invalid assets with no error. The cache assignment should be conditional on err == nil.\"\n    },\n    {\n      \"file\": \"pkg/api/webassets/webassets.go\",\n      \"line\": 90,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"HTTP response status code is never checked in readWebAssetsFromCDN\",\n      \"body\": \"readWebAssetsFromCDN (line 85) performs an HTTP GET via http.DefaultClient.Do (line 90) but never checks response.StatusCode. If the CDN returns a 404, 500, or any non-2xx status, the body is still passed to readWebAssets (line 97), which will attempt to JSON-decode an HTML error page or empty body. This will produce a confusing 'failed to read assets-manifest.json' error rather than a clear 'CDN returned status 404' error, making production debugging difficult. Additionally, the response body is closed but the error from Close is ignored (acceptable), and there is no limit on response body size, which could allow a malicious or misconfigured CDN to exhaust memory. A status check like `if response.StatusCode != http.StatusOK { return nil, fmt.Errorf(...) }` should be added before reading the body.\"\n    },\n    {\n      \"file\": \"pkg/api/webassets/webassets.go\",\n      \"line\": 119,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Typo in error message: 'asssets-manifest' should be 'assets-manifest'\",\n      \"body\": \"The error message at line 119 reads 'could not find entrypoints in asssets-manifest' \u2014 'asssets' is a typo (three s's). This message is returned to callers and may appear in logs or API responses when the manifest file is malformed. It should read 'assets-manifest' to match the actual filename referenced elsewhere in the file (e.g., line 60, line 77).\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/api/webassets/webassets.go",
+   "line": 45,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TOCTOU race: cache check and cache write are not atomic, allowing duplicate work and stale reads in dev mode",
+   "body": "The fast-path read (lines 41-43) and the write (line 69) are protected by separate lock acquisitions, so the check-then-act sequence is not atomic. In dev mode (cfg.Env == setting.Dev), the fast path is skipped entirely and every concurrent caller acquires the write lock and re-reads the manifest from disk, which is wasteful but not incorrect. More importantly, in non-dev mode, two goroutines can both observe ret == nil, both take the write lock sequentially, and both perform the file read; the second overwrites the first result. This is not a data race (the mutex does protect the variable), but it is a TOCTOU logic flaw: the double-checked locking pattern is incomplete because the second check of entryPointAssetsCache inside the write lock is missing. The consequence is redundant disk I/O and CDN requests under concurrency, and in dev mode every request hits the filesystem. The fix is to re-check entryPointAssetsCache after acquiring the write lock (standard double-checked locking), or use sync.Once for the non-dev path."
+  },
+  {
+   "index": 1,
+   "file": "pkg/api/webassets/webassets.go",
+   "line": 69,
+   "severity": "medium",
+   "category": "data",
+   "title": "Cache is populated even when reading the manifest fails, poisoning the cache with nil and a non-nil error",
+   "body": "Line 69 unconditionally assigns `entryPointAssetsCache = result` before returning, even when `result` is nil due to an error from readWebAssetsFromFile (line 60) or readWebAssetsFromCDN (line 56). On the next call in non-dev mode, the fast path at line 45 checks `ret != nil`, so a nil cache entry means the error is not cached and the read is retried \u2014 that part is benign. However, if `err != nil` but `result != nil` (which cannot happen with the current code paths, but the contract is fragile), a partially-initialized or error-associated result would be cached. More concretely, the function returns `entryPointAssetsCache, err` (line 70) rather than `result, err`; this is equivalent today but couples the return value to the global, making the function's behavior depend on global state mutation order. If a future change makes readWebAssetsFromFile return a non-nil result alongside an error, that broken result would be permanently cached for the process lifetime in non-dev mode, causing all subsequent requests to receive invalid assets with no error. The cache assignment should be conditional on err == nil."
+  },
+  {
+   "index": 2,
+   "file": "pkg/api/webassets/webassets.go",
+   "line": 90,
+   "severity": "low",
+   "category": "bug",
+   "title": "HTTP response status code is never checked in readWebAssetsFromCDN",
+   "body": "readWebAssetsFromCDN (line 85) performs an HTTP GET via http.DefaultClient.Do (line 90) but never checks response.StatusCode. If the CDN returns a 404, 500, or any non-2xx status, the body is still passed to readWebAssets (line 97), which will attempt to JSON-decode an HTML error page or empty body. This will produce a confusing 'failed to read assets-manifest.json' error rather than a clear 'CDN returned status 404' error, making production debugging difficult. Additionally, the response body is closed but the error from Close is ignored (acceptable), and there is no limit on response body size, which could allow a malicious or misconfigured CDN to exhaust memory. A status check like `if response.StatusCode != http.StatusOK { return nil, fmt.Errorf(...) }` should be added before reading the body."
+  },
+  {
+   "index": 3,
+   "file": "pkg/api/webassets/webassets.go",
+   "line": 119,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Typo in error message: 'asssets-manifest' should be 'assets-manifest'",
+   "body": "The error message at line 119 reads 'could not find entrypoints in asssets-manifest' \u2014 'asssets' is a typo (three s's). This message is returned to callers and may appear in logs or API responses when the manifest file is malformed. It should read 'assets-manifest' to match the actual filename referenced elsewhere in the file (e.g., line 60, line 77)."
+  }
+ ],
+ "finding_count": 4
+}

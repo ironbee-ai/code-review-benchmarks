@@ -1,0 +1,142 @@
+{
+ "run_id": "minimax-m3__xhigh__cal.com__7232__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:32:35Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70656,
+    "output": 25746,
+    "reasoning": 24402,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.05211966,
+   "latency_ms": 136517,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5849,
+   "raw_usage": {
+    "completion_tokens": 25746,
+    "prompt_tokens": 71117,
+    "total_tokens": 96863,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 24402,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.05211966,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.05211966,
+     "upstream_inference_prompt_cost": 0.02122446,
+     "upstream_inference_completions_cost": 0.0308952
+    }
+   },
+   "started_at": "2026-10-18T12:32:35Z",
+   "first_chunk_ms": 3078,
+   "first_text_ms": 130258,
+   "response_id": "gen-1792326755-Clx4UpB4vzzETDWO4yzR",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70656,
+  "output": 25746,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 24402
+ },
+ "cost_reported": 0.05211966,
+ "latency_ms": 136517,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/features/bookings/lib/handleNewBooking.ts\",\n      \"line\": 966,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"forEach with async callbacks, fire-and-forget; outer try/catch is dead code\",\n      \"body\": \"The newly added block at lines 963-975 wraps `originalRescheduledBooking.workflowReminders.forEach(...)` in a try/catch, but Array.prototype.forEach does not await async callbacks. The calls to `deleteScheduledEmailReminder(...)` (with `immediateDelete: true`, so it does a SendGrid HTTP request) and `deleteScheduledSMSReminder(...)` return promises that are discarded. Any rejection from them is not delivered to the outer `catch` and is only logged (or lost) inside the deletion functions' own try/catch. The subsequent `eventManager.reschedule(...)` and rest of the booking flow proceeds without waiting, so the reschedule response can return to the client while the old reminders are still being (or never) cancelled. Fix by awaiting each call (`for...of` loop) or using `Promise.all(reminders.map(...))` with the try/catch inside the async iteration.\"\n    },\n    {\n      \"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\n      \"line\": 56,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Sequential for-await loop aborts whole batch on first SendGrid error; pending delete promises are never awaited\",\n      \"body\": \"In the new block (lines 53-77) the loop calls `await client.request(...)` for every reminder and only after success builds a `prisma.workflowReminder.delete(...)` and pushes it into `workflowRemindersToDelete`. When `client.request` throws (e.g. SendGrid's documented limit on pending cancellations is reached, batch_id not found, or transient API error), the throw escapes the for-loop into the outer try/catch which only logs and returns. Consequences: (1) every reminder after the first failure is silently skipped in this run; (2) the deletes already pushed for the successful iterations are never executed because `await Promise.all(workflowRemindersToDelete)` is skipped after the throw \u2014 they become dangling promises that may or may not resolve in the background with no observability. The retry-on-next-run strategy is undermined if the first failure always happens early. The loop should isolate each reminder's cancel+delete (try/catch per iteration, push successes only) and always `await Promise.all(workflowRemindersToDelete)` before returning.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\",\n      \"line\": 485,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"forEach with async deletion functions; workflow reminder cancellation is fire-and-forget\",\n      \"body\": \"The new code at lines 484-493 iterates over `updatedBookings`/`workflowReminders` with `forEach` and invokes `deleteScheduledEmailReminder(...)` and `deleteScheduledSMSReminder(...)` without awaiting. These functions perform real side effects (DB update to set `cancelled: true`, Twilio HTTP call, DB delete). Because they aren't awaited, the handler reaches `await Promise.all(prismaPromises.concat(apiDeletes))` and `await sendCancelledEmails(evt)` and returns successfully even if every cancellation silently failed inside the deletion helpers' inner try/catch. For EMAIL reminders specifically, if the `prisma.workflowReminder.update` to set `cancelled: true` fails, the CRON job in scheduleEmailReminders will never know to cancel that send and the email will still be delivered. Use `for...of` with `await` (or `Promise.all([...].map(...))`) so failures surface and the row is reliably marked before the request resolves.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\",\n      \"line\": 488,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"forEach with async deletion functions in requestReschedule mutation\",\n      \"body\": \"In the `requestReschedule` mutation (lines 487-494) `bookingToReschedule.workflowReminders.forEach(...)` calls `deleteScheduledEmailReminder(reminder.id, reminder.referenceId)` and `deleteScheduledSMSReminder(reminder.id, reminder.referenceId)` without awaiting. The mutation returns before those calls complete (or have any chance of failing). For EMAIL reminders, a failure to set `cancelled: true` in the DB means the CRON-driven SendGrid cancellation never happens and the attendee receives the old reminder email. Use `for...of` with `await`, or `await Promise.all(reminders.map(async r => ...))`, so the DB row is reliably marked (and the Twilio call observed) before the mutation responds.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleNewBooking.ts\",\n      \"line\": 968,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Reschedule path bypasses the deferred-cancellation fix and re-introduces the 100-pending-cancellations bug\",\n      \"body\": \"In the new reschedule block, the call is `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)` \u2014 passing `immediateDelete: true` causes an immediate SendGrid POST to /v3/user/scheduled_sends with status:'cancel' for every workflow reminder of the previous booking. This is inconsistent with the cancellation path in `handleCancelBooking.ts` and `bookings.tsx` (both use the default `immediateDelete: false`, which marks `cancelled: true` and lets the cron in `scheduleEmailReminders.ts` do the SendGrid call in a controlled window). The whole purpose of the PR is to avoid SendGrid's 100-pending-cancellations limit; the reschedule path here still hits it directly. Under any burst of simultaneous reschedules the limit will be reached and old reminders will be delivered (the exact bug being fixed). Pass `false` (or omit) to be consistent with the cancel path.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 966,
+   "severity": "high",
+   "category": "bug",
+   "title": "forEach with async callbacks, fire-and-forget; outer try/catch is dead code",
+   "body": "The newly added block at lines 963-975 wraps `originalRescheduledBooking.workflowReminders.forEach(...)` in a try/catch, but Array.prototype.forEach does not await async callbacks. The calls to `deleteScheduledEmailReminder(...)` (with `immediateDelete: true`, so it does a SendGrid HTTP request) and `deleteScheduledSMSReminder(...)` return promises that are discarded. Any rejection from them is not delivered to the outer `catch` and is only logged (or lost) inside the deletion functions' own try/catch. The subsequent `eventManager.reschedule(...)` and rest of the booking flow proceeds without waiting, so the reschedule response can return to the client while the old reminders are still being (or never) cancelled. Fix by awaiting each call (`for...of` loop) or using `Promise.all(reminders.map(...))` with the try/catch inside the async iteration."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 56,
+   "severity": "high",
+   "category": "bug",
+   "title": "Sequential for-await loop aborts whole batch on first SendGrid error; pending delete promises are never awaited",
+   "body": "In the new block (lines 53-77) the loop calls `await client.request(...)` for every reminder and only after success builds a `prisma.workflowReminder.delete(...)` and pushes it into `workflowRemindersToDelete`. When `client.request` throws (e.g. SendGrid's documented limit on pending cancellations is reached, batch_id not found, or transient API error), the throw escapes the for-loop into the outer try/catch which only logs and returns. Consequences: (1) every reminder after the first failure is silently skipped in this run; (2) the deletes already pushed for the successful iterations are never executed because `await Promise.all(workflowRemindersToDelete)` is skipped after the throw \u2014 they become dangling promises that may or may not resolve in the background with no observability. The retry-on-next-run strategy is undermined if the first failure always happens early. The loop should isolate each reminder's cancel+delete (try/catch per iteration, push successes only) and always `await Promise.all(workflowRemindersToDelete)` before returning."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "medium",
+   "category": "bug",
+   "title": "forEach with async deletion functions; workflow reminder cancellation is fire-and-forget",
+   "body": "The new code at lines 484-493 iterates over `updatedBookings`/`workflowReminders` with `forEach` and invokes `deleteScheduledEmailReminder(...)` and `deleteScheduledSMSReminder(...)` without awaiting. These functions perform real side effects (DB update to set `cancelled: true`, Twilio HTTP call, DB delete). Because they aren't awaited, the handler reaches `await Promise.all(prismaPromises.concat(apiDeletes))` and `await sendCancelledEmails(evt)` and returns successfully even if every cancellation silently failed inside the deletion helpers' inner try/catch. For EMAIL reminders specifically, if the `prisma.workflowReminder.update` to set `cancelled: true` fails, the CRON job in scheduleEmailReminders will never know to cancel that send and the email will still be delivered. Use `for...of` with `await` (or `Promise.all([...].map(...))`) so failures surface and the row is reliably marked before the request resolves."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 488,
+   "severity": "medium",
+   "category": "bug",
+   "title": "forEach with async deletion functions in requestReschedule mutation",
+   "body": "In the `requestReschedule` mutation (lines 487-494) `bookingToReschedule.workflowReminders.forEach(...)` calls `deleteScheduledEmailReminder(reminder.id, reminder.referenceId)` and `deleteScheduledSMSReminder(reminder.id, reminder.referenceId)` without awaiting. The mutation returns before those calls complete (or have any chance of failing). For EMAIL reminders, a failure to set `cancelled: true` in the DB means the CRON-driven SendGrid cancellation never happens and the attendee receives the old reminder email. Use `for...of` with `await`, or `await Promise.all(reminders.map(async r => ...))`, so the DB row is reliably marked (and the Twilio call observed) before the mutation responds."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 968,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reschedule path bypasses the deferred-cancellation fix and re-introduces the 100-pending-cancellations bug",
+   "body": "In the new reschedule block, the call is `deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true)` \u2014 passing `immediateDelete: true` causes an immediate SendGrid POST to /v3/user/scheduled_sends with status:'cancel' for every workflow reminder of the previous booking. This is inconsistent with the cancellation path in `handleCancelBooking.ts` and `bookings.tsx` (both use the default `immediateDelete: false`, which marks `cancelled: true` and lets the cron in `scheduleEmailReminders.ts` do the SendGrid call in a controlled window). The whole purpose of the PR is to avoid SendGrid's 100-pending-cancellations limit; the reschedule path here still hits it directly. Under any burst of simultaneous reschedules the limit will be reached and old reminders will be delivered (the exact bug being fixed). Pass `false` (or omit) to be consistent with the cancel path."
+  }
+ ],
+ "finding_count": 5
+}

@@ -1,0 +1,156 @@
+{
+ "run_id": "claude-opus-5__default__cal.com__8087__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 3,
+ "started_at": "2026-10-18T20:46:34Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 63582,
+    "output": 7025,
+    "reasoning": 4801,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 90887,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6393,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 63582,
+    "output_tokens": 7025,
+    "output_tokens_details": {
+     "thinking_tokens": 4801
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T20:46:34Z",
+   "first_chunk_ms": 2596,
+   "first_text_ms": 64719,
+   "response_id": "msg_bdrk_fxcyn5cjhtjhclfi34asxrlmjv6jy62fpwyahsa6uyroxzsflbuq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 63582,
+  "output": 7025,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4801
+ },
+ "cost_reported": null,
+ "latency_ms": 90887,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/app-store/index.ts\", \"line\": 3, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Dynamic imports are started eagerly at module load, so nothing is actually lazy\", \"body\": \"The object literal calls `import(\\\"./applecalendar\\\")`, `import(\\\"./caldavcalendar\\\")`, \u2026 at module evaluation time, which immediately kicks off loading of every app package the moment `@calcom/app-store` is imported. The promises are merely stored, so consumers `await` an already-running import. The net effect is that all ~28 app modules (and their transitive deps such as Stripe/Google/Exchange SDKs) are still evaluated on every request path that touches the app store \u2014 the stated goal of async/lazy loading is not achieved, and webpack will still fetch every generated chunk. To get real laziness the entries must be thunks, e.g. `applecalendar: () => import(\\\"./applecalendar\\\")`, with call sites invoking the thunk.\"}, {\"file\": \"packages/app-store/index.ts\", \"line\": 3, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Module-level import promises can produce unhandled rejections and crash the process\", \"body\": \"Each `import(\\\"./x\\\")` promise is created at module scope with no attached handler. If any single app module throws while being evaluated (bad/missing app key, failing SDK init, missing optional dependency), the resulting rejection is unhandled because nothing awaits that specific entry unless the app happens to be used. Under Node's default `--unhandled-rejections=throw` this terminates the process, so one broken app takes down the whole server even though no booking uses it. Previously a failing module was at least surfaced synchronously at import time of the specific consumer. Lazily created promises (thunks) or `.catch()` handling is needed.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"getCalendarCredentials now returns a Promise in its `calendar` field, changing its public contract\", \"body\": \"`getCalendarCredentials` still looks synchronous, but `calendar: getCalendar(credential)` is now a `Promise<Calendar | null>` instead of `Calendar | null`. Only `getConnectedCalendars` in this file was updated to `await item.calendar`; any other consumer of `getCalendarCredentials` (it is exported and used outside this module, e.g. destination-calendar/connected-calendar flows and the API app) that calls `item.calendar.listCalendars()` or checks `if (!item.calendar)` will now silently see a truthy Promise and break at runtime. Additionally, promises stored on entries that a caller never awaits can reject unobserved. The function should either be made `async` and resolve the calendars with `Promise.all`, or keep the credential list free of promises.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Async callback in forEach: calendar/video cancellations are no longer initiated before the mutation completes\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })` returns immediately; the deleteEvent/deleteMeeting calls now only start after the `await getCalendar` microtask resolves, i.e. after `requestReschedule` has already sent the reschedule email and possibly returned. Nothing awaits the resulting promises, so failures to delete the old calendar event / video room are swallowed as unhandled rejections and the old events can be left dangling. Use `for (const bookingRef of bookingRefsFiltered) { ... }` with `await`, or collect the promises and `await Promise.all(...)`.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"try/catch around forEach with async callback cannot catch failures anymore\", \"body\": \"Changing the callback to `async` means the surrounding `try { ... } catch { logger.error(...) }` block can never observe an error: the callback returns a promise that is discarded, so any rejection from `getCalendar` or `deleteEvent`/`deleteMeeting` escapes as an unhandled promise rejection (process-level crash on modern Node) instead of being logged. The deletions are also not awaited before the reschedule email is sent. Replace with a `for...of` loop using `await` inside the try block.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"try/catch around forEach with async callback cannot catch failures anymore\", \"body\": \"Same problem as in the vital reschedule helper: the callback passed to `forEach` is now `async`, so the enclosing `try/catch` will never see errors thrown inside it; rejections from `getCalendar`, `calendar.deleteEvent` or `deleteMeeting` become unhandled promise rejections rather than being logged, and the cancellations are not awaited before the function returns. Use a `for...of` loop with `await` inside the try block.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Recurring-booking calendar deletions are pushed to apiDeletes after it is already awaited\", \"body\": \"In the recurring branch the credentials are still iterated with `.forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent) })`. Because the callback is async, `apiDeletes.push` runs only after the awaits resolve \u2014 long after `await Promise.all(prismaPromises.concat(apiDeletes))` at the end of the handler has captured the (still empty) array. So for \\\"cancel all remaining recurring bookings\\\" the external calendar deletions are neither awaited nor error-checked, and failures surface as unhandled rejections. The sibling non-credentialId branch in the same block was correctly converted to a `for...of` loop; this branch should be too.\"}, {\"file\": \"packages/app-store/index.ts\", \"line\": 2, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Commented-out example entry points at a non-existent directory\", \"body\": \"The placeholder comment was changed from `// import * as example from \\\"./_example\\\";` to `// example: import(\\\"./example\\\"),`. The directory in the repo is `_example`, so a developer who uncomments this line to register a new app gets a module-not-found error. It should read `// example: import(\\\"./_example\\\"),`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/index.ts",
+   "line": 3,
+   "severity": "high",
+   "category": "perf",
+   "title": "Dynamic imports are started eagerly at module load, so nothing is actually lazy",
+   "body": "The object literal calls `import(\"./applecalendar\")`, `import(\"./caldavcalendar\")`, \u2026 at module evaluation time, which immediately kicks off loading of every app package the moment `@calcom/app-store` is imported. The promises are merely stored, so consumers `await` an already-running import. The net effect is that all ~28 app modules (and their transitive deps such as Stripe/Google/Exchange SDKs) are still evaluated on every request path that touches the app store \u2014 the stated goal of async/lazy loading is not achieved, and webpack will still fetch every generated chunk. To get real laziness the entries must be thunks, e.g. `applecalendar: () => import(\"./applecalendar\")`, with call sites invoking the thunk."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/index.ts",
+   "line": 3,
+   "severity": "high",
+   "category": "bug",
+   "title": "Module-level import promises can produce unhandled rejections and crash the process",
+   "body": "Each `import(\"./x\")` promise is created at module scope with no attached handler. If any single app module throws while being evaluated (bad/missing app key, failing SDK init, missing optional dependency), the resulting rejection is unhandled because nothing awaits that specific entry unless the app happens to be used. Under Node's default `--unhandled-rejections=throw` this terminates the process, so one broken app takes down the whole server even though no booking uses it. Previously a failing module was at least surfaced synchronously at import time of the specific consumer. Lazily created promises (thunks) or `.catch()` handling is needed."
+  },
+  {
+   "index": 2,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "medium",
+   "category": "api",
+   "title": "getCalendarCredentials now returns a Promise in its `calendar` field, changing its public contract",
+   "body": "`getCalendarCredentials` still looks synchronous, but `calendar: getCalendar(credential)` is now a `Promise<Calendar | null>` instead of `Calendar | null`. Only `getConnectedCalendars` in this file was updated to `await item.calendar`; any other consumer of `getCalendarCredentials` (it is exported and used outside this module, e.g. destination-calendar/connected-calendar flows and the API app) that calls `item.calendar.listCalendars()` or checks `if (!item.calendar)` will now silently see a truthy Promise and break at runtime. Additionally, promises stored on entries that a caller never awaits can reject unobserved. The function should either be made `async` and resolve the calendars with `Promise.all`, or keep the credential list free of promises."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Async callback in forEach: calendar/video cancellations are no longer initiated before the mutation completes",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })` returns immediately; the deleteEvent/deleteMeeting calls now only start after the `await getCalendar` microtask resolves, i.e. after `requestReschedule` has already sent the reschedule email and possibly returned. Nothing awaits the resulting promises, so failures to delete the old calendar event / video room are swallowed as unhandled rejections and the old events can be left dangling. Use `for (const bookingRef of bookingRefsFiltered) { ... }` with `await`, or collect the promises and `await Promise.all(...)`."
+  },
+  {
+   "index": 4,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "try/catch around forEach with async callback cannot catch failures anymore",
+   "body": "Changing the callback to `async` means the surrounding `try { ... } catch { logger.error(...) }` block can never observe an error: the callback returns a promise that is discarded, so any rejection from `getCalendar` or `deleteEvent`/`deleteMeeting` escapes as an unhandled promise rejection (process-level crash on modern Node) instead of being logged. The deletions are also not awaited before the reschedule email is sent. Replace with a `for...of` loop using `await` inside the try block."
+  },
+  {
+   "index": 5,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "try/catch around forEach with async callback cannot catch failures anymore",
+   "body": "Same problem as in the vital reschedule helper: the callback passed to `forEach` is now `async`, so the enclosing `try/catch` will never see errors thrown inside it; rejections from `getCalendar`, `calendar.deleteEvent` or `deleteMeeting` become unhandled promise rejections rather than being logged, and the cancellations are not awaited before the function returns. Use a `for...of` loop with `await` inside the try block."
+  },
+  {
+   "index": 6,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Recurring-booking calendar deletions are pushed to apiDeletes after it is already awaited",
+   "body": "In the recurring branch the credentials are still iterated with `.forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent) })`. Because the callback is async, `apiDeletes.push` runs only after the awaits resolve \u2014 long after `await Promise.all(prismaPromises.concat(apiDeletes))` at the end of the handler has captured the (still empty) array. So for \"cancel all remaining recurring bookings\" the external calendar deletions are neither awaited nor error-checked, and failures surface as unhandled rejections. The sibling non-credentialId branch in the same block was correctly converted to a `for...of` loop; this branch should be too."
+  },
+  {
+   "index": 7,
+   "file": "packages/app-store/index.ts",
+   "line": 2,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Commented-out example entry points at a non-existent directory",
+   "body": "The placeholder comment was changed from `// import * as example from \"./_example\";` to `// example: import(\"./example\"),`. The directory in the repo is `_example`, so a developer who uncomments this line to register a new app gets a module-not-found error. It should read `// example: import(\"./_example\"),`."
+  }
+ ],
+ "finding_count": 8
+}

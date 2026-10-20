@@ -1,0 +1,126 @@
+{
+ "run_id": "kimi-k3__default__sentry-greptile__1__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "sentry-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/1",
+ "repeat": 3,
+ "started_at": "2026-10-18T13:50:01Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 63599,
+  "sha": "5fcc8e73e0133429",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 15511,
+    "output": 17465,
+    "reasoning": 16334,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 323668,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5341,
+   "raw_usage": {
+    "completion_tokens": 17465,
+    "prompt_tokens": 15511,
+    "total_tokens": 32976,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 16334,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T13:50:01Z",
+   "first_chunk_ms": 4097,
+   "first_text_ms": 309017,
+   "response_id": "chatcmpl-dfh3lm34hm2q5sndcn44mv473vvfi3s4u6ymollzxogizwth356q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 15511,
+  "output": 17465,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 16334
+ },
+ "cost_reported": null,
+ "latency_ms": 323668,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/paginator.py\", \"line\": 840, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"OptimizedCursorPaginator applies numeric key math to a datetime column and 500s on every non-empty page\", \"body\": \"The audit log endpoint invokes OptimizedCursorPaginator with order_by=\\\"-datetime\\\", but get_item_key and value_from_cursor were copied from the numeric Paginator instead of DateTimePaginator. get_item_key executes math.ceil(getattr(item, \\\"datetime\\\")), which raises TypeError (\\\"must be real number, not datetime.datetime\\\") because datetime objects have no float conversion. build_cursor calls get_item_key whenever a page has at least one result (to compute the next/prev cursor values), so any request with optimized_pagination=true against an organization that has at least one audit log entry fails with an unhandled 500. Even if that were fixed, value_from_cursor returns the raw millisecond cursor value, which build_queryset then compares directly against the timestamp column in SQL (datetime_col <= <bigint>) instead of converting it back to a datetime the way DateTimePaginator.value_from_cursor does, so page 2 and beyond would return wrong data or a database error. The class should subclass DateTimePaginator or reuse its get_item_key/value_from_cursor implementations.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 882, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Advanced negative-offset branch slices the queryset with a negative index, which Django rejects\", \"body\": \"When enable_advanced_features is set and the incoming cursor has a negative offset \u2014 trivially supplied by a client as cursor=0:-5:0, which Cursor.from_string parses without any validation \u2014 the branch at lines 877-882 executes queryset[cursor.offset : cursor.offset + limit + extra] with a negative start index. Django QuerySets explicitly reject negative indexing/slicing by raising ValueError(\\\"Negative indexing is not supported.\\\"), so the comment claiming \\\"The underlying Django ORM properly handles negative slicing automatically\\\" is false and this request crashes with an unhandled 500. The endpoint in organization_auditlogs.py enables this path for superusers/global-access members who pass optimized_pagination=true, so any such caller supplying a negative-offset cursor gets a server error instead of the advertised \\\"efficient reverse pagination.\\\"\"}, {\"file\": \"src/sentry/api/endpoints/organization_auditlogs.py\", \"line\": 71, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"organization_context.member may be None; unconditional .has_global_access dereference can 500 every audit log request\", \"body\": \"RpcUserOrganizationContext.member is Optional \u2014 it is None when the caller can access the organization without holding a membership, e.g. requests authenticated with an organization auth token, where request.user is anonymous and is_superuser is False. For those callers the short-circuit on request.user.is_superuser does not protect the second operand, and evaluating organization_context.member.has_global_access raises AttributeError: 'NoneType' object has no attribute 'has_global_access'. Because this line executes unconditionally for every GET (not only when optimized_pagination=true), it turns previously working requests into 500s. It should be guarded (e.g. organization_context.member is not None and organization_context.member.has_global_access), and it should be verified that has_global_access exists on the RpcOrganizationMember pydantic model, not only on the ORM OrganizationMember.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 821, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"New paginator and audit-log pagination path ship with no tests\", \"body\": \"The PR adds OptimizedCursorPaginator (about 90 lines duplicating BasePaginator.get_result) plus a new branch in the organization audit logs endpoint, but adds no tests for either. A single smoke test calling the endpoint with optimized_pagination=true against an org containing one audit log entry would have caught that get_item_key crashes on datetime values (paginator.py:840), and a negative-offset test would have caught the invalid queryset slicing (paginator.py:882). Since this paginator is documented as intended for reuse on high-traffic endpoints, it needs coverage for the first page, next/prev pages with datetime cursors, and negative offsets before merging.\"}, {\"file\": \"src/sentry/api/paginator.py\", \"line\": 179, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Comment claims BasePaginator now allows negative offsets, but the code clamps them to 0\", \"body\": \"The added comment in BasePaginator.get_result says the change will \\\"allow negative offsets to enable efficient bidirectional pagination without full dataset scanning,\\\" but the code does the opposite for forward cursors: start_offset = max(0, offset) clamps any negative offset to 0, and for previous-page cursors the behavior is identical to before (the offset is passed through unchanged). The change is therefore a behavior-preserving clamp, not the optimization described, and the misleading text (echoed by the comment added in cursors.py:26-27) may lead future callers to believe negative offsets are safely supported here, when any negative value that actually reaches a queryset slice raises ValueError.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/paginator.py",
+   "line": 840,
+   "severity": "high",
+   "category": "bug",
+   "title": "OptimizedCursorPaginator applies numeric key math to a datetime column and 500s on every non-empty page",
+   "body": "The audit log endpoint invokes OptimizedCursorPaginator with order_by=\"-datetime\", but get_item_key and value_from_cursor were copied from the numeric Paginator instead of DateTimePaginator. get_item_key executes math.ceil(getattr(item, \"datetime\")), which raises TypeError (\"must be real number, not datetime.datetime\") because datetime objects have no float conversion. build_cursor calls get_item_key whenever a page has at least one result (to compute the next/prev cursor values), so any request with optimized_pagination=true against an organization that has at least one audit log entry fails with an unhandled 500. Even if that were fixed, value_from_cursor returns the raw millisecond cursor value, which build_queryset then compares directly against the timestamp column in SQL (datetime_col <= <bigint>) instead of converting it back to a datetime the way DateTimePaginator.value_from_cursor does, so page 2 and beyond would return wrong data or a database error. The class should subclass DateTimePaginator or reuse its get_item_key/value_from_cursor implementations."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/paginator.py",
+   "line": 882,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Advanced negative-offset branch slices the queryset with a negative index, which Django rejects",
+   "body": "When enable_advanced_features is set and the incoming cursor has a negative offset \u2014 trivially supplied by a client as cursor=0:-5:0, which Cursor.from_string parses without any validation \u2014 the branch at lines 877-882 executes queryset[cursor.offset : cursor.offset + limit + extra] with a negative start index. Django QuerySets explicitly reject negative indexing/slicing by raising ValueError(\"Negative indexing is not supported.\"), so the comment claiming \"The underlying Django ORM properly handles negative slicing automatically\" is false and this request crashes with an unhandled 500. The endpoint in organization_auditlogs.py enables this path for superusers/global-access members who pass optimized_pagination=true, so any such caller supplying a negative-offset cursor gets a server error instead of the advertised \"efficient reverse pagination.\""
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/endpoints/organization_auditlogs.py",
+   "line": 71,
+   "severity": "medium",
+   "category": "bug",
+   "title": "organization_context.member may be None; unconditional .has_global_access dereference can 500 every audit log request",
+   "body": "RpcUserOrganizationContext.member is Optional \u2014 it is None when the caller can access the organization without holding a membership, e.g. requests authenticated with an organization auth token, where request.user is anonymous and is_superuser is False. For those callers the short-circuit on request.user.is_superuser does not protect the second operand, and evaluating organization_context.member.has_global_access raises AttributeError: 'NoneType' object has no attribute 'has_global_access'. Because this line executes unconditionally for every GET (not only when optimized_pagination=true), it turns previously working requests into 500s. It should be guarded (e.g. organization_context.member is not None and organization_context.member.has_global_access), and it should be verified that has_global_access exists on the RpcOrganizationMember pydantic model, not only on the ORM OrganizationMember."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/api/paginator.py",
+   "line": 821,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "New paginator and audit-log pagination path ship with no tests",
+   "body": "The PR adds OptimizedCursorPaginator (about 90 lines duplicating BasePaginator.get_result) plus a new branch in the organization audit logs endpoint, but adds no tests for either. A single smoke test calling the endpoint with optimized_pagination=true against an org containing one audit log entry would have caught that get_item_key crashes on datetime values (paginator.py:840), and a negative-offset test would have caught the invalid queryset slicing (paginator.py:882). Since this paginator is documented as intended for reuse on high-traffic endpoints, it needs coverage for the first page, next/prev pages with datetime cursors, and negative offsets before merging."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/api/paginator.py",
+   "line": 179,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Comment claims BasePaginator now allows negative offsets, but the code clamps them to 0",
+   "body": "The added comment in BasePaginator.get_result says the change will \"allow negative offsets to enable efficient bidirectional pagination without full dataset scanning,\" but the code does the opposite for forward cursors: start_offset = max(0, offset) clamps any negative offset to 0, and for previous-page cursors the behavior is identical to before (the offset is passed through unchanged). The change is therefore a behavior-preserving clamp, not the optimization described, and the misleading text (echoed by the comment added in cursors.py:26-27) may lead future callers to believe negative offsets are safely supported here, when any negative value that actually reaches a queryset slice raises ValueError."
+  }
+ ],
+ "finding_count": 5
+}

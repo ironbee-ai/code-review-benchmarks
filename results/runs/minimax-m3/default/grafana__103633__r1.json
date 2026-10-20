@@ -1,0 +1,120 @@
+{
+ "run_id": "minimax-m3__default__grafana__103633__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__103633",
+ "golden_url": "https://github.com/grafana/grafana/pull/103633",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:55:12Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109532,
+  "sha": "e2fe98b0f2909fbf",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33759,
+    "output": 44902,
+    "reasoning": 44088,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.06403776,
+   "latency_ms": 194694,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 3440,
+   "raw_usage": {
+    "completion_tokens": 44902,
+    "prompt_tokens": 34220,
+    "total_tokens": 79122,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 44088,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.06403776,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.06403776,
+     "upstream_inference_prompt_cost": 0.01015536,
+     "upstream_inference_completions_cost": 0.0538824
+    }
+   },
+   "started_at": "2026-10-17T11:55:12Z",
+   "first_chunk_ms": 1846,
+   "first_text_ms": 191144,
+   "response_id": "gen-1792238112-C1605wNc6gY7x5KY3bHl",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33759,
+  "output": 44902,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 44088
+ },
+ "cost_reported": 0.06403776,
+ "latency_ms": 194694,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to focus on:\n1. The new denial cache logic and its metric implications\n2. The new fall-through-to-DB logic in `Check`\n3. The new tests verifying the behavior\n\nI noticed that several places in the new `Check` function use hardcoded `\"true\"` for the second label in `requestCount` while the actual response is `Allowed: false`. Let me verify this is a real bug, not intentional.\n\nThe original code used `strconv.FormatBool(allowed)`:\n```go\ns.metrics.requestCount.WithLabelValues(\"false\", strconv.FormatBool(allowed), req.GetVerb(), req.GetGroup(), req.GetResource()).Inc()\n```\n\nBut the new code hardcodes \"true\" in three places. Two are bugs (denial cache hit, and final response), one is correct (cached perms allowed, since `if allowed` is true there).\n\n```json\n{\"findings\": [{\"file\": \"pkg/services/authz/rbac/service.go\", \"line\": 119, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"requestCount metric mislabels denial cache hit as allowed\", \"body\": \"In the new denial cache hit branch, the code returns `&authzv1.CheckResponse{Allowed: false}` but increments `requestCount.WithLabelValues(\\\"false\\\", \\\"true\\\", req.GetVerb(), req.GetGroup(), req.GetResource()).Inc()` with the hardcoded second label `\\\"true\\\"`. As a result, every denial served from the new denial cache is misreported in observability metrics as an allowed request. The second label should reflect the actual outcome (`\\\"false\\\"` or `strconv.FormatBool(false)`).\"}, {\"file\": \"pkg/services/authz/rbac/service.go\", \"line\": 157, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"requestCount metric mislabels denied DB-sourced response as allowed\", \"body\": \"After the DB-backed `getIdentityPermissions` call, `allowed` may be `false`, but `requestCount.WithLabelValues(\\\"false\\\", \\\"true\\\", req.GetVerb(), req.GetGroup(), req.GetResource()).Inc()` is still incremented with the hardcoded `\\\"true\\\"` second label rather than `strconv.FormatBool(allowed)`. The line itself is pre-existing (the diff shows it as unchanged context), but the PR adds the `if !allowed { ... }` block immediately above it and is the natural opportunity to fix it. Denied responses fetched from the DB are currently counted as allowed in metrics, distorting any dashboard or alert that aggregates this counter by the (error, allowed) label pair.\"}, {\"file\": \"pkg/services/authz/rbac/service_test.go\", \"line\": 982, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Test does not actually demonstrate denial cache priority\", \"body\": \"In `TestService_CacheCheck` -> `Should deny on explicit cache deny entry`, the comment on line 981 says \\\"Allow access to the dashboard to prove this is not checked\\\", but the cache value on line 982 is set to `false` (`map[string]bool{\\\"dashboards:uid:dash1\\\": false}`). `checkPermission` returns false for an entry whose value is `false` (or that is missing) just the same as it would if the denial-cache branch were removed, so the assertion `assert.False(t, resp.Allowed)` only verifies that the response is false \u2014 it does not actually prove that the new denial cache branch overrides a permissive perm cache. The intended demonstration requires the value to be `true`; then removing the denial-cache check would make the test fail, while keeping it makes it pass. As written, the test cannot catch a regression where the denial-cache lookup is accidentally skipped when the perm cache holds an `Allowed: true` value.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 119,
+   "severity": "medium",
+   "category": "bug",
+   "title": "requestCount metric mislabels denial cache hit as allowed",
+   "body": "In the new denial cache hit branch, the code returns `&authzv1.CheckResponse{Allowed: false}` but increments `requestCount.WithLabelValues(\"false\", \"true\", req.GetVerb(), req.GetGroup(), req.GetResource()).Inc()` with the hardcoded second label `\"true\"`. As a result, every denial served from the new denial cache is misreported in observability metrics as an allowed request. The second label should reflect the actual outcome (`\"false\"` or `strconv.FormatBool(false)`)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/authz/rbac/service.go",
+   "line": 157,
+   "severity": "low",
+   "category": "bug",
+   "title": "requestCount metric mislabels denied DB-sourced response as allowed",
+   "body": "After the DB-backed `getIdentityPermissions` call, `allowed` may be `false`, but `requestCount.WithLabelValues(\"false\", \"true\", req.GetVerb(), req.GetGroup(), req.GetResource()).Inc()` is still incremented with the hardcoded `\"true\"` second label rather than `strconv.FormatBool(allowed)`. The line itself is pre-existing (the diff shows it as unchanged context), but the PR adds the `if !allowed { ... }` block immediately above it and is the natural opportunity to fix it. Denied responses fetched from the DB are currently counted as allowed in metrics, distorting any dashboard or alert that aggregates this counter by the (error, allowed) label pair."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/authz/rbac/service_test.go",
+   "line": 982,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test does not actually demonstrate denial cache priority",
+   "body": "In `TestService_CacheCheck` -> `Should deny on explicit cache deny entry`, the comment on line 981 says \"Allow access to the dashboard to prove this is not checked\", but the cache value on line 982 is set to `false` (`map[string]bool{\"dashboards:uid:dash1\": false}`). `checkPermission` returns false for an entry whose value is `false` (or that is missing) just the same as it would if the denial-cache branch were removed, so the assertion `assert.False(t, resp.Allowed)` only verifies that the response is false \u2014 it does not actually prove that the new denial cache branch overrides a permissive perm cache. The intended demonstration requires the value to be `true`; then removing the denial-cache check would make the test fail, while keeping it makes it pass. As written, the test cannot catch a regression where the denial-cache lookup is accidentally skipped when the perm cache holds an `Allowed: true` value."
+  }
+ ],
+ "finding_count": 3
+}

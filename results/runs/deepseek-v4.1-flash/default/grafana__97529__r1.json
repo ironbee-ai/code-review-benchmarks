@@ -1,0 +1,151 @@
+{
+ "run_id": "deepseek-v4.1-flash__default__grafana__97529__r1",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 1,
+ "started_at": "2026-10-18T18:39:52Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 34953,
+    "output": 15837,
+    "reasoning": 14697,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.014745534,
+   "latency_ms": 76136,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 4928,
+   "raw_usage": {
+    "completion_tokens": 15837,
+    "prompt_tokens": 35081,
+    "total_tokens": 50918,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 14697,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.014745534,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.014745534,
+     "upstream_inference_prompt_cost": 0.005243334,
+     "upstream_inference_completions_cost": 0.0095022
+    }
+   },
+   "started_at": "2026-10-18T18:39:52Z",
+   "first_chunk_ms": 1402,
+   "first_text_ms": 71455,
+   "response_id": "gen-1792348792-mIJRgpGATZjcMRR1Um1G",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 34953,
+  "output": 15837,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 14697
+ },
+ "cost_reported": 0.014745534,
+ "latency_ms": 76136,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Eager Init turns any search/DB failure into a fatal Grafana startup failure\", \"body\": \"NewResourceServer now calls s.Init(ctx) and returns an error if it fails. Init runs the lifecycle hook (the SQL backend opens the resource DB) and searchSupport.init, which synchronously rebuilds every search index with no timeout. Any failure \u2014 a temporarily unreachable resource DB, a single namespace failing to build, a bleve error \u2014 now aborts construction of the ResourceServer and therefore Grafana startup, whereas before the server was constructed and only the affected requests failed. Because Init is guarded by sync.Once and the constructed server is discarded on error, there is no retry path: a transient failure requires a process restart. Consider making init failure non-fatal (mark unhealthy instead of failing construction) or bounding the index build with a timeout.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 261, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Init error path leaks the cancel func, the DB pool, and the search watcher goroutine\", \"body\": \"When s.Init(ctx) returns an error, NewResourceServer returns nil but never calls the cancel func created at line 229 and never invokes s.lifecycle.Stop (which is what calls backend.Stop and closes the resource DB pool opened by lifecycle.Init). Additionally, searchSupport.init has already started its WatchWriteEvents consumer goroutine with context.Background() (search.go:202), which polls the SQL backend every 100ms and is not tied to the server context, so it keeps running forever against a server that was never returned. Clean up (cancel()/Stop) before returning nil, err.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on shared err and totalBatchesIndexed inside search index init errgroup\", \"body\": \"In searchSupport.init, every goroutine launched into the errgroup does `totalBatchesIndexed++` and assigns its result to the outer `err` variable (`_, _, err = s.build(...)`; return err). With WorkerThreads > 1 (group.SetLimit(s.initWorkers)) these are unsynchronized writes to the same variables from multiple goroutines: a data race that can make group.Wait() return a nil or unrelated error and corrupt the reported count of indexed namespaces. This is now on the startup path, where a returned error makes the whole server fail to start, so use per-goroutine locals and an atomic counter.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the index cache without holding cacheMu\", \"body\": \"bleveBackend.TotalDocs ranges over b.cache without taking cacheMu.RLock, while BuildIndex now writes to the same map from multiple concurrent goroutines (the coarse lock that previously serialized all builds is gone and only the final `b.cache[key] = idx` is locked). A concurrent TotalDocs call \u2014 e.g. from a metric collector or while the index for another namespace is being built \u2014 can trigger the unrecoverable runtime error \\\"concurrent map iteration and map write\\\" and crash the process. Guard the loop with RLock.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"No longer serialized: concurrent BuildIndex for the same key races and leaks the losing index\", \"body\": \"Removing the function-wide cacheMu means two BuildIndex calls for the same NamespacedResource can now run simultaneously (e.g. two Search RPCs that both miss the cache for a key, which is exactly the case the TODO in getOrCreateIndex warns about). Both build a full index, both assign to b.cache[key], and the index that loses the assignment is never closed, leaking file handles/disk (bleve file-backed indexes) or memory. The old coarse lock at least serialized the two builds; if per-key concurrency is now intended, add per-key single-flight and close the replaced index before overwriting the cache entry.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Postgres variant of the storage-server integration test is skipped, hiding a startup regression\", \"body\": \"This test validates that the storage-server target starts and serves the instrumentation endpoint. Skipping it for GRAFANA_TEST_DB=postgres (with a TODO saying it only fails in Drone) removes the only coverage for the storage target against Postgres exactly in the PR that makes initialization eager and therefore makes construction depend on the resource_api DB being reachable. If the test now fails because NewResourceServer can no longer be constructed with that configuration, that is the regression the PR should address rather than skip.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "high",
+   "category": "bug",
+   "title": "Eager Init turns any search/DB failure into a fatal Grafana startup failure",
+   "body": "NewResourceServer now calls s.Init(ctx) and returns an error if it fails. Init runs the lifecycle hook (the SQL backend opens the resource DB) and searchSupport.init, which synchronously rebuilds every search index with no timeout. Any failure \u2014 a temporarily unreachable resource DB, a single namespace failing to build, a bleve error \u2014 now aborts construction of the ResourceServer and therefore Grafana startup, whereas before the server was constructed and only the affected requests failed. Because Init is guarded by sync.Once and the constructed server is discarded on error, there is no retry path: a transient failure requires a process restart. Consider making init failure non-fatal (mark unhealthy instead of failing construction) or bounding the index build with a timeout."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 261,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Init error path leaks the cancel func, the DB pool, and the search watcher goroutine",
+   "body": "When s.Init(ctx) returns an error, NewResourceServer returns nil but never calls the cancel func created at line 229 and never invokes s.lifecycle.Stop (which is what calls backend.Stop and closes the resource DB pool opened by lifecycle.Init). Additionally, searchSupport.init has already started its WatchWriteEvents consumer goroutine with context.Background() (search.go:202), which polls the SQL backend every 100ms and is not tied to the server context, so it keeps running forever against a server that was never returned. Clean up (cancel()/Stop) before returning nil, err."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on shared err and totalBatchesIndexed inside search index init errgroup",
+   "body": "In searchSupport.init, every goroutine launched into the errgroup does `totalBatchesIndexed++` and assigns its result to the outer `err` variable (`_, _, err = s.build(...)`; return err). With WorkerThreads > 1 (group.SetLimit(s.initWorkers)) these are unsynchronized writes to the same variables from multiple goroutines: a data race that can make group.Wait() return a nil or unrelated error and corrupt the reported count of indexed namespaces. This is now on the startup path, where a returned error makes the whole server fail to start, so use per-goroutine locals and an atomic counter."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the index cache without holding cacheMu",
+   "body": "bleveBackend.TotalDocs ranges over b.cache without taking cacheMu.RLock, while BuildIndex now writes to the same map from multiple concurrent goroutines (the coarse lock that previously serialized all builds is gone and only the final `b.cache[key] = idx` is locked). A concurrent TotalDocs call \u2014 e.g. from a metric collector or while the index for another namespace is being built \u2014 can trigger the unrecoverable runtime error \"concurrent map iteration and map write\" and crash the process. Guard the loop with RLock."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "No longer serialized: concurrent BuildIndex for the same key races and leaks the losing index",
+   "body": "Removing the function-wide cacheMu means two BuildIndex calls for the same NamespacedResource can now run simultaneously (e.g. two Search RPCs that both miss the cache for a key, which is exactly the case the TODO in getOrCreateIndex warns about). Both build a full index, both assign to b.cache[key], and the index that loses the assignment is never closed, leaking file handles/disk (bleve file-backed indexes) or memory. The old coarse lock at least serialized the two builds; if per-key concurrency is now intended, add per-key single-flight and close the replaced index before overwriting the cache entry."
+  },
+  {
+   "index": 5,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres variant of the storage-server integration test is skipped, hiding a startup regression",
+   "body": "This test validates that the storage-server target starts and serves the instrumentation endpoint. Skipping it for GRAFANA_TEST_DB=postgres (with a TODO saying it only fails in Drone) removes the only coverage for the storage target against Postgres exactly in the PR that makes initialization eager and therefore makes construction depend on the resource_api DB being reachable. If the test now fails because NewResourceServer can no longer be constructed with that configuration, that is the regression the PR should address rather than skip."
+  }
+ ],
+ "finding_count": 6
+}

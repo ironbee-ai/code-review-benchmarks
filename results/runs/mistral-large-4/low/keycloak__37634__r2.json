@@ -1,0 +1,253 @@
+{
+ "run_id": "mistral-large-4__low__keycloak__37634__r2",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak__37634",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/37634",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:45:52Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 208755,
+  "sha": "8b18029a3ed06f47",
+  "patch_only": [
+   "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 50569,
+    "output": 4244,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04325688,
+   "latency_ms": 75613,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 19147,
+   "raw_usage": {
+    "completion_tokens": 4244,
+    "prompt_tokens": 50569,
+    "total_tokens": 54813,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.04325688,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04325688,
+     "upstream_inference_prompt_cost": 0.03438692,
+     "upstream_inference_completions_cost": 0.00886996
+    }
+   },
+   "started_at": "2026-10-17T20:45:52Z",
+   "first_chunk_ms": 5344,
+   "first_text_ms": 5344,
+   "response_id": "gen-1792269952-dfaAT5AT52WgKi1bL11a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 50569,
+  "output": 4244,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.04325688,
+ "latency_ms": 75613,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java\",\n      \"line\": 73,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Wrong null-check argument in constructor\",\n      \"body\": \"In the AccessTokenContext constructor, the fourth null check is `Objects.requireNonNull(grantType, \\\"Null rawTokenId not allowed\\\")` \u2014 it checks `grantType` again instead of `rawTokenId`. As a result, a null `rawTokenId` is not rejected and is stored in the field, while the error message is misleading. A null rawTokenId would later produce a malformed encoded token id (e.g. `onrtac:null`) or an NPE during encoding/concatenation.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java\",\n      \"line\": 57,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Grant type read from client session context is not the grant type that created the token\",\n      \"body\": \"getTokenContextFromClientSessionContext() reads the grant type from `clientSessionContext.getAttribute(Constants.GRANT_TYPE)`. However, this attribute is set on the client session context at token-creation time (e.g. in OAuth2GrantTypeBase.createTokenResponse, ResourceOwnerPasswordCredentialsGrantType, StandardTokenExchangeProvider) and, critically, in TokenManager.refreshToken() the attribute is overwritten with `OAuth2Constants.REFRESH_TOKEN` before creating the new access token. More importantly, the attribute persists on the client session across multiple token issuances: a client session created by an authorization-code grant keeps GRANT_TYPE=authorization_code, so a later access token issued via the refresh-token grant on the same client session would be encoded with the stale original grant type unless every issuance path overwrites it. Any token-creation path that does not set this attribute (e.g. service-account/client-credentials flows that build the ClientSessionContext differently, admin-initiated impersonation, or token creation via TokenManager.createClientAccessToken from other callers) will silently encode the wrong grant type or 'na'. The encoded grant type therefore cannot be trusted as 'the grant type used to create this token' without auditing every caller of createClientAccessToken/initToken.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java\",\n      \"line\": 54,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Token type (lightweight vs regular) is derived from the current session/client state, not from the token being created\",\n      \"body\": \"getTokenContextFromClientSessionContext() determines TokenType via `AbstractOIDCProtocolMapper.getShouldUseLightweightToken(session)`, which reads `session.getAttribute(Constants.USE_LIGHTWEIGHT_ACCESS_TOKEN_ENABLED)` and the client attribute. The session attribute is set by token-exchange code paths (e.g. lightweight token exchange) and may be set or cleared at arbitrary points during request processing. If the session attribute is set after initToken() runs, or if a token is created in a context where the session attribute reflects a different decision than the one actually applied to the token (TokenManager decides lightweight-ness in formatTokenType/applyMapper based on the same helper, but the two calls are not atomic), the encoded token-type shortcut can disagree with the actual token type. The PR's stated goal \u2014 'recognize more reliably if access-token is lightweight or not' \u2014 is undermined if the encoded value can be wrong; consumers using the prefix to decide whether to trust in-token roles would make incorrect authorization decisions.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java\",\n      \"line\": 67,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Decoding a token id containing a colon in the raw id mis-parses the context\",\n      \"body\": \"getTokenContextFromTokenId() uses `encodedTokenId.indexOf(':')` to split prefix from raw id. If the raw id itself contains a ':' (KeycloakModelUtils.generateId() produces UUIDs today, but the SPI contract allows custom encoders/providers and the raw id is opaque), the first colon is found correctly only if the prefix contains no colon \u2014 which holds for the default encoder. However, the bigger issue: any legacy or foreign token id that happens to contain a colon (e.g. `foo:bar`) is treated as an encoded id; `encodedContext.length() != 6` then throws IllegalArgumentException. Throwing on arbitrary token ids means any code path that decodes a token id (introspection, userInfo, admin API) will throw an unhandled exception for malformed/legacy ids that contain a colon but are not 6-char-prefixed, instead of degrading to UNKNOWN as the no-colon branch does. This is an inconsistent and fragile contract: ids without ':' are tolerated, ids with ':' but wrong prefix length crash the request.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java\",\n      \"line\": 82,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Duplicate-shortcut validation compares map sizes, which does not detect collisions\",\n      \"body\": \"postInit() validates uniqueness of grant shortcuts by checking `grantsByShortcuts.size() != grantsToShortcuts.size()`. This is incorrect: if two different grant types share the same shortcut, `grantsByShortcuts.put(shortcut, grantName)` overwrites one entry (size stays smaller) while `grantsToShortcuts` gains two entries \u2014 sizes differ, so it is caught. But if two different grant types share the same ID (impossible via getId contract) or, more realistically, if a shortcut collides AND a grant name collides in a compensating way, sizes can be equal while mappings are wrong. More importantly, the check cannot detect the case where one grant's shortcut equals another grant's shortcut AND the overwritten entry coincidentally keeps sizes equal (e.g. duplicate shortcut plus duplicate id). The robust check is to detect size shrinkage during insertion (compare size before/after each put) or explicitly check `grantsByShortcuts.containsKey(shortcut)` before putting. As written, the safety net the comment claims ('Validation if there are not duplicated shortcuts') is unreliable.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java\",\n      \"line\": 106,\n      \"severity\": \"low\",\n      \"category\": \"concurrency\",\n      \"title\": \"Lazy refresh of grant maps is not atomic and can permanently cache a wrong mapping\",\n      \"body\": \"getShortcutByGrantType() and getGrantTypeByShortcut() lazily populate the ConcurrentHashMaps when a grant type deployed after startup is encountered. The check-then-act sequence (`get` returning null, then lookup in sessionFactory, then `put`) is not atomic: two threads can both miss and both put, which is benign for identical values. However, if a custom OAuth2GrantTypeFactory is deployed whose shortcut collides with an existing one, the lazy path silently overwrites the existing mapping (grantsByShortcuts.put(shortcut, grantType)), permanently corrupting the shortcut\u2192grant resolution for previously valid tokens \u2014 a token id encoded with the old mapping will now decode to the wrong grant type. The startup validation in postInit() is bypassed entirely by this lazy path.\"\n    },\n    {\n      \"file\": \"server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java\",\n      \"line\": 102,\n      \"severity\": \"medium\",\n      \"category\": \"api\",\n      \"title\": \"Removal of the Context copy constructor is a breaking API change for custom OAuth2GrantType implementations\",\n      \"body\": \"The PR deletes the public copy constructor `Context(Context context)` from OAuth2GrantType.Context. This is a public class in server-spi-private, and third-party/custom grant type providers (the SPI is designed for extension \u2014 the PR itself advertises 'provider adds ability for someone to introduce his own provider') may use this copy constructor to wrap/delegate contexts (a common pattern for decorating grant processing). Removing a public constructor without deprecation is a binary- and source-incompatible break for any external implementation. If the copy constructor is no longer needed internally, it should be deprecated first, not removed in the same change.\"\n    },\n    {\n      \"file\": \"server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java\",\n      \"line\": 102,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"grantType captured in constructor can be stale when formParams are replaced via setFormParams\",\n      \"body\": \"The constructor now eagerly captures `this.grantType = formParams.getFirst(OAuth2Constants.GRANT_TYPE)`, but the class still exposes `setFormParams(MultivaluedHashMap)` which replaces the formParams reference. Any caller that constructs the Context and then calls setFormParams() with different parameters (e.g. a wrapper that normalizes or replaces form params) will leave `grantType` holding the old value while `getFormParams()` returns the new ones \u2014 an inconsistent state. Either derive grantType lazily in getGrantType() from the current formParams, or update grantType inside setFormParams().\"\n    },\n    {\n      \"file\": \"server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantTypeFactory.java\",\n      \"line\": 33,\n      \"severity\": \"high\",\n      \"category\": \"api\",\n      \"title\": \"New abstract method getShortcut() on OAuth2GrantTypeFactory breaks all existing third-party grant type factories\",\n      \"body\": \"The PR adds `String getShortcut();` as a non-default method to the public SPI interface OAuth2GrantTypeFactory. Every existing custom implementation of this SPI (external extensions, downstream products) will fail to compile and, if already compiled, will throw AbstractMethodError at runtime when DefaultTokenContextEncoderProviderFactory.postInit() iterates all OAuth2GrantType factories and calls getShortcut(). This is a hard backward-incompatibility in a public SPI. The method should be declared `default` (e.g. returning null or a derived value) with a documented requirement to override, so existing factories keep working and unknown shortcuts degrade to the 'na'/UNKNOWN path.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java\",\n      \"line\": 1051,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Encoded token id is generated in initToken but other token-creation paths may bypass it\",\n      \"body\": \"The encoding is applied only in TokenManager.initToken(). Any other code path that creates an AccessToken and sets its id directly (e.g. `token.id(KeycloakModelUtils.generateId())` elsewhere in TokenManager or in other services such as TokenExchangeProvider variants, service-account flows, admin impersonation, or the OIDC 'token' endpoint response building for ID-token-as-access-token in StandardTokenExchangeProvider where an IDToken is reused) will produce access tokens whose jti has no context prefix. Consumers relying on the prefix (the stated purpose: introspection/userInfo optimization, session-type lookup) will see a mix of prefixed and unprefixed ids and must handle both \u2014 the PR description claims the encoding is 'used only for access-tokens', but in practice only for access tokens created through initToken. If full coverage is intended, all AccessToken.id() assignments for access tokens must go through the encoder; if not, the fallback behavior for unprefixed ids must be documented and handled by consumers.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java\",\n      \"line\": 248,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"Refresh grant overwrites the client session GRANT_TYPE attribute, mutating session state visible to other flows\",\n      \"body\": \"In refreshToken(), `clientSessionCtx.setAttribute(Constants.GRANT_TYPE, OAuth2Constants.REFRESH_TOKEN)` overwrites the grant type stored on the (persistent) client session context. The original grant type that created the session (e.g. authorization_code) is lost from the session context. Any other consumer reading this attribute later (current or future) will see 'refresh_token' as the session's grant type, which misrepresents the session's origin. If the attribute is meant to record 'the grant type of the most recent token issuance', that should be documented; if it is meant to record the session's originating grant, overwriting it is a data-integrity bug.\"\n    },\n    {\n      \"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java\",\n      \"line\": 483,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"isAccessTokenId matcher has inverted grant-shortcut comparison, making the new assertions always fail\",\n      \"body\": \"In the new isAccessTokenId(String expectedGrantShortcut) matcher, the check is `if (items[0].substring(3, 5).equals(expectedGrantShortcut)) return false;` \u2014 it returns false (no match) precisely when the grant shortcut DOES equal the expected value, and falls through to the UUID check otherwise. The condition is inverted; it should be `if (!items[0].substring(3, 5).equals(expectedGrantShortcut)) return false;`. Additionally, the substring indices are wrong: the prefix is 6 characters (2 session + 2 token + 2 grant), so the grant shortcut occupies characters at index 4\u20135, i.e. `substring(4, 6)`, not `substring(3, 5)` (the comment even says 'starts at character 4th char' \u2014 off-by-one in the code). As written, every expectCodeToToken/expectRefresh/expectDeviceCodeToToken/expectAuthReqIdToToken event assertion using this matcher will fail (or pass only accidentally), breaking the integration tests that were updated to use it.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java\",\n      \"line\": 33,\n      \"severity\": \"low\",\n      \"category\": \"style\",\n      \"title\": \"UNKNOWN constant value 'na' collides conceptually with the 'unknown' session/token shortcuts 'un' but is a grant-only sentinel mixed into the same namespace\",\n      \"body\": \"The grant-type sentinel UNKNOWN = \\\"na\\\" is registered in the same shortcut maps as real grant shortcuts (grantsByShortcuts/grantsToShortcuts in the factory). A custom grant type factory could legitimately choose the shortcut \\\"na\\\", which would then be indistinguishable from 'unknown grant type' when decoding. The factory's duplicate-detection would not catch this because \\\"na\\\" is pre-registered after the loop, silently overwriting (or being overwritten by) a real grant. Reserving the sentinel namespace (e.g. validating that no grant shortcut equals \\\"na\\\" at startup) would prevent this ambiguity.\"\n    },\n    {\n      \"file\": \"services/src/test/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderTest.java\",\n      \"line\": 42,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"Unit test bypasses factory.postInit and hand-builds internal maps, so it does not test the real wiring\",\n      \"body\": \"The test's @Before constructs DefaultTokenContextEncoderProviderFactory, calls init(null), then directly assigns the package-private fields grantsByShortcuts/grantsToShortcuts with a hand-built HashMap, bypassing postInit() entirely. This means the test never exercises the real population logic (iteration over OAuth2GrantType factories, duplicate-shortcut validation, UNKNOWN registration) and would not catch regressions in postInit(). It also means the test depends on package-private field access, making it brittle. A test that drives the factory through postInit with a real/mock KeycloakSessionFactory would cover the actual production path.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java\",\n      \"line\": 47,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Session type detection calls getUserSession() which can be null for client-credentials/service-account sessions\",\n      \"body\": \"getTokenContextFromClientSessionContext() unconditionally calls `clientSessionContext.getClientSession().getUserSession()` and then dereferences the result (`userSession.getPersistenceState()`). For client-credentials grants and service-account flows there is no user session (the client session is not attached to a user session), so getUserSession() can return null, causing an NPE during access-token creation for client-credentials \u2014 one of the most common grant types. The PR's own example (`trltcc:...` for a transient lightweight client-credentials token) implies client-credentials tokens are expected to be encoded, so this path must handle a null user session (e.g. defaulting to TRANSIENT).\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/grants/PreAuthorizedCodeGrantType.java\",\n      \"line\": 82,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"GRANT_TYPE attribute set on a DefaultClientSessionContext wrapper may not propagate to the persisted client session\",\n      \"body\": \"In PreAuthorizedCodeGrantType.process(), the grant type is set via `sessionContext.setAttribute(Constants.GRANT_TYPE, ...)` where sessionContext is a `DefaultClientSessionContext` created by `DefaultClientSessionContext.fromClientSessionAndScopeParameter(...)`. Whether this attribute is visible later when TokenManager.initToken() reads it via the ClientSessionContext passed to createClientAccessToken depends on DefaultClientSessionContext.setAttribute delegating to the underlying AuthenticatedClientSessionModel notes. If DefaultClientSessionContext.setAttribute only writes to an in-memory map that is not the same instance passed to createClientAccessToken (a different wrapper is created inside TokenManager), the grant type will be lost and the token encoded with 'na'. This path should be verified with an integration test; the unit test does not cover it.\"\n    },\n    {\n      \"file\": \"services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java\",\n      \"line\": 41,\n      \"severity\": \"low\",\n      \"category\": \"style\",\n      \"title\": \"Grant maps are package-private mutable fields, exposing internal state\",\n      \"body\": \"grantsByShortcuts and grantsToShortcuts are declared without an access modifier (package-private) and are non-final mutable fields on the factory. The unit test relies on this to inject state directly. Exposing mutable internal maps package-wide invites accidental external mutation and makes the class harder to reason about; they should be private with the test using the real postInit() path (or a package-private test hook that is clearly intended for tests).\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/AccessTokenContext.java",
+   "line": 73,
+   "severity": "low",
+   "category": "bug",
+   "title": "Wrong null-check argument in constructor",
+   "body": "In the AccessTokenContext constructor, the fourth null check is `Objects.requireNonNull(grantType, \"Null rawTokenId not allowed\")` \u2014 it checks `grantType` again instead of `rawTokenId`. As a result, a null `rawTokenId` is not rejected and is stored in the field, while the error message is misleading. A null rawTokenId would later produce a malformed encoded token id (e.g. `onrtac:null`) or an NPE during encoding/concatenation."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+   "line": 57,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Grant type read from client session context is not the grant type that created the token",
+   "body": "getTokenContextFromClientSessionContext() reads the grant type from `clientSessionContext.getAttribute(Constants.GRANT_TYPE)`. However, this attribute is set on the client session context at token-creation time (e.g. in OAuth2GrantTypeBase.createTokenResponse, ResourceOwnerPasswordCredentialsGrantType, StandardTokenExchangeProvider) and, critically, in TokenManager.refreshToken() the attribute is overwritten with `OAuth2Constants.REFRESH_TOKEN` before creating the new access token. More importantly, the attribute persists on the client session across multiple token issuances: a client session created by an authorization-code grant keeps GRANT_TYPE=authorization_code, so a later access token issued via the refresh-token grant on the same client session would be encoded with the stale original grant type unless every issuance path overwrites it. Any token-creation path that does not set this attribute (e.g. service-account/client-credentials flows that build the ClientSessionContext differently, admin-initiated impersonation, or token creation via TokenManager.createClientAccessToken from other callers) will silently encode the wrong grant type or 'na'. The encoded grant type therefore cannot be trusted as 'the grant type used to create this token' without auditing every caller of createClientAccessToken/initToken."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+   "line": 54,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Token type (lightweight vs regular) is derived from the current session/client state, not from the token being created",
+   "body": "getTokenContextFromClientSessionContext() determines TokenType via `AbstractOIDCProtocolMapper.getShouldUseLightweightToken(session)`, which reads `session.getAttribute(Constants.USE_LIGHTWEIGHT_ACCESS_TOKEN_ENABLED)` and the client attribute. The session attribute is set by token-exchange code paths (e.g. lightweight token exchange) and may be set or cleared at arbitrary points during request processing. If the session attribute is set after initToken() runs, or if a token is created in a context where the session attribute reflects a different decision than the one actually applied to the token (TokenManager decides lightweight-ness in formatTokenType/applyMapper based on the same helper, but the two calls are not atomic), the encoded token-type shortcut can disagree with the actual token type. The PR's stated goal \u2014 'recognize more reliably if access-token is lightweight or not' \u2014 is undermined if the encoded value can be wrong; consumers using the prefix to decide whether to trust in-token roles would make incorrect authorization decisions."
+  },
+  {
+   "index": 3,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+   "line": 67,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Decoding a token id containing a colon in the raw id mis-parses the context",
+   "body": "getTokenContextFromTokenId() uses `encodedTokenId.indexOf(':')` to split prefix from raw id. If the raw id itself contains a ':' (KeycloakModelUtils.generateId() produces UUIDs today, but the SPI contract allows custom encoders/providers and the raw id is opaque), the first colon is found correctly only if the prefix contains no colon \u2014 which holds for the default encoder. However, the bigger issue: any legacy or foreign token id that happens to contain a colon (e.g. `foo:bar`) is treated as an encoded id; `encodedContext.length() != 6` then throws IllegalArgumentException. Throwing on arbitrary token ids means any code path that decodes a token id (introspection, userInfo, admin API) will throw an unhandled exception for malformed/legacy ids that contain a colon but are not 6-char-prefixed, instead of degrading to UNKNOWN as the no-colon branch does. This is an inconsistent and fragile contract: ids without ':' are tolerated, ids with ':' but wrong prefix length crash the request."
+  },
+  {
+   "index": 4,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java",
+   "line": 82,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Duplicate-shortcut validation compares map sizes, which does not detect collisions",
+   "body": "postInit() validates uniqueness of grant shortcuts by checking `grantsByShortcuts.size() != grantsToShortcuts.size()`. This is incorrect: if two different grant types share the same shortcut, `grantsByShortcuts.put(shortcut, grantName)` overwrites one entry (size stays smaller) while `grantsToShortcuts` gains two entries \u2014 sizes differ, so it is caught. But if two different grant types share the same ID (impossible via getId contract) or, more realistically, if a shortcut collides AND a grant name collides in a compensating way, sizes can be equal while mappings are wrong. More importantly, the check cannot detect the case where one grant's shortcut equals another grant's shortcut AND the overwritten entry coincidentally keeps sizes equal (e.g. duplicate shortcut plus duplicate id). The robust check is to detect size shrinkage during insertion (compare size before/after each put) or explicitly check `grantsByShortcuts.containsKey(shortcut)` before putting. As written, the safety net the comment claims ('Validation if there are not duplicated shortcuts') is unreliable."
+  },
+  {
+   "index": 5,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java",
+   "line": 106,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Lazy refresh of grant maps is not atomic and can permanently cache a wrong mapping",
+   "body": "getShortcutByGrantType() and getGrantTypeByShortcut() lazily populate the ConcurrentHashMaps when a grant type deployed after startup is encountered. The check-then-act sequence (`get` returning null, then lookup in sessionFactory, then `put`) is not atomic: two threads can both miss and both put, which is benign for identical values. However, if a custom OAuth2GrantTypeFactory is deployed whose shortcut collides with an existing one, the lazy path silently overwrites the existing mapping (grantsByShortcuts.put(shortcut, grantType)), permanently corrupting the shortcut\u2192grant resolution for previously valid tokens \u2014 a token id encoded with the old mapping will now decode to the wrong grant type. The startup validation in postInit() is bypassed entirely by this lazy path."
+  },
+  {
+   "index": 6,
+   "file": "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java",
+   "line": 102,
+   "severity": "medium",
+   "category": "api",
+   "title": "Removal of the Context copy constructor is a breaking API change for custom OAuth2GrantType implementations",
+   "body": "The PR deletes the public copy constructor `Context(Context context)` from OAuth2GrantType.Context. This is a public class in server-spi-private, and third-party/custom grant type providers (the SPI is designed for extension \u2014 the PR itself advertises 'provider adds ability for someone to introduce his own provider') may use this copy constructor to wrap/delegate contexts (a common pattern for decorating grant processing). Removing a public constructor without deprecation is a binary- and source-incompatible break for any external implementation. If the copy constructor is no longer needed internally, it should be deprecated first, not removed in the same change."
+  },
+  {
+   "index": 7,
+   "file": "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantType.java",
+   "line": 102,
+   "severity": "low",
+   "category": "bug",
+   "title": "grantType captured in constructor can be stale when formParams are replaced via setFormParams",
+   "body": "The constructor now eagerly captures `this.grantType = formParams.getFirst(OAuth2Constants.GRANT_TYPE)`, but the class still exposes `setFormParams(MultivaluedHashMap)` which replaces the formParams reference. Any caller that constructs the Context and then calls setFormParams() with different parameters (e.g. a wrapper that normalizes or replaces form params) will leave `grantType` holding the old value while `getFormParams()` returns the new ones \u2014 an inconsistent state. Either derive grantType lazily in getGrantType() from the current formParams, or update grantType inside setFormParams()."
+  },
+  {
+   "index": 8,
+   "file": "server-spi-private/src/main/java/org/keycloak/protocol/oidc/grants/OAuth2GrantTypeFactory.java",
+   "line": 33,
+   "severity": "high",
+   "category": "api",
+   "title": "New abstract method getShortcut() on OAuth2GrantTypeFactory breaks all existing third-party grant type factories",
+   "body": "The PR adds `String getShortcut();` as a non-default method to the public SPI interface OAuth2GrantTypeFactory. Every existing custom implementation of this SPI (external extensions, downstream products) will fail to compile and, if already compiled, will throw AbstractMethodError at runtime when DefaultTokenContextEncoderProviderFactory.postInit() iterates all OAuth2GrantType factories and calls getShortcut(). This is a hard backward-incompatibility in a public SPI. The method should be declared `default` (e.g. returning null or a derived value) with a documented requirement to override, so existing factories keep working and unknown shortcuts degrade to the 'na'/UNKNOWN path."
+  },
+  {
+   "index": 9,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java",
+   "line": 1051,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Encoded token id is generated in initToken but other token-creation paths may bypass it",
+   "body": "The encoding is applied only in TokenManager.initToken(). Any other code path that creates an AccessToken and sets its id directly (e.g. `token.id(KeycloakModelUtils.generateId())` elsewhere in TokenManager or in other services such as TokenExchangeProvider variants, service-account flows, admin impersonation, or the OIDC 'token' endpoint response building for ID-token-as-access-token in StandardTokenExchangeProvider where an IDToken is reused) will produce access tokens whose jti has no context prefix. Consumers relying on the prefix (the stated purpose: introspection/userInfo optimization, session-type lookup) will see a mix of prefixed and unprefixed ids and must handle both \u2014 the PR description claims the encoding is 'used only for access-tokens', but in practice only for access tokens created through initToken. If full coverage is intended, all AccessToken.id() assignments for access tokens must go through the encoder; if not, the fallback behavior for unprefixed ids must be documented and handled by consumers."
+  },
+  {
+   "index": 10,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/TokenManager.java",
+   "line": 248,
+   "severity": "low",
+   "category": "data",
+   "title": "Refresh grant overwrites the client session GRANT_TYPE attribute, mutating session state visible to other flows",
+   "body": "In refreshToken(), `clientSessionCtx.setAttribute(Constants.GRANT_TYPE, OAuth2Constants.REFRESH_TOKEN)` overwrites the grant type stored on the (persistent) client session context. The original grant type that created the session (e.g. authorization_code) is lost from the session context. Any other consumer reading this attribute later (current or future) will see 'refresh_token' as the session's grant type, which misrepresents the session's origin. If the attribute is meant to record 'the grant type of the most recent token issuance', that should be documented; if it is meant to record the session's originating grant, overwriting it is a data-integrity bug."
+  },
+  {
+   "index": 11,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/AssertEvents.java",
+   "line": 483,
+   "severity": "high",
+   "category": "bug",
+   "title": "isAccessTokenId matcher has inverted grant-shortcut comparison, making the new assertions always fail",
+   "body": "In the new isAccessTokenId(String expectedGrantShortcut) matcher, the check is `if (items[0].substring(3, 5).equals(expectedGrantShortcut)) return false;` \u2014 it returns false (no match) precisely when the grant shortcut DOES equal the expected value, and falls through to the UUID check otherwise. The condition is inverted; it should be `if (!items[0].substring(3, 5).equals(expectedGrantShortcut)) return false;`. Additionally, the substring indices are wrong: the prefix is 6 characters (2 session + 2 token + 2 grant), so the grant shortcut occupies characters at index 4\u20135, i.e. `substring(4, 6)`, not `substring(3, 5)` (the comment even says 'starts at character 4th char' \u2014 off-by-one in the code). As written, every expectCodeToToken/expectRefresh/expectDeviceCodeToToken/expectAuthReqIdToToken event assertion using this matcher will fail (or pass only accidentally), breaking the integration tests that were updated to use it."
+  },
+  {
+   "index": 12,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+   "line": 33,
+   "severity": "low",
+   "category": "style",
+   "title": "UNKNOWN constant value 'na' collides conceptually with the 'unknown' session/token shortcuts 'un' but is a grant-only sentinel mixed into the same namespace",
+   "body": "The grant-type sentinel UNKNOWN = \"na\" is registered in the same shortcut maps as real grant shortcuts (grantsByShortcuts/grantsToShortcuts in the factory). A custom grant type factory could legitimately choose the shortcut \"na\", which would then be indistinguishable from 'unknown grant type' when decoding. The factory's duplicate-detection would not catch this because \"na\" is pre-registered after the loop, silently overwriting (or being overwritten by) a real grant. Reserving the sentinel namespace (e.g. validating that no grant shortcut equals \"na\" at startup) would prevent this ambiguity."
+  },
+  {
+   "index": 13,
+   "file": "services/src/test/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderTest.java",
+   "line": 42,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Unit test bypasses factory.postInit and hand-builds internal maps, so it does not test the real wiring",
+   "body": "The test's @Before constructs DefaultTokenContextEncoderProviderFactory, calls init(null), then directly assigns the package-private fields grantsByShortcuts/grantsToShortcuts with a hand-built HashMap, bypassing postInit() entirely. This means the test never exercises the real population logic (iteration over OAuth2GrantType factories, duplicate-shortcut validation, UNKNOWN registration) and would not catch regressions in postInit(). It also means the test depends on package-private field access, making it brittle. A test that drives the factory through postInit with a real/mock KeycloakSessionFactory would cover the actual production path."
+  },
+  {
+   "index": 14,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProvider.java",
+   "line": 47,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Session type detection calls getUserSession() which can be null for client-credentials/service-account sessions",
+   "body": "getTokenContextFromClientSessionContext() unconditionally calls `clientSessionContext.getClientSession().getUserSession()` and then dereferences the result (`userSession.getPersistenceState()`). For client-credentials grants and service-account flows there is no user session (the client session is not attached to a user session), so getUserSession() can return null, causing an NPE during access-token creation for client-credentials \u2014 one of the most common grant types. The PR's own example (`trltcc:...` for a transient lightweight client-credentials token) implies client-credentials tokens are expected to be encoded, so this path must handle a null user session (e.g. defaulting to TRANSIENT)."
+  },
+  {
+   "index": 15,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/grants/PreAuthorizedCodeGrantType.java",
+   "line": 82,
+   "severity": "low",
+   "category": "data",
+   "title": "GRANT_TYPE attribute set on a DefaultClientSessionContext wrapper may not propagate to the persisted client session",
+   "body": "In PreAuthorizedCodeGrantType.process(), the grant type is set via `sessionContext.setAttribute(Constants.GRANT_TYPE, ...)` where sessionContext is a `DefaultClientSessionContext` created by `DefaultClientSessionContext.fromClientSessionAndScopeParameter(...)`. Whether this attribute is visible later when TokenManager.initToken() reads it via the ClientSessionContext passed to createClientAccessToken depends on DefaultClientSessionContext.setAttribute delegating to the underlying AuthenticatedClientSessionModel notes. If DefaultClientSessionContext.setAttribute only writes to an in-memory map that is not the same instance passed to createClientAccessToken (a different wrapper is created inside TokenManager), the grant type will be lost and the token encoded with 'na'. This path should be verified with an integration test; the unit test does not cover it."
+  },
+  {
+   "index": 16,
+   "file": "services/src/main/java/org/keycloak/protocol/oidc/encode/DefaultTokenContextEncoderProviderFactory.java",
+   "line": 41,
+   "severity": "low",
+   "category": "style",
+   "title": "Grant maps are package-private mutable fields, exposing internal state",
+   "body": "grantsByShortcuts and grantsToShortcuts are declared without an access modifier (package-private) and are non-final mutable fields on the factory. The unit test relies on this to inject state directly. Exposing mutable internal maps package-wide invites accidental external mutation and makes the class harder to reason about; they should be private with the test using the real postInit() path (or a package-private test hook that is clearly intended for tests)."
+  }
+ ],
+ "finding_count": 17
+}

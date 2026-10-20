@@ -1,0 +1,158 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__grafana__79265__r3",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:54:09Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 53033,
+    "output": 11587,
+    "reasoning": 9385,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 107778,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5896,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 53033,
+    "output_tokens": 11587,
+    "output_tokens_details": {
+     "thinking_tokens": 9385
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:54:09Z",
+   "first_chunk_ms": 8216,
+   "first_text_ms": 91422,
+   "response_id": "msg_bdrk_ubmsbbbsek2kjhsmpb7zfdupkbphxps732gyzaufabhwuqylkk7q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 53033,
+  "output": 11587,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 9385
+ },
+ "cost_reported": null,
+ "latency_ms": 107778,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Device limit bypassed because rejected devices are cached as already tagged\", \"body\": \"`tagDeviceUI` writes the device key into `localCache` (29-minute TTL) before calling `CreateOrUpdateDevice`. When the store returns `ErrDeviceLimitReached`, the key stays cached.\\n\\nThe device's next request hits the cache, `tagDeviceUI` returns nil, and `Anonymous.Authenticate` grants access. The limit is enforced only on the first request from a new device; a reload or retry gets in.\\n\\nThe same ordering means a transient DB error suppresses re-tagging for 29 minutes. Fix: on `ErrDeviceLimitReached`, cache a negative marker and return the error on later cache hits. On any other error, delete the key.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 52, \"severity\": \"high\", \"category\": \"api\", \"title\": \"ProvideAnonDBStore signature change likely breaks the Wire dependency graph\", \"body\": \"Before this PR, `ProvideAnonymousDeviceService` took an `anonstore.AnonStore` argument, so the Wire set (pkg/server/wire.go or the enterprise wireexts) must contain `anonstore.ProvideAnonDBStore` plus a `wire.Bind` to `AnonStore`. That file is not in this PR.\\n\\n`ProvideAnonDBStore` now needs an `int64`, which Wire cannot supply. If the provider stays in the set, code generation fails with either a missing int64 provider or an unused-provider error.\\n\\nIf another component still injects `anonstore.AnonStore`, it would get a second store instance that silently ignores the limit. Update or remove the Wire provider and binding in the same change.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 120, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Limit keyed on a client-supplied header: trivially bypassed and abusable for lockout\", \"body\": \"Enforcement relies entirely on the `X-Grafana-Device-Id` header, which the client controls.\\n\\n1. A request without the header returns nil from `TagDevice` and is authenticated anonymously. Unparseable IPs also return nil. So any non-browser client skips the limit entirely.\\n2. An unauthenticated attacker can send requests with random device IDs until `device_limit` is reached. Every new legitimate anonymous visitor is then rejected for up to 30 days, until rows age out of the `updated_at` window.\\n\\nAt minimum, document this behaviour. Ideally, rate-limit device creation or treat a missing device ID consistently with the limit.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 115, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Check-then-insert lets concurrent requests exceed the device limit\", \"body\": \"`CreateOrUpdateDevice` runs `CountDevices` and then a separate upsert, with no transaction or lock around them.\\n\\nConcurrent first requests from different devices can all read `count < deviceLimit` and all insert. This is especially likely across multiple Grafana instances sharing the DB, or a burst of new visitors. The stored device count can therefore exceed the configured limit.\\n\\nIf the limit is meant as a hard cap, the count and insert need to be atomic, for example a conditional `INSERT ... SELECT` with a count predicate or a serialized transaction.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Device tagging moved onto the synchronous auth path even when no limit is configured\", \"body\": \"Tagging used to run in a background goroutine with its own timeout and panic recovery. It now runs inline in `Authenticate` using the request context.\\n\\nEvery cache-miss anonymous request now waits for the DB upsert, plus a `COUNT(*)` when a limit is set, before it is authenticated. This applies even with the default `device_limit = 0`, where nothing needs to be enforced.\\n\\nThe panic recovery is also gone, and a client disconnect now cancels the write. Consider staying asynchronous when `AnonymousDeviceLimit == 0`.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 69, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Tests don't cover existing devices at the limit or repeated requests from rejected devices\", \"body\": \"`TestIntegrationBeyondDeviceLimit` only checks that a second new device is rejected.\\n\\nIt does not check that an already-registered device can still update once the limit is reached, which is the `updateDevice` path's main purpose. No test at the service or client level checks that a rejected device stays rejected on later requests, and such a test would have caught the local-cache bypass.\\n\\n`Anonymous.Authenticate` returning an error on `ErrDeviceLimitReached` is also untested.\"}, {\"file\": \"packages/grafana-runtime/src/config.ts\", \"line\": 97, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"anonymousDeviceLimit is inferred as type `undefined` on GrafanaBootConfig\", \"body\": \"`anonymousDeviceLimit = undefined;` has no type annotation, so TypeScript infers the property type as literal `undefined`, not `number | undefined`.\\n\\nAt runtime the backend sends a number, which is merged into the config. Code that reads `config.anonymousDeviceLimit` and treats it as a number, such as `config.anonymousDeviceLimit > 0`, will not type-check.\\n\\nDeclare it as `anonymousDeviceLimit: number | undefined = undefined;`.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New device_limit setting not documented in defaults.ini/sample.ini or the docs\", \"body\": \"`[auth.anonymous] device_limit` is read here, but conf/defaults.ini, conf/sample.ini and the configuration docs are not updated.\\n\\nOperators have no way to discover the option. Nothing tells them that exceeding it makes new anonymous visitors fail authentication.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Device limit bypassed because rejected devices are cached as already tagged",
+   "body": "`tagDeviceUI` writes the device key into `localCache` (29-minute TTL) before calling `CreateOrUpdateDevice`. When the store returns `ErrDeviceLimitReached`, the key stays cached.\n\nThe device's next request hits the cache, `tagDeviceUI` returns nil, and `Anonymous.Authenticate` grants access. The limit is enforced only on the first request from a new device; a reload or retry gets in.\n\nThe same ordering means a transient DB error suppresses re-tagging for 29 minutes. Fix: on `ErrDeviceLimitReached`, cache a negative marker and return the error on later cache hits. On any other error, delete the key."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 52,
+   "severity": "high",
+   "category": "api",
+   "title": "ProvideAnonDBStore signature change likely breaks the Wire dependency graph",
+   "body": "Before this PR, `ProvideAnonymousDeviceService` took an `anonstore.AnonStore` argument, so the Wire set (pkg/server/wire.go or the enterprise wireexts) must contain `anonstore.ProvideAnonDBStore` plus a `wire.Bind` to `AnonStore`. That file is not in this PR.\n\n`ProvideAnonDBStore` now needs an `int64`, which Wire cannot supply. If the provider stays in the set, code generation fails with either a missing int64 provider or an unused-provider error.\n\nIf another component still injects `anonstore.AnonStore`, it would get a second store instance that silently ignores the limit. Update or remove the Wire provider and binding in the same change."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 120,
+   "severity": "medium",
+   "category": "security",
+   "title": "Limit keyed on a client-supplied header: trivially bypassed and abusable for lockout",
+   "body": "Enforcement relies entirely on the `X-Grafana-Device-Id` header, which the client controls.\n\n1. A request without the header returns nil from `TagDevice` and is authenticated anonymously. Unparseable IPs also return nil. So any non-browser client skips the limit entirely.\n2. An unauthenticated attacker can send requests with random device IDs until `device_limit` is reached. Every new legitimate anonymous visitor is then rejected for up to 30 days, until rows age out of the `updated_at` window.\n\nAt minimum, document this behaviour. Ideally, rate-limit device creation or treat a missing device ID consistently with the limit."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 115,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Check-then-insert lets concurrent requests exceed the device limit",
+   "body": "`CreateOrUpdateDevice` runs `CountDevices` and then a separate upsert, with no transaction or lock around them.\n\nConcurrent first requests from different devices can all read `count < deviceLimit` and all insert. This is especially likely across multiple Grafana instances sharing the DB, or a burst of new visitors. The stored device count can therefore exceed the configured limit.\n\nIf the limit is meant as a hard cap, the count and insert need to be atomic, for example a conditional `INSERT ... SELECT` with a count predicate or a serialized transaction."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "low",
+   "category": "perf",
+   "title": "Device tagging moved onto the synchronous auth path even when no limit is configured",
+   "body": "Tagging used to run in a background goroutine with its own timeout and panic recovery. It now runs inline in `Authenticate` using the request context.\n\nEvery cache-miss anonymous request now waits for the DB upsert, plus a `COUNT(*)` when a limit is set, before it is authenticated. This applies even with the default `device_limit = 0`, where nothing needs to be enforced.\n\nThe panic recovery is also gone, and a client disconnect now cancels the write. Consider staying asynchronous when `AnonymousDeviceLimit == 0`."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 69,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Tests don't cover existing devices at the limit or repeated requests from rejected devices",
+   "body": "`TestIntegrationBeyondDeviceLimit` only checks that a second new device is rejected.\n\nIt does not check that an already-registered device can still update once the limit is reached, which is the `updateDevice` path's main purpose. No test at the service or client level checks that a rejected device stays rejected on later requests, and such a test would have caught the local-cache bypass.\n\n`Anonymous.Authenticate` returning an error on `ErrDeviceLimitReached` is also untested."
+  },
+  {
+   "index": 6,
+   "file": "packages/grafana-runtime/src/config.ts",
+   "line": 97,
+   "severity": "low",
+   "category": "bug",
+   "title": "anonymousDeviceLimit is inferred as type `undefined` on GrafanaBootConfig",
+   "body": "`anonymousDeviceLimit = undefined;` has no type annotation, so TypeScript infers the property type as literal `undefined`, not `number | undefined`.\n\nAt runtime the backend sends a number, which is merged into the config. Code that reads `config.anonymousDeviceLimit` and treats it as a number, such as `config.anonymousDeviceLimit > 0`, will not type-check.\n\nDeclare it as `anonymousDeviceLimit: number | undefined = undefined;`."
+  },
+  {
+   "index": 7,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New device_limit setting not documented in defaults.ini/sample.ini or the docs",
+   "body": "`[auth.anonymous] device_limit` is read here, but conf/defaults.ini, conf/sample.ini and the configuration docs are not updated.\n\nOperators have no way to discover the option. Nothing tells them that exceeding it makes new anonymous visitors fail authentication."
+  }
+ ],
+ "finding_count": 8
+}

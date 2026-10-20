@@ -1,0 +1,130 @@
+{
+ "run_id": "kimi-k3__low__cal.com__8087__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning_effort": "low"
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:24:05Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 38850,
+    "output": 2058,
+    "reasoning": 1081,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 71231,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4296,
+   "raw_usage": {
+    "completion_tokens": 2058,
+    "prompt_tokens": 38850,
+    "total_tokens": 40908,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 1081,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T11:24:05Z",
+   "first_chunk_ms": 4751,
+   "first_text_ms": 43677,
+   "response_id": "chatcmpl-ax5orilapw55dql5l33wyhq4lzjv7dbbk74kgpyledca5lv5ogzq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 38850,
+  "output": 2058,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 1081
+ },
+ "cost_reported": null,
+ "latency_ms": 71231,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Recurring-event calendar deletions are never awaited and may not run before the response is sent\", \"body\": \"In the recurring-event cancellation branch, the code iterates calendar credentials with `.forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent); })`. Because `getCalendar` is now async, the `apiDeletes.push(...)` calls happen in a later microtask than the `await Promise.all(prismaPromises.concat(apiDeletes))` at the end of the handler (line 652). `Promise.all` therefore resolves before any of these delete promises are even created, so the handler returns 'Booking successfully cancelled' and deletes booking references/attendees while the external calendar events for all remaining recurring bookings have not been deleted (and in serverless environments the pending work may be killed entirely). This leaves stale events on users' calendars for recurring bookings. Use a `for...of` loop or collect promises via `map` before awaiting.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"async forEach defeats the surrounding try/catch and fire-and-forgets calendar/video deletions\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); ... })` makes every callback an independent promise. The surrounding `try/catch` can no longer catch any failure (previously `getCalendar` was synchronous, so constructor/lookup errors were caught and logged); errors now surface as unhandled promise rejections, which can crash a Node process with default settings. Additionally the function proceeds to send the reschedule email and return without waiting for the calendar/video deletions to complete or even start. Use `await Promise.all(bookingRefsFiltered.map(async ...))` inside the try block.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"async forEach defeats the surrounding try/catch and fire-and-forgets calendar/video deletions\", \"body\": \"Same issue as in vital/lib/reschedule.ts: `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); ... })` escapes the enclosing `try/catch` (failures become unhandled rejections instead of being logged) and the function returns/sends the reschedule email before deletions are awaited. Replace with `await Promise.all(bookingRefsFiltered.map(...))`.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"requestReschedule fire-and-forgets calendar/video deletions via async forEach\", \"body\": \"In the `requestReschedule` mutation, `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); return calendar?.deleteEvent(...) ... })` is never awaited. The mutation marks the booking cancelled, sends the reschedule email and webhooks, and returns while the external calendar event and video meeting deletions are still pending; any failure is an unhandled rejection with no logging, and in serverless runtimes the deletions may never execute, leaving stale events on the organizer's calendar. Await the deletions (e.g. `await Promise.all(bookingRefsFiltered.map(...))`) before returning.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"low\", \"category\": \"api\", \"title\": \"getCalendarCredentials now stores Promise<Calendar|null> in the `calendar` field\", \"body\": \"Because `getCalendar` became async, `getCalendarCredentials` silently changed the type of the `calendar` property it returns from `Calendar | null` to `Promise<Calendar | null>`. Within this diff only `getConnectedCalendars` consumes it and was updated to `await item.calendar`, but `getCalendarCredentials` is exported and any other caller (present or future) that treats `item.calendar` as a Calendar will get a truthy Promise and fail at runtime (e.g. calling `.listCalendars()` on a Promise). Consider making `getCalendarCredentials` async and resolving the calendars with `Promise.all`, so the contract stays `Calendar | null`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "high",
+   "category": "bug",
+   "title": "Recurring-event calendar deletions are never awaited and may not run before the response is sent",
+   "body": "In the recurring-event cancellation branch, the code iterates calendar credentials with `.forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent); })`. Because `getCalendar` is now async, the `apiDeletes.push(...)` calls happen in a later microtask than the `await Promise.all(prismaPromises.concat(apiDeletes))` at the end of the handler (line 652). `Promise.all` therefore resolves before any of these delete promises are even created, so the handler returns 'Booking successfully cancelled' and deletes booking references/attendees while the external calendar events for all remaining recurring bookings have not been deleted (and in serverless environments the pending work may be killed entirely). This leaves stale events on users' calendars for recurring bookings. Use a `for...of` loop or collect promises via `map` before awaiting."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "async forEach defeats the surrounding try/catch and fire-and-forgets calendar/video deletions",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); ... })` makes every callback an independent promise. The surrounding `try/catch` can no longer catch any failure (previously `getCalendar` was synchronous, so constructor/lookup errors were caught and logged); errors now surface as unhandled promise rejections, which can crash a Node process with default settings. Additionally the function proceeds to send the reschedule email and return without waiting for the calendar/video deletions to complete or even start. Use `await Promise.all(bookingRefsFiltered.map(async ...))` inside the try block."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "bug",
+   "title": "async forEach defeats the surrounding try/catch and fire-and-forgets calendar/video deletions",
+   "body": "Same issue as in vital/lib/reschedule.ts: `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); ... })` escapes the enclosing `try/catch` (failures become unhandled rejections instead of being logged) and the function returns/sends the reschedule email before deletions are awaited. Replace with `await Promise.all(bookingRefsFiltered.map(...))`."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "medium",
+   "category": "bug",
+   "title": "requestReschedule fire-and-forgets calendar/video deletions via async forEach",
+   "body": "In the `requestReschedule` mutation, `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); return calendar?.deleteEvent(...) ... })` is never awaited. The mutation marks the booking cancelled, sends the reschedule email and webhooks, and returns while the external calendar event and video meeting deletions are still pending; any failure is an unhandled rejection with no logging, and in serverless runtimes the deletions may never execute, leaving stale events on the organizer's calendar. Await the deletions (e.g. `await Promise.all(bookingRefsFiltered.map(...))`) before returning."
+  },
+  {
+   "index": 4,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "api",
+   "title": "getCalendarCredentials now stores Promise<Calendar|null> in the `calendar` field",
+   "body": "Because `getCalendar` became async, `getCalendarCredentials` silently changed the type of the `calendar` property it returns from `Calendar | null` to `Promise<Calendar | null>`. Within this diff only `getConnectedCalendars` consumes it and was updated to `await item.calendar`, but `getCalendarCredentials` is exported and any other caller (present or future) that treats `item.calendar` as a Calendar will get a truthy Promise and fail at runtime (e.g. calling `.listCalendars()` on a Promise). Consider making `getCalendarCredentials` async and resolving the calendars with `Promise.all`, so the contract stays `Calendar | null`."
+  }
+ ],
+ "finding_count": 5
+}

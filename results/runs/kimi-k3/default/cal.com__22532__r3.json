@@ -1,0 +1,174 @@
+{
+ "run_id": "kimi-k3__default__cal.com__22532__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__22532",
+ "golden_url": "https://github.com/calcom/cal.com/pull/22532",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:00:37Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 190677,
+  "sha": "31c7b0c459ff706c",
+  "patch_only": [
+   "apps/web/public/static/locales/en/common.json",
+   "packages/prisma/schema.prisma"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 50504,
+    "output": 15262,
+    "reasoning": 13511,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 807155,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7653,
+   "raw_usage": {
+    "completion_tokens": 15262,
+    "prompt_tokens": 50504,
+    "total_tokens": 65766,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 13511,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T12:00:37Z",
+   "first_chunk_ms": 14200,
+   "first_text_ms": 720252,
+   "response_id": "chatcmpl-fkggfhi5crmbwcwlsf6ksz4dgciwc4wsllwxwavhhryj3juh22xq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 50504,
+  "output": 15262,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 13511
+ },
+ "cost_reported": null,
+ "latency_ms": 807155,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/apps/components/CredentialActionsDropdown.tsx\", \"line\": 42, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"deleteCache mutation never invalidates the connectedCalendars query, leaving stale cache status in the UI\", \"body\": \"In CredentialActionsDropdown, the deleteCache mutation's onSuccess only shows a toast and calls the optional onSuccess prop; unlike the disconnect mutation in the same component (lines 61-64), it never invalidates trpc.viewer.calendars.connectedCalendars. The cacheUpdatedAt value driving the 'Cache Status / Last updated' display comes from that query, so after a user deletes the cache the dropdown continues to show the old timestamp and the 'Delete cached data' option until something else happens to refetch \u2014 making it look as if the deletion failed. Add an invalidation of viewer.calendars.connectedCalendars (e.g. in onSettled) for the deleteCache mutation, as was done for disconnect.\"}, {\"file\": \"packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql\", \"line\": 9, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Migration backfills updatedAt with NOW() for all existing rows and forces a full table rewrite\", \"body\": \"ALTER TABLE \\\"CalendarCache\\\" ADD COLUMN \\\"updatedAt\\\" TIMESTAMP(3) NOT NULL DEFAULT NOW() has two problems. (1) Because NOW() is not a constant default, PostgreSQL must rewrite the entire CalendarCache table to add the column, holding an ACCESS EXCLUSIVE lock for the duration \u2014 on a large/busy cache table this can block writes during deployment. (2) Every pre-existing row gets updatedAt = migration time, so the new UI will display 'Last updated: <deploy time>' for all existing caches, which is misleading until each row is next written. Safer approach: add the column nullable (metadata-only operation), backfill in batches or leave legacy rows null, and hide the timestamp in the UI when it is null.\"}, {\"file\": \"packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts\", \"line\": 25, \"severity\": \"low\", \"category\": \"api\", \"title\": \"Handler throws plain Error, producing a 500 instead of a 404/403\", \"body\": \"When the credential doesn't exist or belongs to another user, deleteCacheHandler throws a generic `new Error(\\\"Credential not found or access denied\\\")`. In tRPC, a non-TRPCError is converted to an INTERNAL_SERVER_ERROR (HTTP 500) and is typically reported to error monitoring as a server bug, rather than a client-facing NOT_FOUND/FORBIDDEN. Throw `new TRPCError({ code: \\\"NOT_FOUND\\\" })` instead.\"}, {\"file\": \"packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts\", \"line\": 28, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Handler bypasses the calendar-cache feature flag by instantiating the concrete repository\", \"body\": \"connectedCalendarsHandler constructs `new CalendarCacheRepository()` directly instead of using the feature-flag-aware factory (CalendarCache.init(...)), which returns CalendarCacheRepositoryMock when the calendar-cache feature is disabled. This PR even adds getCacheStatusByCredentialIds to the mock (returning []), but that path can never be reached from this handler. Consequence: users/teams without the calendar-cache feature still get cache status and delete actions surfaced (from any stale rows), and every connectedCalendars request pays the extra groupBy query even when the feature is turned off.\"}, {\"file\": \"packages/features/calendar-cache/calendar-cache.repository.ts\", \"line\": 174, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Cache status query does not exclude expired cache rows\", \"body\": \"getCacheStatusByCredentialIds groups over all CalendarCache rows for the given credentials without filtering on expiresAt, while the read path (getCachedAvailability) only serves rows with expiresAt >= now(). The UI can therefore show 'Cache Status: Last updated X' and offer 'Delete cached data' for a cache that has already expired and is never served; after deletion nothing visibly changes for the user. Apply the same expiresAt filter (or surface the expiry state in the UI) so status matches what is actually usable.\"}, {\"file\": \"packages/app-store/googlecalendar/lib/CalendarService.ts\", \"line\": 1024, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Dead write: SelectedCalendar.updatedAt is bumped on every webhook cache refresh but never read\", \"body\": \"fetchAvailabilityAndSetCache \u2014 which runs on every Google webhook-driven cache refresh \u2014 now executes SelectedCalendarRepository.updateManyByCredentialId(this.credential.id, {}), an UPDATE touching every SelectedCalendar row for the credential, solely to bump SelectedCalendar.updatedAt. Per the PR's own notes this value is not displayed anywhere (the frontend uses cacheUpdatedAt from CalendarCache), and nothing else in the diff reads it; the change also forced extra selected fields in UserRepository.findUnlockedUserForSession and the UserWithCalendars type to carry an unused value. This is a pure extra write on a hot webhook path and should be removed or deferred until a consumer exists.\"}, {\"file\": \"scripts/test-gcal-webhooks.sh\", \"line\": 68, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"sed -i '' is macOS-only; script fails on GNU/Linux\", \"body\": \"`sed -i '' -E \\\"s|^GOOGLE_WEBHOOK_URL=.*|...|\\\"` uses BSD/macOS sed syntax. With GNU sed (Linux), `-i` does not take a separate empty suffix argument, so the command misparses the arguments and fails ('can't read s|...|'), meaning GOOGLE_WEBHOOK_URL is never updated on Linux dev machines. Use a portable approach (write to a temp file and mv, or detect the sed flavor).\"}, {\"file\": \"scripts/test-gcal-webhooks.sh\", \"line\": 5, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"ENV_FILE=\\\"../.env\\\" is resolved relative to the caller's CWD, not the script location\", \"body\": \"ENV_FILE is a relative path, so its target depends on where the script is invoked from. Running it from the repo root (./scripts/test-gcal-webhooks.sh) writes GOOGLE_WEBHOOK_URL to a .env file in the repository's parent directory (creating a stray file via the touch fallback) and never updates the project's actual .env. Resolve the env file path from the script's own directory (e.g. using BASH_SOURCE) so it works regardless of the invocation directory.\"}, {\"file\": \"packages/features/apps/components/CredentialActionsDropdown.tsx\", \"line\": 89, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Cache timestamp is hardcoded to en-US formatting\", \"body\": \"The 'Last updated' timestamp is rendered with `new Intl.DateTimeFormat(\\\"en-US\\\", { dateStyle: \\\"short\\\", timeStyle: \\\"short\\\" })`, forcing US date/time formatting on all users regardless of their configured locale, in a product that is otherwise fully localized (the surrounding labels go through t()). Use the user's locale (e.g. navigator.language or dayjs with the user's locale) so the timestamp respects localization.\"}, {\"file\": \"packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts\", \"line\": 13, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the new cache-status repository method or the deleteCache authorization\", \"body\": \"The PR adds user-facing destructive behavior with no test coverage: getCacheStatusByCredentialIds (grouping/max(updatedAt) semantics, empty credentialIds input, expired rows) and deleteCacheHandler's authorization rule (a user must not be able to delete another user's calendar cache by supplying an arbitrary credentialId). Only the mock repository was updated; the real implementation and the new tRPC handler have no tests, and the PR description itself notes end-to-end testing was not performed.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/apps/components/CredentialActionsDropdown.tsx",
+   "line": 42,
+   "severity": "medium",
+   "category": "bug",
+   "title": "deleteCache mutation never invalidates the connectedCalendars query, leaving stale cache status in the UI",
+   "body": "In CredentialActionsDropdown, the deleteCache mutation's onSuccess only shows a toast and calls the optional onSuccess prop; unlike the disconnect mutation in the same component (lines 61-64), it never invalidates trpc.viewer.calendars.connectedCalendars. The cacheUpdatedAt value driving the 'Cache Status / Last updated' display comes from that query, so after a user deletes the cache the dropdown continues to show the old timestamp and the 'Delete cached data' option until something else happens to refetch \u2014 making it look as if the deletion failed. Add an invalidation of viewer.calendars.connectedCalendars (e.g. in onSettled) for the deleteCache mutation, as was done for disconnect."
+  },
+  {
+   "index": 1,
+   "file": "packages/prisma/migrations/20250715160635_add_calendar_cache_updated_at/migration.sql",
+   "line": 9,
+   "severity": "medium",
+   "category": "data",
+   "title": "Migration backfills updatedAt with NOW() for all existing rows and forces a full table rewrite",
+   "body": "ALTER TABLE \"CalendarCache\" ADD COLUMN \"updatedAt\" TIMESTAMP(3) NOT NULL DEFAULT NOW() has two problems. (1) Because NOW() is not a constant default, PostgreSQL must rewrite the entire CalendarCache table to add the column, holding an ACCESS EXCLUSIVE lock for the duration \u2014 on a large/busy cache table this can block writes during deployment. (2) Every pre-existing row gets updatedAt = migration time, so the new UI will display 'Last updated: <deploy time>' for all existing caches, which is misleading until each row is next written. Safer approach: add the column nullable (metadata-only operation), backfill in batches or leave legacy rows null, and hide the timestamp in the UI when it is null."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts",
+   "line": 25,
+   "severity": "low",
+   "category": "api",
+   "title": "Handler throws plain Error, producing a 500 instead of a 404/403",
+   "body": "When the credential doesn't exist or belongs to another user, deleteCacheHandler throws a generic `new Error(\"Credential not found or access denied\")`. In tRPC, a non-TRPCError is converted to an INTERNAL_SERVER_ERROR (HTTP 500) and is typically reported to error monitoring as a server bug, rather than a client-facing NOT_FOUND/FORBIDDEN. Throw `new TRPCError({ code: \"NOT_FOUND\" })` instead."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "bug",
+   "title": "Handler bypasses the calendar-cache feature flag by instantiating the concrete repository",
+   "body": "connectedCalendarsHandler constructs `new CalendarCacheRepository()` directly instead of using the feature-flag-aware factory (CalendarCache.init(...)), which returns CalendarCacheRepositoryMock when the calendar-cache feature is disabled. This PR even adds getCacheStatusByCredentialIds to the mock (returning []), but that path can never be reached from this handler. Consequence: users/teams without the calendar-cache feature still get cache status and delete actions surfaced (from any stale rows), and every connectedCalendars request pays the extra groupBy query even when the feature is turned off."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/calendar-cache/calendar-cache.repository.ts",
+   "line": 174,
+   "severity": "low",
+   "category": "bug",
+   "title": "Cache status query does not exclude expired cache rows",
+   "body": "getCacheStatusByCredentialIds groups over all CalendarCache rows for the given credentials without filtering on expiresAt, while the read path (getCachedAvailability) only serves rows with expiresAt >= now(). The UI can therefore show 'Cache Status: Last updated X' and offer 'Delete cached data' for a cache that has already expired and is never served; after deletion nothing visibly changes for the user. Apply the same expiresAt filter (or surface the expiry state in the UI) so status matches what is actually usable."
+  },
+  {
+   "index": 5,
+   "file": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+   "line": 1024,
+   "severity": "low",
+   "category": "perf",
+   "title": "Dead write: SelectedCalendar.updatedAt is bumped on every webhook cache refresh but never read",
+   "body": "fetchAvailabilityAndSetCache \u2014 which runs on every Google webhook-driven cache refresh \u2014 now executes SelectedCalendarRepository.updateManyByCredentialId(this.credential.id, {}), an UPDATE touching every SelectedCalendar row for the credential, solely to bump SelectedCalendar.updatedAt. Per the PR's own notes this value is not displayed anywhere (the frontend uses cacheUpdatedAt from CalendarCache), and nothing else in the diff reads it; the change also forced extra selected fields in UserRepository.findUnlockedUserForSession and the UserWithCalendars type to carry an unused value. This is a pure extra write on a hot webhook path and should be removed or deferred until a consumer exists."
+  },
+  {
+   "index": 6,
+   "file": "scripts/test-gcal-webhooks.sh",
+   "line": 68,
+   "severity": "low",
+   "category": "bug",
+   "title": "sed -i '' is macOS-only; script fails on GNU/Linux",
+   "body": "`sed -i '' -E \"s|^GOOGLE_WEBHOOK_URL=.*|...|\"` uses BSD/macOS sed syntax. With GNU sed (Linux), `-i` does not take a separate empty suffix argument, so the command misparses the arguments and fails ('can't read s|...|'), meaning GOOGLE_WEBHOOK_URL is never updated on Linux dev machines. Use a portable approach (write to a temp file and mv, or detect the sed flavor)."
+  },
+  {
+   "index": 7,
+   "file": "scripts/test-gcal-webhooks.sh",
+   "line": 5,
+   "severity": "low",
+   "category": "bug",
+   "title": "ENV_FILE=\"../.env\" is resolved relative to the caller's CWD, not the script location",
+   "body": "ENV_FILE is a relative path, so its target depends on where the script is invoked from. Running it from the repo root (./scripts/test-gcal-webhooks.sh) writes GOOGLE_WEBHOOK_URL to a .env file in the repository's parent directory (creating a stray file via the touch fallback) and never updates the project's actual .env. Resolve the env file path from the script's own directory (e.g. using BASH_SOURCE) so it works regardless of the invocation directory."
+  },
+  {
+   "index": 8,
+   "file": "packages/features/apps/components/CredentialActionsDropdown.tsx",
+   "line": 89,
+   "severity": "low",
+   "category": "bug",
+   "title": "Cache timestamp is hardcoded to en-US formatting",
+   "body": "The 'Last updated' timestamp is rendered with `new Intl.DateTimeFormat(\"en-US\", { dateStyle: \"short\", timeStyle: \"short\" })`, forcing US date/time formatting on all users regardless of their configured locale, in a product that is otherwise fully localized (the surrounding labels go through t()). Use the user's locale (e.g. navigator.language or dayjs with the user's locale) so the timestamp respects localization."
+  },
+  {
+   "index": 9,
+   "file": "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts",
+   "line": 13,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the new cache-status repository method or the deleteCache authorization",
+   "body": "The PR adds user-facing destructive behavior with no test coverage: getCacheStatusByCredentialIds (grouping/max(updatedAt) semantics, empty credentialIds input, expired rows) and deleteCacheHandler's authorization rule (a user must not be able to delete another user's calendar cache by supplying an arbitrary credentialId). Only the mock repository was updated; the real implementation and the new tRPC handler have no tests, and the PR description itself notes end-to-end testing was not performed."
+  }
+ ],
+ "finding_count": 10
+}

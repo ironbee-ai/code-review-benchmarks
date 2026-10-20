@@ -1,0 +1,128 @@
+{
+ "run_id": "kimi-k3__xhigh__grafana__97529__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 1,
+ "started_at": "2026-10-17T14:32:18Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33253,
+    "output": 3975,
+    "reasoning": 2960,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 113699,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4494,
+   "raw_usage": {
+    "completion_tokens": 3975,
+    "prompt_tokens": 33253,
+    "total_tokens": 37228,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 2960,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T14:32:18Z",
+   "first_chunk_ms": 8462,
+   "first_text_ms": 89687,
+   "response_id": "chatcmpl-4lartklwnexsuoh6ur63fjd35mc6wxk65h3fdkklu7awuy7zl6gq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33253,
+  "output": 3975,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 2960
+ },
+ "cost_reported": null,
+ "latency_ms": 113699,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TotalDocs reads b.cache map without holding cacheMu\", \"body\": \"TotalDocs() iterates over b.cache without acquiring b.cacheMu (it never did, but it matters now). Before this PR, BuildIndex held cacheMu for its entire duration and TotalDocs was effectively only reached after all init builds completed; now the lock is only taken for the final map insertion, and this PR adds a new call to TotalDocs in searchSupport.init (search.go line 216, the \\\"search index initialized\\\" log) that runs right after the watch-event goroutine is started. That goroutine calls getOrCreateIndex -> BuildIndex on events for unknown namespaces, which writes b.cache concurrently with the TotalDocs iteration. Concurrent map read/write in Go is a fatal runtime error (\\\"concurrent map read and map write\\\"), which will crash the process. TotalDocs should take b.cacheMu.RLock() before iterating.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing the build-wide lock allows concurrent duplicate builds of the same index\", \"body\": \"BuildIndex previously serialized all builds with cacheMu; now two goroutines can build the same NamespacedResource concurrently (getOrCreateIndex in search.go does a check-then-build with no synchronization, and its own comment acknowledges it does not block concurrent builders of the same key). Consequences: (1) for file-backed indexes (size > FileThreshold), both builders call bleve.New on the same directory path, and the second one fails on the bleve lock file, surfacing a spurious error to a search or watch-event request; (2) for memory-backed indexes both builds succeed and the second write to b.cache silently overwrites the first, leaking an open bleve.Index that is never closed and wasting the entire duplicate build. A per-key lock (or singleflight) is needed instead of the single global lock that was removed.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on shared err variable across errgroup goroutines in init\", \"body\": \"Inside searchSupport.init, every errgroup goroutine executes `_, _, err = s.build(ctx, ...)` assigning to the same outer `err` variable that is also read after group.Wait() and was previously assigned by GetResourceStats. With initWorkers > 1 (the exact scenario this PR is optimizing) these goroutines write err concurrently, which is a data race (flagged by -race) and can produce torn/ stale error values. Each goroutine should use a local error variable and return it, letting errgroup surface the first failure. The same loop also increments totalBatchesIndexed++ from multiple goroutines without synchronization (line 189), another race that can undercount the value reported in the span event.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"NewResourceServer leaks resources when eager Init fails\", \"body\": \"When s.Init(ctx) fails, NewResourceServer returns nil, err but does not call s.cancel() to release the cancellable context created a few lines above, and does not close the blob bucket that may have been opened earlier in the function (OpenBlobBucket/NewCDKBlobSupport). Since Init now runs at construction time, init failures (e.g. index build errors) are a realistic path, and each failed construction leaks the context and the bucket handle. The error path should call cancel() and close any opened blob support before returning.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 88, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"BuildIndex starts a span but drops the span context, inconsistent with the PR's trace-propagation fix\", \"body\": \"The PR fixes trace propagation by assigning the context returned from tracer.Start back to ctx in search.go and sql/backend.go, but bleveBackend.BuildIndex still does `_, span := b.tracer.Start(ctx, ...)` and discards the span-scoped context. Any operation inside BuildIndex that could use the context (e.g. passing it to the builder callback or future instrumented calls) would be detached from the BuildIndex span, so the bleve portion of index-building traces remains disconnected from its children. Use `ctx, span := b.tracer.Start(...)` for consistency with the rest of the change.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TotalDocs reads b.cache map without holding cacheMu",
+   "body": "TotalDocs() iterates over b.cache without acquiring b.cacheMu (it never did, but it matters now). Before this PR, BuildIndex held cacheMu for its entire duration and TotalDocs was effectively only reached after all init builds completed; now the lock is only taken for the final map insertion, and this PR adds a new call to TotalDocs in searchSupport.init (search.go line 216, the \"search index initialized\" log) that runs right after the watch-event goroutine is started. That goroutine calls getOrCreateIndex -> BuildIndex on events for unknown namespaces, which writes b.cache concurrently with the TotalDocs iteration. Concurrent map read/write in Go is a fatal runtime error (\"concurrent map read and map write\"), which will crash the process. TotalDocs should take b.cacheMu.RLock() before iterating."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing the build-wide lock allows concurrent duplicate builds of the same index",
+   "body": "BuildIndex previously serialized all builds with cacheMu; now two goroutines can build the same NamespacedResource concurrently (getOrCreateIndex in search.go does a check-then-build with no synchronization, and its own comment acknowledges it does not block concurrent builders of the same key). Consequences: (1) for file-backed indexes (size > FileThreshold), both builders call bleve.New on the same directory path, and the second one fails on the bleve lock file, surfacing a spurious error to a search or watch-event request; (2) for memory-backed indexes both builds succeed and the second write to b.cache silently overwrites the first, leaking an open bleve.Index that is never closed and wasting the entire duplicate build. A per-key lock (or singleflight) is needed instead of the single global lock that was removed."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on shared err variable across errgroup goroutines in init",
+   "body": "Inside searchSupport.init, every errgroup goroutine executes `_, _, err = s.build(ctx, ...)` assigning to the same outer `err` variable that is also read after group.Wait() and was previously assigned by GetResourceStats. With initWorkers > 1 (the exact scenario this PR is optimizing) these goroutines write err concurrently, which is a data race (flagged by -race) and can produce torn/ stale error values. Each goroutine should use a local error variable and return it, letting errgroup surface the first failure. The same loop also increments totalBatchesIndexed++ from multiple goroutines without synchronization (line 189), another race that can undercount the value reported in the span event."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "low",
+   "category": "bug",
+   "title": "NewResourceServer leaks resources when eager Init fails",
+   "body": "When s.Init(ctx) fails, NewResourceServer returns nil, err but does not call s.cancel() to release the cancellable context created a few lines above, and does not close the blob bucket that may have been opened earlier in the function (OpenBlobBucket/NewCDKBlobSupport). Since Init now runs at construction time, init failures (e.g. index build errors) are a realistic path, and each failed construction leaks the context and the bucket handle. The error path should call cancel() and close any opened blob support before returning."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "BuildIndex starts a span but drops the span context, inconsistent with the PR's trace-propagation fix",
+   "body": "The PR fixes trace propagation by assigning the context returned from tracer.Start back to ctx in search.go and sql/backend.go, but bleveBackend.BuildIndex still does `_, span := b.tracer.Start(ctx, ...)` and discards the span-scoped context. Any operation inside BuildIndex that could use the context (e.g. passing it to the builder callback or future instrumented calls) would be detached from the BuildIndex span, so the bleve portion of index-building traces remains disconnected from its children. Use `ctx, span := b.tracer.Start(...)` for consistency with the rest of the change."
+  }
+ ],
+ "finding_count": 5
+}

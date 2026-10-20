@@ -1,0 +1,153 @@
+{
+ "run_id": "glm-5.3__default__discourse-graphite__3__r3",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:54:30Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18453,
+    "output": 5994,
+    "reasoning": 4848,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0522078,
+   "latency_ms": 84236,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 5250,
+   "raw_usage": {
+    "completion_tokens": 5994,
+    "prompt_tokens": 18453,
+    "total_tokens": 24447,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 4848,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0522078,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0522078,
+     "upstream_inference_prompt_cost": 0.0258342,
+     "upstream_inference_completions_cost": 0.0263736
+    }
+   },
+   "started_at": "2026-10-18T11:54:30Z",
+   "first_chunk_ms": 2834,
+   "first_text_ms": 71813,
+   "response_id": "gen-1792324470-JNSmpWi7yh0sAQxNfxuD",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18453,
+  "output": 5994,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4848
+ },
+ "cost_reported": 0.0522078,
+ "latency_ms": 84236,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Blocked-email lookup is case-sensitive and can be bypassed\", \"body\": \"BlockedEmail.should_block? does `BlockedEmail.where(email: email).first` with the raw email string, and there is a unique index on the email column as-is. User emails are not normalized to lowercase on assignment (UsersController#create passes params[:email] straight into the model, and mixed-case emails can exist since email uniqueness is also case-sensitive here). A user whose address was blocked as 'spammer@example.com' can register as 'Spammer@Example.com' and the lookup returns no row, completely bypassing the block. The lookup (and the unique index) should compare downcased emails.\"}, {\"file\": \"app/controllers/users_controller.rb\", \"line\": 276, \"severity\": \"high\", \"category\": \"security\", \"title\": \"change_email flow bypasses the blocked-email check entirely\", \"body\": \"The new EmailValidator only runs on the User model when `email_changed?`. The change_email action never assigns user.email; it creates an email_token with the new address (`user.email_tokens.create(email: lower_email)`) and the address is later attached to the user when the token is confirmed (EmailToken.confirm), which typically uses update_attribute/save paths that skip validations. As a result, an existing user can switch their account email to any blocked address and receive mail there, defeating the purpose of the blocked-email feature. The blocked/whitelist/blacklist check must also be applied in change_email (and at token creation/confirmation), not only in the model's email-changed validation.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 16, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"should_block? performs a DB write inside model validation and double-counts attempts\", \"body\": \"BlockedEmail.should_block? increments match_count and saves the record, and it is invoked from EmailValidator.validate_each, i.e. from inside User's validation. In UsersController#create, `user.valid?` is called at line 168 and then `user.save` runs the same validations again, so every blocked signup attempt increments match_count twice (or more if valid? is called elsewhere, e.g. change_username also calls valid?). Side-effectful writes during validation are also surprising: any code calling valid? on a user with a changed email mutates the blocked_emails table. The statistics update should happen once, outside the validation path (e.g. in the controller when the error is actually returned), or use a guard so it only runs once per attempt.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Read-modify-write race on match_count loses increments under concurrency\", \"body\": \"`record.match_count += 1; record.save` reads the counter in Ruby and writes it back. Two concurrent signup attempts with the same blocked email will both read the same value and both write value+1, losing one increment (and clobbering last_match_at updates with a stale AR object). Use an atomic update such as `BlockedEmail.where(id: record.id).update_all(['match_count = match_count + 1, last_match_at = ?', Time.zone.now])` instead.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 275, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Any server-side email error permanently marks the email invalid with the wrong message\", \"body\": \"On a failed account creation, the controller pushes `result.values.email` into rejectedEmails whenever the response contains any `errors.email` key. That includes errors unrelated to the email being unacceptable, e.g. 'Email has already been taken' or the whitelist 'not allowed' error. The emailValidation computed property then shows I18n.t('user.email.invalid') ('invalid email address') for that address, which is misleading for a taken or blocked address (the server message is 'is not allowed.' / 'has already been taken'). The client should key off the specific error type, or at least surface a message matching the server's reason. The email also stays rejected for the lifetime of the controller even if the underlying condition changes.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 11, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Validator spec stubs out the behavior under test; no integration coverage for users or the controller contract\", \"body\": \"The only spec for EmailValidator stubs `BlockedEmail.should_block?`, so the actual model wiring (User's `validates :email, email: true`, the migration, and the BlockedEmail lookup) is never exercised end-to-end: nothing proves that a user with a blocked email fails validation and cannot be created. There is also no spec for the new UsersController#create failure payload (`errors` hash and `values` hash) that the new frontend code in create_account_controller.js depends on, so a rename or shape change of that JSON would not be caught. Add a spec that fabricates a blocked email, builds/creates a User with it, and asserts the validation error, plus a controller spec asserting the errors/values keys on failed create.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "medium",
+   "category": "security",
+   "title": "Blocked-email lookup is case-sensitive and can be bypassed",
+   "body": "BlockedEmail.should_block? does `BlockedEmail.where(email: email).first` with the raw email string, and there is a unique index on the email column as-is. User emails are not normalized to lowercase on assignment (UsersController#create passes params[:email] straight into the model, and mixed-case emails can exist since email uniqueness is also case-sensitive here). A user whose address was blocked as 'spammer@example.com' can register as 'Spammer@Example.com' and the lookup returns no row, completely bypassing the block. The lookup (and the unique index) should compare downcased emails."
+  },
+  {
+   "index": 1,
+   "file": "app/controllers/users_controller.rb",
+   "line": 276,
+   "severity": "high",
+   "category": "security",
+   "title": "change_email flow bypasses the blocked-email check entirely",
+   "body": "The new EmailValidator only runs on the User model when `email_changed?`. The change_email action never assigns user.email; it creates an email_token with the new address (`user.email_tokens.create(email: lower_email)`) and the address is later attached to the user when the token is confirmed (EmailToken.confirm), which typically uses update_attribute/save paths that skip validations. As a result, an existing user can switch their account email to any blocked address and receive mail there, defeating the purpose of the blocked-email feature. The blocked/whitelist/blacklist check must also be applied in change_email (and at token creation/confirmation), not only in the model's email-changed validation."
+  },
+  {
+   "index": 2,
+   "file": "app/models/blocked_email.rb",
+   "line": 16,
+   "severity": "medium",
+   "category": "data",
+   "title": "should_block? performs a DB write inside model validation and double-counts attempts",
+   "body": "BlockedEmail.should_block? increments match_count and saves the record, and it is invoked from EmailValidator.validate_each, i.e. from inside User's validation. In UsersController#create, `user.valid?` is called at line 168 and then `user.save` runs the same validations again, so every blocked signup attempt increments match_count twice (or more if valid? is called elsewhere, e.g. change_username also calls valid?). Side-effectful writes during validation are also surprising: any code calling valid? on a user with a changed email mutates the blocked_emails table. The statistics update should happen once, outside the validation path (e.g. in the controller when the error is actually returned), or use a guard so it only runs once per attempt."
+  },
+  {
+   "index": 3,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Read-modify-write race on match_count loses increments under concurrency",
+   "body": "`record.match_count += 1; record.save` reads the counter in Ruby and writes it back. Two concurrent signup attempts with the same blocked email will both read the same value and both write value+1, losing one increment (and clobbering last_match_at updates with a stale AR object). Use an atomic update such as `BlockedEmail.where(id: record.id).update_all(['match_count = match_count + 1, last_match_at = ?', Time.zone.now])` instead."
+  },
+  {
+   "index": 4,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 275,
+   "severity": "low",
+   "category": "bug",
+   "title": "Any server-side email error permanently marks the email invalid with the wrong message",
+   "body": "On a failed account creation, the controller pushes `result.values.email` into rejectedEmails whenever the response contains any `errors.email` key. That includes errors unrelated to the email being unacceptable, e.g. 'Email has already been taken' or the whitelist 'not allowed' error. The emailValidation computed property then shows I18n.t('user.email.invalid') ('invalid email address') for that address, which is misleading for a taken or blocked address (the server message is 'is not allowed.' / 'has already been taken'). The client should key off the specific error type, or at least surface a message matching the server's reason. The email also stays rejected for the lifetime of the controller even if the underlying condition changes."
+  },
+  {
+   "index": 5,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 11,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Validator spec stubs out the behavior under test; no integration coverage for users or the controller contract",
+   "body": "The only spec for EmailValidator stubs `BlockedEmail.should_block?`, so the actual model wiring (User's `validates :email, email: true`, the migration, and the BlockedEmail lookup) is never exercised end-to-end: nothing proves that a user with a blocked email fails validation and cannot be created. There is also no spec for the new UsersController#create failure payload (`errors` hash and `values` hash) that the new frontend code in create_account_controller.js depends on, so a rename or shape change of that JSON would not be caught. Add a spec that fabricates a blocked email, builds/creates a User with it, and asserts the validation error, plus a controller spec asserting the errors/values keys on failed create."
+  }
+ ],
+ "finding_count": 6
+}

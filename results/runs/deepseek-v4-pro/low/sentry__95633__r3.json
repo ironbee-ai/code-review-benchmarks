@@ -1,0 +1,144 @@
+{
+ "run_id": "deepseek-v4-pro__low__sentry__95633__r3",
+ "model_id": "deepseek-v4-pro",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4-pro-0813",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:01:41Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 61,
+    "output": 19401,
+    "reasoning": 18442,
+    "cache_read": 32768,
+    "cache_write": 0
+   },
+   "cost_reported": 0.039175136,
+   "latency_ms": 234253,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4-pro-0813",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 4274,
+   "raw_usage": {
+    "completion_tokens": 19401,
+    "prompt_tokens": 32829,
+    "total_tokens": 52230,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 18442,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 32768,
+     "video_tokens": 0
+    },
+    "cost": 0.039175136,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.039175136,
+     "upstream_inference_prompt_cost": 0.000761156,
+     "upstream_inference_completions_cost": 0.03841398
+    }
+   },
+   "started_at": "2026-10-18T12:01:41Z",
+   "first_chunk_ms": 2512,
+   "first_text_ms": 225843,
+   "response_id": "gen-1792324901-LOEpOiZY5fzV9GhuwsAI",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 61,
+  "output": 19401,
+  "cache_read": 32768,
+  "cache_write": 0,
+  "reasoning": 18442
+ },
+ "cost_reported": 0.039175136,
+ "latency_ms": 234253,
+ "served_model": "deepseek/deepseek-v4-pro-0813",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\":[{\"file\":\"src/sentry/remote_subscriptions/consumers/result_consumer.py\",\"line\":133,\"severity\":\"critical\",\"category\":\"data\",\"title\":\"Queue pool is shut down by the per-assignment strategy and then reused after rebalance\",\"body\":\"`ResultsStrategyFactory` creates one `FixedQueuePool` and stores it on the factory. Arroyo can call `create_with_partitions` again on this same factory after a partition assignment/rebalance. However, `SimpleQueueProcessingStrategy.close()` calls `self.queue_pool.shutdown()`, which permanently shuts down the queues and worker threads owned by the factory. On the next assignment, `create_with_partitions` reuses the already-shutdown pool. New submits will call `put()` on a shutdown queue, raise `queue.ShutDown`, be caught by the broad `except` in `SimpleQueueProcessingStrategy.submit`, and the offset will still be marked complete. This means messages are dropped and their Kafka offsets are advanced without processing after any rebalance. The queue pool should either be created per assignment or `close()` must not shut down the factory-owned pool.\"},{\"file\":\"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\"line\":149,\"severity\":\"high\",\"category\":\"data\",\"title\":\"Offsets are completed even when result processing fails\",\"body\":\"In `OrderedQueueWorker.run`, `self.offset_tracker.complete_offset(...)` is in the `finally` block. If `result_processor` raises, the offset is still marked completed and can be committed by `_commit_loop`. This contradicts the strategy's guarantee that offsets are only committed after successful processing: a transient or programming failure can cause the message to be lost forever once Kafka commits past it. The same commit-on-error behavior exists in `SimpleQueueProcessingStrategy.submit`'s broad exception handler. `complete_offset` should only be called on successful processing, or failed items must be explicitly marked as non-committable.\"},{\"file\":\"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\"line\":238,\"severity\":\"medium\",\"category\":\"api\",\"title\":\"Uses queue.Queue.shutdown / queue.ShutDown, which are Python 3.13+ APIs\",\"body\":\"`Queue.shutdown()` and `queue.ShutDown` were added in Python 3.13. On Python 3.11/3.12 runtimes, `FixedQueuePool.shutdown` reaches `q.shutdown(immediate=False)`, which raises `AttributeError`; that is caught and logged, but workers are never unblocked with a `ShutDown` exception. The thread-queue-parallel consumer can then hang on shutdown until each worker join times out. This feature must either avoid these APIs or the runtime baseline and CI matrix must be explicitly upgraded to Python 3.13+.\"},{\"file\":\"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\"line\":185,\"severity\":\"medium\",\"category\":\"perf\",\"title\":\"Unbounded queues provide no backpressure and can exhaust memory\",\"body\":\"Each per-group queue is created as `queue.Queue()` with the default `maxsize=0`, meaning it is unbounded. The class docstring claims \\\"natural backpressure when queues fill up,\\\" but because the queues never fill, the Kafka polling thread will keep enqueueing items for a slow group without bound. Under sustained slowness or a stalled subscription, this can grow memory until the consumer process is OOM-killed. Use bounded queues or otherwise block/stop polling when queue depth exceeds a configured threshold.\"},{\"file\":\"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\"line\":337,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Graceful shutdown stops the commit loop before draining and committing queued work\",\"body\":\"`close()` sets `shutdown_event` and joins `commit_thread` before `queue_pool.shutdown()` drains queued work. Messages completed during pool shutdown therefore have no commit loop left to commit them. Additionally, `FixedQueuePool.shutdown` sets each worker's `shutdown` flag before calling `q.shutdown(immediate=False)`, so a worker woken from `get()` processes at most one more item and then exits the `while not self.shutdown` loop, leaving the rest of the queue undrained. The result is that successfully processed messages near shutdown may not be committed, causing duplicate reprocessing after restart (and making `wait_until_empty` unused despite existing for this purpose).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 133,
+   "severity": "critical",
+   "category": "data",
+   "title": "Queue pool is shut down by the per-assignment strategy and then reused after rebalance",
+   "body": "`ResultsStrategyFactory` creates one `FixedQueuePool` and stores it on the factory. Arroyo can call `create_with_partitions` again on this same factory after a partition assignment/rebalance. However, `SimpleQueueProcessingStrategy.close()` calls `self.queue_pool.shutdown()`, which permanently shuts down the queues and worker threads owned by the factory. On the next assignment, `create_with_partitions` reuses the already-shutdown pool. New submits will call `put()` on a shutdown queue, raise `queue.ShutDown`, be caught by the broad `except` in `SimpleQueueProcessingStrategy.submit`, and the offset will still be marked complete. This means messages are dropped and their Kafka offsets are advanced without processing after any rebalance. The queue pool should either be created per assignment or `close()` must not shut down the factory-owned pool."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 149,
+   "severity": "high",
+   "category": "data",
+   "title": "Offsets are completed even when result processing fails",
+   "body": "In `OrderedQueueWorker.run`, `self.offset_tracker.complete_offset(...)` is in the `finally` block. If `result_processor` raises, the offset is still marked completed and can be committed by `_commit_loop`. This contradicts the strategy's guarantee that offsets are only committed after successful processing: a transient or programming failure can cause the message to be lost forever once Kafka commits past it. The same commit-on-error behavior exists in `SimpleQueueProcessingStrategy.submit`'s broad exception handler. `complete_offset` should only be called on successful processing, or failed items must be explicitly marked as non-committable."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 238,
+   "severity": "medium",
+   "category": "api",
+   "title": "Uses queue.Queue.shutdown / queue.ShutDown, which are Python 3.13+ APIs",
+   "body": "`Queue.shutdown()` and `queue.ShutDown` were added in Python 3.13. On Python 3.11/3.12 runtimes, `FixedQueuePool.shutdown` reaches `q.shutdown(immediate=False)`, which raises `AttributeError`; that is caught and logged, but workers are never unblocked with a `ShutDown` exception. The thread-queue-parallel consumer can then hang on shutdown until each worker join times out. This feature must either avoid these APIs or the runtime baseline and CI matrix must be explicitly upgraded to Python 3.13+."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Unbounded queues provide no backpressure and can exhaust memory",
+   "body": "Each per-group queue is created as `queue.Queue()` with the default `maxsize=0`, meaning it is unbounded. The class docstring claims \"natural backpressure when queues fill up,\" but because the queues never fill, the Kafka polling thread will keep enqueueing items for a slow group without bound. Under sustained slowness or a stalled subscription, this can grow memory until the consumer process is OOM-killed. Use bounded queues or otherwise block/stop polling when queue depth exceeds a configured threshold."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 337,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Graceful shutdown stops the commit loop before draining and committing queued work",
+   "body": "`close()` sets `shutdown_event` and joins `commit_thread` before `queue_pool.shutdown()` drains queued work. Messages completed during pool shutdown therefore have no commit loop left to commit them. Additionally, `FixedQueuePool.shutdown` sets each worker's `shutdown` flag before calling `q.shutdown(immediate=False)`, so a worker woken from `get()` processes at most one more item and then exits the `while not self.shutdown` loop, leaving the rest of the queue undrained. The result is that successfully processed messages near shutdown may not be committed, causing duplicate reprocessing after restart (and making `wait_until_empty` unused despite existing for this purpose)."
+  }
+ ],
+ "finding_count": 5
+}

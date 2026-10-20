@@ -1,0 +1,133 @@
+{
+ "run_id": "kimi-k3__low__sentry-greptile__3__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning_effort": "low"
+ },
+ "set": "full",
+ "pr_id": "sentry-greptile__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/3",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:49:47Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 88660,
+  "sha": "d62ec561fe1b4a7e",
+  "patch_only": [
+   "sentry-repo",
+   "src/sentry/search/events/datasets/discover.py",
+   "src/sentry/testutils/factories.py",
+   "tests/snuba/api/endpoints/test_organization_events_stats.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 20495,
+    "output": 1921,
+    "reasoning": 880,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 50158,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4528,
+   "raw_usage": {
+    "completion_tokens": 1921,
+    "prompt_tokens": 20495,
+    "total_tokens": 22416,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 880,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T11:49:47Z",
+   "first_chunk_ms": 5428,
+   "first_text_ms": 28172,
+   "response_id": "chatcmpl-6w6vglpvmnz2lgflxwcve33p3zjjafkx35a3xziylfi7uz4zlnfq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 20495,
+  "output": 1921,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 880
+ },
+ "cost_reported": null,
+ "latency_ms": 50158,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 27, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cache key uses Python's unstable hash(), breaking caching and invalidation across processes\", \"body\": \"The cache key is built with `hash(tuple(sorted(snuba_params.project_ids)))`. Python's built-in `hash()` for tuples/strings is salted per process (PYTHONHASHSEED randomization), so different gunicorn/uwsgi workers \u2014 and the same worker after a restart \u2014 produce different keys for the identical project set. Consequences: (1) the 60-second cache is almost never shared between workers, so the claimed performance optimization does not work; (2) worse, `invalidate_upsampling_cache` (line 67) computes the key the same way, so a process handling an allowlist change will delete a key that no other process ever reads, making invalidation silently useless. Additionally, `hash()` collisions across different project-id sets can cause one organization's cached eligibility to be applied to a different set of projects, which is a data-integrity risk (wrong counts served). Use a deterministic key, e.g. `':'.join(map(str, sorted(project_ids)))` or an md5/sha digest.\"}, {\"file\": \"src/sentry/api/helpers/error_upsampling.py\", \"line\": 137, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Substring match on 'event.type:error' mis-classifies negated or quoted queries as error-focused\", \"body\": \"`_is_error_focused_query` does `if \\\"event.type:error\\\" in query` on the raw lowercased query string. This returns True for queries like `!event.type:error` (explicitly excluding errors) or `message:\\\"event.type:error\\\"` (the string inside a quoted value). In those cases the discover query is not restricted to error events, yet `count()` will be rewritten to `sum(sample_weight)`, producing wrong (under)counts for transactions/other event types. The check should parse the query with the search grammar (or at minimum check that the token isn't negated/quoted) rather than doing a naive substring test.\"}, {\"file\": \"src/sentry/api/endpoints/organization_events_stats.py\", \"line\": 220, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Upsampling eligibility uses the outer `dataset` instead of `scoped_dataset`\", \"body\": \"Inside `_get_event_stats`, `is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request)` closes over the endpoint-level `dataset`, but the query actually runs against `scoped_dataset`. In the dashboard-widget split path (`get_event_stats_factory`), `_get_event_stats` is invoked with `discover` and a synthesized query like `({query}) AND !event.type:transaction`, or with `scoped_dataset` for transaction-like widgets, while eligibility is still decided from the original request dataset. This means a widget originally on the errors dataset that is rerouted to a transaction/discover query can still get `count()` rewritten to `upsampled_count()` (wrong counts for non-error events), and conversely an errors-only discover subquery can fail the `_is_error_focused_query` check because the raw request query lacks `event.type:error`, so no upsampling is applied where it should be. The scoped dataset (and the effective query string) should be passed to the eligibility check.\"}, {\"file\": \"src/sentry/search/events/datasets/discover.py\", \"line\": 1041, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"upsampled_count registered as a public function without private=True\", \"body\": \"The new `SnQLFunction(\\\"upsampled_count\\\", ...)` is added to the discover function converter without `private=True`, unlike the neighboring internal-only functions in the same mapping which are marked `private=True`. This exposes `upsampled_count()` as a user-queryable aggregate in the public Discover query API: any user can append it to a query and get `sum(sample_weight)` on arbitrary data where `sample_weight` is null or meaningless, returning misleading numbers. Since this function is only meant to be injected server-side by the error-upsampling path, it should be marked `private=True`.\"}, {\"file\": \"sentry-repo\", \"line\": 1, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Accidentally committed git submodule pointing at the base commit\", \"body\": \"The PR adds a `sentry-repo` gitlink (subproject commit a5d290951..., which is exactly the PR's base commit). This looks like a local clone of the repo that was accidentally `git add`ed. It will create a broken submodule entry (no `.gitmodules` URL) in the tree and should be removed from the PR.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 27,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cache key uses Python's unstable hash(), breaking caching and invalidation across processes",
+   "body": "The cache key is built with `hash(tuple(sorted(snuba_params.project_ids)))`. Python's built-in `hash()` for tuples/strings is salted per process (PYTHONHASHSEED randomization), so different gunicorn/uwsgi workers \u2014 and the same worker after a restart \u2014 produce different keys for the identical project set. Consequences: (1) the 60-second cache is almost never shared between workers, so the claimed performance optimization does not work; (2) worse, `invalidate_upsampling_cache` (line 67) computes the key the same way, so a process handling an allowlist change will delete a key that no other process ever reads, making invalidation silently useless. Additionally, `hash()` collisions across different project-id sets can cause one organization's cached eligibility to be applied to a different set of projects, which is a data-integrity risk (wrong counts served). Use a deterministic key, e.g. `':'.join(map(str, sorted(project_ids)))` or an md5/sha digest."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/api/helpers/error_upsampling.py",
+   "line": 137,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Substring match on 'event.type:error' mis-classifies negated or quoted queries as error-focused",
+   "body": "`_is_error_focused_query` does `if \"event.type:error\" in query` on the raw lowercased query string. This returns True for queries like `!event.type:error` (explicitly excluding errors) or `message:\"event.type:error\"` (the string inside a quoted value). In those cases the discover query is not restricted to error events, yet `count()` will be rewritten to `sum(sample_weight)`, producing wrong (under)counts for transactions/other event types. The check should parse the query with the search grammar (or at minimum check that the token isn't negated/quoted) rather than doing a naive substring test."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/api/endpoints/organization_events_stats.py",
+   "line": 220,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Upsampling eligibility uses the outer `dataset` instead of `scoped_dataset`",
+   "body": "Inside `_get_event_stats`, `is_errors_query_for_error_upsampled_projects(snuba_params, organization, dataset, request)` closes over the endpoint-level `dataset`, but the query actually runs against `scoped_dataset`. In the dashboard-widget split path (`get_event_stats_factory`), `_get_event_stats` is invoked with `discover` and a synthesized query like `({query}) AND !event.type:transaction`, or with `scoped_dataset` for transaction-like widgets, while eligibility is still decided from the original request dataset. This means a widget originally on the errors dataset that is rerouted to a transaction/discover query can still get `count()` rewritten to `upsampled_count()` (wrong counts for non-error events), and conversely an errors-only discover subquery can fail the `_is_error_focused_query` check because the raw request query lacks `event.type:error`, so no upsampling is applied where it should be. The scoped dataset (and the effective query string) should be passed to the eligibility check."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/search/events/datasets/discover.py",
+   "line": 1041,
+   "severity": "medium",
+   "category": "api",
+   "title": "upsampled_count registered as a public function without private=True",
+   "body": "The new `SnQLFunction(\"upsampled_count\", ...)` is added to the discover function converter without `private=True`, unlike the neighboring internal-only functions in the same mapping which are marked `private=True`. This exposes `upsampled_count()` as a user-queryable aggregate in the public Discover query API: any user can append it to a query and get `sum(sample_weight)` on arbitrary data where `sample_weight` is null or meaningless, returning misleading numbers. Since this function is only meant to be injected server-side by the error-upsampling path, it should be marked `private=True`."
+  },
+  {
+   "index": 4,
+   "file": "sentry-repo",
+   "line": 1,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Accidentally committed git submodule pointing at the base commit",
+   "body": "The PR adds a `sentry-repo` gitlink (subproject commit a5d290951..., which is exactly the PR's base commit). This looks like a local clone of the repo that was accidentally `git add`ed. It will create a broken submodule entry (no `.gitmodules` URL) in the tree and should be removed from the PR."
+  }
+ ],
+ "finding_count": 5
+}

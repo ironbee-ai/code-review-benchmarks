@@ -1,0 +1,148 @@
+{
+ "run_id": "kimi-k3__xhigh__sentry__95633__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T23:59:32Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30264,
+    "output": 14168,
+    "reasoning": 12629,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 333815,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7217,
+   "raw_usage": {
+    "completion_tokens": 14168,
+    "prompt_tokens": 30264,
+    "total_tokens": 44432,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 12629,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T23:59:32Z",
+   "first_chunk_ms": 18894,
+   "first_text_ms": 303386,
+   "response_id": "chatcmpl-hposti3ic75mnsjd6onqw52grfbyi422blbdminiclhyxtdqum4a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30264,
+  "output": 14168,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 12629
+ },
+ "cost_reported": null,
+ "latency_ms": 333815,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Strategy close() permanently kills the factory-owned queue pool, breaking the consumer after any rebalance and silently dropping messages\", \"body\": \"SimpleQueueProcessingStrategy.close() calls self.queue_pool.shutdown(), but the queue_pool is owned by ResultsStrategyFactory and is reused across partition assignments. On a partition revocation, arroyo calls close()/join() on the strategy, which sets worker.shutdown = True and calls q.shutdown() on every queue, so all worker threads exit and the queues are permanently shut down. When partitions are reassigned, the factory's create_thread_queue_parallel_worker (result_consumer.py) calls create_with_partitions again; its `assert self.queue_pool is not None` passes because only factory.shutdown() sets it to None, so a new SimpleQueueProcessingStrategy is built around a dead pool. Every subsequent submit() then calls queue.put() on a shut-down queue, which raises queue.ShutDown; that exception is caught by the broad `except Exception` in SimpleQueueProcessingStrategy.submit, which marks the offset complete \u2014 so the offset gets committed even though the message was never processed. The net effect after any routine rebalance (deploy, scaling event): the consumer silently drops all messages and keeps committing offsets, appearing healthy while processing nothing. The pool should either be recreated per create_with_partitions call or its lifecycle should be decoupled from the strategy's close().\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 149, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Worker marks offsets complete even when processing raises, so failed messages are committed and lost\", \"body\": \"In OrderedQueueWorker.run, the finally block unconditionally calls self.offset_tracker.complete_offset(work_item.partition, work_item.offset), including when result_processor raised an exception that was caught by `except Exception`. Once the offset is marked complete, the commit loop will commit past it, and the failed message is never retried \u2014 a transient error causes permanent message loss. This also directly contradicts the new test test_thread_queue_parallel_error_handling in tests/sentry/uptime/consumers/test_results_consumer.py, which asserts that no offset is committed when a message fails. If at-least-once semantics are intended (as the rest of the offset-tracking design suggests), complete_offset should only be called on success, and failures should either leave the offset outstanding or route to a DLQ.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Queues are unbounded, so there is no backpressure despite the docstring claiming it\", \"body\": \"FixedQueuePool creates each work queue with a bare queue.Queue() (maxsize=0, i.e. unbounded), and SimpleQueueProcessingStrategy.submit/poll never block or pause consumption. The class docstring for SimpleQueueProcessingStrategy claims 'Natural backpressure when queues fill up', but submit() can never block, so if processing is slower than ingestion (the exact slow-item scenario this PR is meant to address) the consumer will read ahead without limit and buffer an unbounded number of decoded messages in process memory, risking OOM. Either give the queues a maxsize (making put block and naturally pause the consumer) or implement an explicit pause/resume in poll(), and fix the docstring if unbounded is intentional.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 344, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"join() ignores its timeout and close() abandons queued items without draining\", \"body\": \"SimpleQueueProcessingStrategy.join(timeout) ignores the timeout parameter and just calls close(), which immediately shuts down the commit thread and the queue pool. FixedQueuePool.shutdown sets worker.shutdown = True before draining, so the workers' `while not self.shutdown` loop exits even when items remain in the queues; the existing wait_until_empty() helper is never used in any production path. On graceful shutdown, in-flight queued work is simply abandoned (it will be redelivered since offsets are not committed, but the class docstring's 'No item is lost' guarantee and the arroyo join contract \u2014 wait up to timeout for in-flight work to finish \u2014 are not honored, and the final processed-but-uncommitted offsets are not flushed, causing avoidable duplicate processing on every restart).\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling asserts behavior the implementation doesn't have and only passes due to commit-loop timing\", \"body\": \"The test mocks the result processor to raise on the first message and asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`. But the implementation in OrderedQueueWorker.run completes offsets in a finally block even when processing raises, so both offsets become committable and the commit loop will commit offset 102. The test only passes because the commit thread waits 1.0s before its first commit and the test finishes (including its extra time.sleep(0.2)) well before that on a fast machine; under load or with a different commit interval it becomes flaky, and worse, it encodes the exact opposite of the real behavior, masking the message-loss issue where failed items are committed.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 200, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_stats_reporting races with worker threads and is flaky\", \"body\": \"After submitting 10 work items to a pool whose 3 worker threads are actively draining, the test immediately asserts `stats['total_items'] > 0`. If the workers process all items before get_stats() runs (likely on a fast machine since the result_processor is trivial), total_items will be 0 and the assertion fails nondeterministically. The test should block the processor (e.g. with an event) before checking queue depth, or drop the assertion.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 150, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Per-message metrics.gauge and per-message Sentry transaction with worker_id in the name add heavy per-message overhead\", \"body\": \"OrderedQueueWorker.run emits a metrics.gauge('remote_subscriptions.queue_worker.queue_depth', ...) for every single processed message, and wraps every message in a sentry_sdk transaction whose name includes the worker_id (f\\\"monitors.{identifier}.worker_{worker_id}\\\"). On a high-throughput results topic this generates a gauge emission per message (the existing batched mode only emits per batch) and creates high-cardinality transaction names (one per worker per consumer) that won't group in Sentry Performance. Consider sampling, emitting gauges only from poll(), and removing worker_id from the transaction name.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "high",
+   "category": "bug",
+   "title": "Strategy close() permanently kills the factory-owned queue pool, breaking the consumer after any rebalance and silently dropping messages",
+   "body": "SimpleQueueProcessingStrategy.close() calls self.queue_pool.shutdown(), but the queue_pool is owned by ResultsStrategyFactory and is reused across partition assignments. On a partition revocation, arroyo calls close()/join() on the strategy, which sets worker.shutdown = True and calls q.shutdown() on every queue, so all worker threads exit and the queues are permanently shut down. When partitions are reassigned, the factory's create_thread_queue_parallel_worker (result_consumer.py) calls create_with_partitions again; its `assert self.queue_pool is not None` passes because only factory.shutdown() sets it to None, so a new SimpleQueueProcessingStrategy is built around a dead pool. Every subsequent submit() then calls queue.put() on a shut-down queue, which raises queue.ShutDown; that exception is caught by the broad `except Exception` in SimpleQueueProcessingStrategy.submit, which marks the offset complete \u2014 so the offset gets committed even though the message was never processed. The net effect after any routine rebalance (deploy, scaling event): the consumer silently drops all messages and keeps committing offsets, appearing healthy while processing nothing. The pool should either be recreated per create_with_partitions call or its lifecycle should be decoupled from the strategy's close()."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 149,
+   "severity": "medium",
+   "category": "data",
+   "title": "Worker marks offsets complete even when processing raises, so failed messages are committed and lost",
+   "body": "In OrderedQueueWorker.run, the finally block unconditionally calls self.offset_tracker.complete_offset(work_item.partition, work_item.offset), including when result_processor raised an exception that was caught by `except Exception`. Once the offset is marked complete, the commit loop will commit past it, and the failed message is never retried \u2014 a transient error causes permanent message loss. This also directly contradicts the new test test_thread_queue_parallel_error_handling in tests/sentry/uptime/consumers/test_results_consumer.py, which asserts that no offset is committed when a message fails. If at-least-once semantics are intended (as the rest of the offset-tracking design suggests), complete_offset should only be called on success, and failures should either leave the offset outstanding or route to a DLQ."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Queues are unbounded, so there is no backpressure despite the docstring claiming it",
+   "body": "FixedQueuePool creates each work queue with a bare queue.Queue() (maxsize=0, i.e. unbounded), and SimpleQueueProcessingStrategy.submit/poll never block or pause consumption. The class docstring for SimpleQueueProcessingStrategy claims 'Natural backpressure when queues fill up', but submit() can never block, so if processing is slower than ingestion (the exact slow-item scenario this PR is meant to address) the consumer will read ahead without limit and buffer an unbounded number of decoded messages in process memory, risking OOM. Either give the queues a maxsize (making put block and naturally pause the consumer) or implement an explicit pause/resume in poll(), and fix the docstring if unbounded is intentional."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 344,
+   "severity": "low",
+   "category": "bug",
+   "title": "join() ignores its timeout and close() abandons queued items without draining",
+   "body": "SimpleQueueProcessingStrategy.join(timeout) ignores the timeout parameter and just calls close(), which immediately shuts down the commit thread and the queue pool. FixedQueuePool.shutdown sets worker.shutdown = True before draining, so the workers' `while not self.shutdown` loop exits even when items remain in the queues; the existing wait_until_empty() helper is never used in any production path. On graceful shutdown, in-flight queued work is simply abandoned (it will be redelivered since offsets are not committed, but the class docstring's 'No item is lost' guarantee and the arroyo join contract \u2014 wait up to timeout for in-flight work to finish \u2014 are not honored, and the final processed-but-uncommitted offsets are not flushed, causing avoidable duplicate processing on every restart)."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling asserts behavior the implementation doesn't have and only passes due to commit-loop timing",
+   "body": "The test mocks the result processor to raise on the first message and asserts `len(committed_offsets) == 0 or test_partition not in committed_offsets`. But the implementation in OrderedQueueWorker.run completes offsets in a finally block even when processing raises, so both offsets become committable and the commit loop will commit offset 102. The test only passes because the commit thread waits 1.0s before its first commit and the test finishes (including its extra time.sleep(0.2)) well before that on a fast machine; under load or with a different commit interval it becomes flaky, and worse, it encodes the exact opposite of the real behavior, masking the message-loss issue where failed items are committed."
+  },
+  {
+   "index": 5,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 200,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_stats_reporting races with worker threads and is flaky",
+   "body": "After submitting 10 work items to a pool whose 3 worker threads are actively draining, the test immediately asserts `stats['total_items'] > 0`. If the workers process all items before get_stats() runs (likely on a fast machine since the result_processor is trivial), total_items will be 0 and the assertion fails nondeterministically. The test should block the processor (e.g. with an event) before checking queue depth, or drop the assertion."
+  },
+  {
+   "index": 6,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 150,
+   "severity": "low",
+   "category": "perf",
+   "title": "Per-message metrics.gauge and per-message Sentry transaction with worker_id in the name add heavy per-message overhead",
+   "body": "OrderedQueueWorker.run emits a metrics.gauge('remote_subscriptions.queue_worker.queue_depth', ...) for every single processed message, and wraps every message in a sentry_sdk transaction whose name includes the worker_id (f\"monitors.{identifier}.worker_{worker_id}\"). On a high-throughput results topic this generates a gauge emission per message (the existing batched mode only emits per batch) and creates high-cardinality transaction names (one per worker per consumer) that won't group in Sentry Performance. Consider sampling, emitting gauges only from poll(), and removing worker_id from the transaction name."
+  }
+ ],
+ "finding_count": 7
+}

@@ -1,0 +1,133 @@
+{
+ "run_id": "muse-wonder__default__grafana__97529__r1",
+ "model_id": "muse-wonder",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-wonder",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 1,
+ "started_at": "2026-10-18T21:45:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33187,
+    "output": 4639,
+    "reasoning": 3573,
+    "cache_read": 244,
+    "cache_write": 0
+   },
+   "cost_reported": 0.2255768,
+   "latency_ms": 59789,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-wonder",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 4328,
+   "raw_usage": {
+    "completion_tokens": 4639,
+    "prompt_tokens": 33431,
+    "total_tokens": 38070,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 3573,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 244,
+     "video_tokens": 0
+    },
+    "cost": 0.2255768,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.2255768,
+     "upstream_inference_prompt_cost": 0.1327968,
+     "upstream_inference_completions_cost": 0.09278
+    }
+   },
+   "started_at": "2026-10-18T21:45:57Z",
+   "first_chunk_ms": 4969,
+   "first_text_ms": 51545,
+   "response_id": "gen-1792359957-bZFqnvHMseJOqoVlBVxM",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33187,
+  "output": 4639,
+  "cache_read": 244,
+  "cache_write": 0,
+  "reasoning": 3573
+ },
+ "cost_reported": 0.2255768,
+ "latency_ms": 59789,
+ "served_model": "meta/muse-wonder",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Concurrent BuildIndex calls for the same key now race and leak/conflict\", \"body\": \"BuildIndex no longer holds cacheMu while checking/creating/building the index, and only locks briefly to store the finished index at line 137-139. GetIndex therefore returns nil for the whole duration of an in-flight build, so two concurrent Search/getOrCreateIndex calls (or init plus a watch event) for the same NamespacedResource both build an index. For file-backed indexes both call bleve.New on the same directory and can fail with lock/already-exists errors; for memory indexes both do the full scan and the later store silently overwrites and leaks the earlier unclosed bleve index. The old whole-build lock also made concurrent builders serialize. A per-key build lock/singleflight, or double-checked locking around cache insertion, is needed.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the index cache without holding cacheMu\", \"body\": \"TotalDocs ranges over b.cache without taking cacheMu.RLock. With the finer-grained locking in this PR, BuildIndex now inserts into b.cache (line 137-139) while other work is in flight, and searchSupport.init calls TotalDocs after it has already started the watch goroutine that can trigger further builds. Concurrent map iteration and map write in Go can panic with 'concurrent map iteration and map write' and is a data race. TotalDocs must snapshot or iterate the cache under RLock.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 189, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"init worker goroutines race on totalBatchesIndexed and err\", \"body\": \"searchSupport.init launches up to initWorkers goroutines via errgroup, and each goroutine does totalBatchesIndexed++ (line 189) and assigns to the shared outer err variable (line 190: '_, _, err = s.build(...)') without synchronization. Concurrent increments can be lost (so the span attribute is wrong) and concurrent writes to err are a data race that go test -race will flag; a failing build's error can also be overwritten by a concurrent successful write before it is returned to errgroup. Use an atomic counter and a goroutine-local err variable returned from the closure.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"NewResourceServer now blocks on full index build and fails construction on search/watch errors\", \"body\": \"NewResourceServer now synchronously calls s.Init(ctx), which builds every search index (searchSupport.init scans all namespaces over initMinCount) and starts the watcher before returning. Previously construction was cheap and initialization happened lazily on the first gRPC call, so callers could construct the server and serve non-search endpoints (Read, IsHealthy, blob) even if index building was slow or the watch/stats backend was unavailable. Now a slow or failing GetResourceStats/WatchWriteEvents makes NewResourceServer hang for the whole index build or return an error for the entire server, and the background context used has no timeout, so startup can block indefinitely. This is the lazy-initialization dependency the PR description asks about and should be confirmed against all constructors/callers (including tests using fake backends without watch/stats support), or startup should remain non-blocking with readiness reported separately.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Postgres storage-server integration test is skipped rather than fixed\", \"body\": \"The PR adds a blanket skip for GRAFANA_TEST_DB=postgres in TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer, the only integration test exercising the storage-server target end to end. Since this PR changes ResourceServer startup/initialization, losing the postgres run removes coverage for exactly the changed startup path on a supported backend; the stated failure ('not working with postgres in Drone') is left uninvestigated and could hide a real postgres-specific initialization regression introduced here.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Concurrent BuildIndex calls for the same key now race and leak/conflict",
+   "body": "BuildIndex no longer holds cacheMu while checking/creating/building the index, and only locks briefly to store the finished index at line 137-139. GetIndex therefore returns nil for the whole duration of an in-flight build, so two concurrent Search/getOrCreateIndex calls (or init plus a watch event) for the same NamespacedResource both build an index. For file-backed indexes both call bleve.New on the same directory and can fail with lock/already-exists errors; for memory indexes both do the full scan and the later store silently overwrites and leaks the earlier unclosed bleve index. The old whole-build lock also made concurrent builders serialize. A per-key build lock/singleflight, or double-checked locking around cache insertion, is needed."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the index cache without holding cacheMu",
+   "body": "TotalDocs ranges over b.cache without taking cacheMu.RLock. With the finer-grained locking in this PR, BuildIndex now inserts into b.cache (line 137-139) while other work is in flight, and searchSupport.init calls TotalDocs after it has already started the watch goroutine that can trigger further builds. Concurrent map iteration and map write in Go can panic with 'concurrent map iteration and map write' and is a data race. TotalDocs must snapshot or iterate the cache under RLock."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "init worker goroutines race on totalBatchesIndexed and err",
+   "body": "searchSupport.init launches up to initWorkers goroutines via errgroup, and each goroutine does totalBatchesIndexed++ (line 189) and assigns to the shared outer err variable (line 190: '_, _, err = s.build(...)') without synchronization. Concurrent increments can be lost (so the span attribute is wrong) and concurrent writes to err are a data race that go test -race will flag; a failing build's error can also be overwritten by a concurrent successful write before it is returned to errgroup. Use an atomic counter and a goroutine-local err variable returned from the closure."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "api",
+   "title": "NewResourceServer now blocks on full index build and fails construction on search/watch errors",
+   "body": "NewResourceServer now synchronously calls s.Init(ctx), which builds every search index (searchSupport.init scans all namespaces over initMinCount) and starts the watcher before returning. Previously construction was cheap and initialization happened lazily on the first gRPC call, so callers could construct the server and serve non-search endpoints (Read, IsHealthy, blob) even if index building was slow or the watch/stats backend was unavailable. Now a slow or failing GetResourceStats/WatchWriteEvents makes NewResourceServer hang for the whole index build or return an error for the entire server, and the background context used has no timeout, so startup can block indefinitely. This is the lazy-initialization dependency the PR description asks about and should be confirmed against all constructors/callers (including tests using fake backends without watch/stats support), or startup should remain non-blocking with readiness reported separately."
+  },
+  {
+   "index": 4,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres storage-server integration test is skipped rather than fixed",
+   "body": "The PR adds a blanket skip for GRAFANA_TEST_DB=postgres in TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer, the only integration test exercising the storage-server target end to end. Since this PR changes ResourceServer startup/initialization, losing the postgres run removes coverage for exactly the changed startup path on a supported backend; the stated failure ('not working with postgres in Drone') is left uninvestigated and could hide a real postgres-specific initialization regression introduced here."
+  }
+ ],
+ "finding_count": 5
+}

@@ -1,0 +1,176 @@
+{
+ "run_id": "minimax-m3__default__grafana__79265__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:08:12Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29947,
+    "output": 17971,
+    "reasoning": 16189,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03055698,
+   "latency_ms": 60617,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 7840,
+   "raw_usage": {
+    "completion_tokens": 17971,
+    "prompt_tokens": 30075,
+    "total_tokens": 48046,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 16189,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.03055698,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03055698,
+     "upstream_inference_prompt_cost": 0.00899178,
+     "upstream_inference_completions_cost": 0.0215652
+    }
+   },
+   "started_at": "2026-10-17T21:08:12Z",
+   "first_chunk_ms": 1697,
+   "first_text_ms": 54076,
+   "response_id": "gen-1792271292-Ool5OvCHUpqLWlIiu9u7",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29947,
+  "output": 17971,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 16189
+ },
+ "cost_reported": 0.03055698,
+ "latency_ms": 60617,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 73,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Stale devices cannot be re-activated when limit is reached\",\n      \"body\": \"In `CreateOrUpdateDevice`, when `count >= s.deviceLimit` the code delegates to `updateDevice`, which only matches rows whose `updated_at` is within the last 30 days (`BETWEEN device.UpdatedAt - anonymousDeviceExpiration AND device.UpdatedAt + time.Minute`). Because the active-count query already excludes rows older than 30 days, a device that has not been seen for >30 days does not count toward the limit; but `updateDevice` still treats it as 'not found' and returns `ErrDeviceLimitReached`, so a legitimate returning device is rejected. The same code path returns the same error for a truly new device, conflating the two cases and breaking device re-activation for users who have been away longer than the expiration window. Either the limit-saturated path should DELETE/INSERT stale rows (since they don't count toward the active count) or it should fall back to the regular upsert when no existing row matches the device ID, regardless of age.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 109,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"TOCTOU race lets concurrent inserts bypass the device limit\",\n      \"body\": \"`CreateOrUpdateDevice` does a `SELECT COUNT(*)` followed by an INSERT/UPSERT, with no transaction or row-level lock. Two simultaneous requests for distinct new device IDs can both observe `count < deviceLimit`, both fall through to the INSERT branch, and both succeed, pushing the active-device count above the configured `device_limit`. The same race exists between the count check and the subsequent UPDATE inside `updateDevice`. Wrap the count and the mutation in a single transaction (or otherwise serialize) so the limit is actually enforced under load.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/client.go\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"perf\",\n      \"title\": \"Device tagging is now synchronous on every anonymous authentication\",\n      \"body\": \"The previous implementation dispatched `TagDevice` in a goroutine with a `context.Background()` and a 2-minute timeout, so DB latency and DB errors did not block the auth path. The new code calls `a.anonDeviceService.TagDevice(ctx, httpReqCopy, ...)` inline using the request context. Every anonymous authentication now incurs an extra COUNT/INSERT/UPDATE round-trip plus, on Postgres/MySQL, the per-statement latency, and any transient DB error (or client disconnect that cancels `ctx`) will surface as a failed authentication even when no limit is configured. Consider keeping the fire-and-forget pattern (or a small bounded background context) for the no-limit case and only doing the synchronous, error-returning path when `AnonymousDeviceLimit > 0`.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/client.go\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"Request context cancellation can lose device tags\",\n      \"body\": \"`TagDevice` now uses the inbound request `ctx`. If the client disconnects mid-auth (a common case for an anonymous browser session that redirects away), the context is cancelled and the DB write is aborted, but the request handler then continues and returns success. The device is therefore neither in the DB nor counted for future requests until it is seen again. The previous implementation used `context.Background()` with its own timeout precisely to avoid this. The new design should derive a detached context (e.g., `context.WithoutCancel(ctx)` or a fresh background context) for the device-tag DB write so client cancellation doesn't drop the write.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\",\n      \"line\": 105,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"New device-limit path is not covered by tests beyond the obvious case\",\n      \"body\": \"`TestIntegrationBeyondDeviceLimit` only exercises the 'insert device A then reject new device B with limit=1' scenario. There is no test for the stale-but-existing device case (a device whose `updated_at` is older than 30 days that comes back when the active count is at the limit), nor for the TOCTOU race, nor for the `deviceLimit == 0` path confirming that the COUNT/UPDATE branch is fully bypassed. The stale-device case in particular hides a real bug (see separate finding); adding a regression test for it would have caught it.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/impl.go\",\n      \"line\": 86,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"Local cache is populated before the DB write, hiding failures\",\n      \"body\": \"In `tagDeviceUI` the local cache is `SetDefault`ed *before* `a.anonStore.CreateOrUpdateDevice` is called. If the DB write fails for any reason (DB blip, transient error, or the new ErrDeviceLimitReached that is returned for stale devices), the cache will continue to short-circuit writes for that device for the full 29-minute TTL, so the device will silently be absent from the DB even after the underlying problem clears. Set the cache entry only after a successful DB write, or pair it with a delete-on-error so retries can recover.\"\n    },\n    {\n      \"file\": \"pkg/setting/setting.go\",\n      \"line\": 1651,\n      \"severity\": \"medium\",\n      \"category\": \"doc_defect\",\n      \"title\": \"New `device_limit` setting is not documented in conf/defaults.ini\",\n      \"body\": \"`readAuthSettings` now reads `auth.anonymous.device_limit`, but `conf/defaults.ini` (the canonical user-facing reference for Grafana configuration) is not in the change set. Operators have no way to discover the option, its key name, or the meaning of `0` (no limit) from the shipped configuration. Add a commented entry under `[auth.anonymous]` describing `device_limit`, its default, and the `0 = unlimited` semantics, and update any related docs (e.g., the anonymous-auth admin guide).\"\n    },\n    {\n      \"file\": \"pkg/api/dtos/frontend_settings.go\",\n      \"line\": 195,\n      \"severity\": \"low\",\n      \"category\": \"security\",\n      \"title\": \"AnonymousDeviceLimit is exposed to unauthenticated clients\",\n      \"body\": \"`AnonymousDeviceLimit int64` is added unconditionally to `FrontendSettingsDTO`, which is returned by `GET /api/frontend/settings` to every caller, including fully anonymous users. The value is also exposed via the matching `anonymousDeviceLimit` field in the runtime config. While the limit is not strictly secret, it is server-capacity information that helps an attacker probe the configured ceiling by attempting to register many fake `X-Grafana-Device-Id` values until `ErrDeviceLimitReached` is observed in the auth response. Consider omitting the field when `AnonymousEnabled` is false, or rounding/omitting it for non-admin sessions.\"\n    },\n    {\n      \"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\",\n      \"line\": 51,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"Test name and assertions don't verify that the first device was actually counted\",\n      \"body\": \"`TestIntegrationBeyondDeviceLimit` only asserts that the second `CreateOrUpdateDevice` returns `ErrDeviceLimitReached`. It does not assert on `CountDevices` before the second call to confirm the count actually reached the configured limit, so a regression that makes the limit check silently no-op (e.g., if `s.deviceLimit` were not threaded through) would still pass the test. Add an explicit `CountDevices` assertion between the two `CreateOrUpdateDevice` calls.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 73,
+   "severity": "high",
+   "category": "bug",
+   "title": "Stale devices cannot be re-activated when limit is reached",
+   "body": "In `CreateOrUpdateDevice`, when `count >= s.deviceLimit` the code delegates to `updateDevice`, which only matches rows whose `updated_at` is within the last 30 days (`BETWEEN device.UpdatedAt - anonymousDeviceExpiration AND device.UpdatedAt + time.Minute`). Because the active-count query already excludes rows older than 30 days, a device that has not been seen for >30 days does not count toward the limit; but `updateDevice` still treats it as 'not found' and returns `ErrDeviceLimitReached`, so a legitimate returning device is rejected. The same code path returns the same error for a truly new device, conflating the two cases and breaking device re-activation for users who have been away longer than the expiration window. Either the limit-saturated path should DELETE/INSERT stale rows (since they don't count toward the active count) or it should fall back to the regular upsert when no existing row matches the device ID, regardless of age."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TOCTOU race lets concurrent inserts bypass the device limit",
+   "body": "`CreateOrUpdateDevice` does a `SELECT COUNT(*)` followed by an INSERT/UPSERT, with no transaction or row-level lock. Two simultaneous requests for distinct new device IDs can both observe `count < deviceLimit`, both fall through to the INSERT branch, and both succeed, pushing the active-device count above the configured `device_limit`. The same race exists between the count check and the subsequent UPDATE inside `updateDevice`. Wrap the count and the mutation in a single transaction (or otherwise serialize) so the limit is actually enforced under load."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Device tagging is now synchronous on every anonymous authentication",
+   "body": "The previous implementation dispatched `TagDevice` in a goroutine with a `context.Background()` and a 2-minute timeout, so DB latency and DB errors did not block the auth path. The new code calls `a.anonDeviceService.TagDevice(ctx, httpReqCopy, ...)` inline using the request context. Every anonymous authentication now incurs an extra COUNT/INSERT/UPDATE round-trip plus, on Postgres/MySQL, the per-statement latency, and any transient DB error (or client disconnect that cancels `ctx`) will surface as a failed authentication even when no limit is configured. Consider keeping the fire-and-forget pattern (or a small bounded background context) for the no-limit case and only doing the synchronous, error-returning path when `AnonymousDeviceLimit > 0`."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "data",
+   "title": "Request context cancellation can lose device tags",
+   "body": "`TagDevice` now uses the inbound request `ctx`. If the client disconnects mid-auth (a common case for an anonymous browser session that redirects away), the context is cancelled and the DB write is aborted, but the request handler then continues and returns success. The device is therefore neither in the DB nor counted for future requests until it is seen again. The previous implementation used `context.Background()` with its own timeout precisely to avoid this. The new design should derive a detached context (e.g., `context.WithoutCancel(ctx)` or a fresh background context) for the device-tag DB write so client cancellation doesn't drop the write."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 105,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "New device-limit path is not covered by tests beyond the obvious case",
+   "body": "`TestIntegrationBeyondDeviceLimit` only exercises the 'insert device A then reject new device B with limit=1' scenario. There is no test for the stale-but-existing device case (a device whose `updated_at` is older than 30 days that comes back when the active count is at the limit), nor for the TOCTOU race, nor for the `deviceLimit == 0` path confirming that the COUNT/UPDATE branch is fully bypassed. The stale-device case in particular hides a real bug (see separate finding); adding a regression test for it would have caught it."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 86,
+   "severity": "low",
+   "category": "data",
+   "title": "Local cache is populated before the DB write, hiding failures",
+   "body": "In `tagDeviceUI` the local cache is `SetDefault`ed *before* `a.anonStore.CreateOrUpdateDevice` is called. If the DB write fails for any reason (DB blip, transient error, or the new ErrDeviceLimitReached that is returned for stale devices), the cache will continue to short-circuit writes for that device for the full 29-minute TTL, so the device will silently be absent from the DB even after the underlying problem clears. Set the cache entry only after a successful DB write, or pair it with a delete-on-error so retries can recover."
+  },
+  {
+   "index": 6,
+   "file": "pkg/setting/setting.go",
+   "line": 1651,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "New `device_limit` setting is not documented in conf/defaults.ini",
+   "body": "`readAuthSettings` now reads `auth.anonymous.device_limit`, but `conf/defaults.ini` (the canonical user-facing reference for Grafana configuration) is not in the change set. Operators have no way to discover the option, its key name, or the meaning of `0` (no limit) from the shipped configuration. Add a commented entry under `[auth.anonymous]` describing `device_limit`, its default, and the `0 = unlimited` semantics, and update any related docs (e.g., the anonymous-auth admin guide)."
+  },
+  {
+   "index": 7,
+   "file": "pkg/api/dtos/frontend_settings.go",
+   "line": 195,
+   "severity": "low",
+   "category": "security",
+   "title": "AnonymousDeviceLimit is exposed to unauthenticated clients",
+   "body": "`AnonymousDeviceLimit int64` is added unconditionally to `FrontendSettingsDTO`, which is returned by `GET /api/frontend/settings` to every caller, including fully anonymous users. The value is also exposed via the matching `anonymousDeviceLimit` field in the runtime config. While the limit is not strictly secret, it is server-capacity information that helps an attacker probe the configured ceiling by attempting to register many fake `X-Grafana-Device-Id` values until `ErrDeviceLimitReached` is observed in the auth response. Consider omitting the field when `AnonymousEnabled` is false, or rounding/omitting it for non-admin sessions."
+  },
+  {
+   "index": 8,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test name and assertions don't verify that the first device was actually counted",
+   "body": "`TestIntegrationBeyondDeviceLimit` only asserts that the second `CreateOrUpdateDevice` returns `ErrDeviceLimitReached`. It does not assert on `CountDevices` before the second call to confirm the count actually reached the configured limit, so a regression that makes the limit check silently no-op (e.g., if `s.deviceLimit` were not threaded through) would still pass the test. Add an explicit `CountDevices` assertion between the two `CreateOrUpdateDevice` calls."
+  }
+ ],
+ "finding_count": 9
+}

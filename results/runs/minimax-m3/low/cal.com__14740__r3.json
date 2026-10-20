@@ -1,0 +1,243 @@
+{
+ "run_id": "minimax-m3__low__cal.com__14740__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__14740",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14740",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:35:14Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 135287,
+  "sha": "737127e6dd2f1ce2",
+  "patch_only": [
+   "apps/web/public/static/locales/en/common.json"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 34846,
+    "output": 19364,
+    "reasoning": 16401,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03369828,
+   "latency_ms": 101190,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 12756,
+   "raw_usage": {
+    "completion_tokens": 19364,
+    "prompt_tokens": 34974,
+    "total_tokens": 54338,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 16401,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.03369828,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03369828,
+     "upstream_inference_prompt_cost": 0.01046148,
+     "upstream_inference_completions_cost": 0.0232368
+    }
+   },
+   "started_at": "2026-10-18T11:35:14Z",
+   "first_chunk_ms": 2445,
+   "first_text_ms": 86329,
+   "response_id": "gen-1792323315-YyaOZ2pU3K6r40gldsYd",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 34846,
+  "output": 19364,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 16401
+ },
+ "cost_reported": 0.03369828,
+ "latency_ms": 101190,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to focus on the new `addGuests` handler (most complex logic), the permission checks, and how the new code interacts with existing booking/calendar/email flows.\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 47,\n      \"severity\": \"critical\",\n      \"category\": \"security\",\n      \"title\": \"Team admin/owner permission check uses && instead of ||\",\n      \"body\": \"The `isTeamAdminOrOwner` check uses `(await isTeamAdmin(...)) && (await isTeamOwner(...))`. In cal.com's role model these are mutually exclusive (a user is either admin OR owner), so the conjunction always evaluates to false. The code clearly intended `||`. Effect: every team admin and every team owner is treated as unauthorized and rejected with `FORBIDDEN`; only direct organizers or existing attendees can add guests to team event bookings, defeating the entire intent of this branch.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 54,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Existing attendees are allowed to add arbitrary guests\",\n      \"body\": \"Permission check is `!isTeamAdminOrOwner && !isOrganizer && !isAttendee -> FORBIDDEN`. Because `isAttendee` is satisfied by any existing attendee whose email matches the logged-in user's email, an invitee of a booking can invite unlimited additional people (including themselves under a different email) to that booking without the organizer's consent. This is a privilege escalation: an attendee can grow the meeting's attendee list and trigger calendar invites / emails on behalf of the organizer. At minimum, only the organizer / team admin / owner should be able to add guests.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 168,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"sendAddGuestsEmails is called with unfiltered input, causing duplicate AttendeeScheduledEmail to existing attendees\",\n      \"body\": \"The handler passes the original `guests` array (which may contain already-attending emails that were filtered out into `uniqueGuests`) into `sendAddGuestsEmails(evt, guests)`. In `email-manager.ts` the attendees loop then does `if (newGuests.includes(attendee.email))` and sends `AttendeeScheduledEmail` (the standard 'you have been booked' email, full calendar invite) to any existing attendee whose email happens to be in the raw input. If an organizer re-typings an existing attendee's email by mistake, that attendee will be re-issued a brand-new booking confirmation with a fresh ICS REQUEST. The function should receive the deduplicated `uniqueGuests` (or compute the post-update set) instead.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 44,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"No booking status check: guests can be added to cancelled or past bookings\",\n      \"body\": \"The handler never inspects `booking.status` (or `booking.startTime`). The action item in `BookingListItem.tsx` is reachable for past confirmed bookings and any tRPC caller can bypass the UI entirely and call the mutation for a cancelled/rejected booking. Adding attendees to a cancelled booking results in an orphan calendar invite to a meeting that will not occur and may push the meeting back into an active state on connected calendars.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 70,\n      \"severity\": \"medium\",\n      \"category\": \"security\",\n      \"title\": \"Case-sensitive blacklist and existing-attendee filter are trivially bypassable\",\n      \"body\": \"`blacklistedGuestEmails` is lowercased but `guest` is compared as-is: `!blacklistedGuestEmails.includes(guest)`. An email like `BOB@example.com` bypasses the env-var blacklist. The existing-attendee filter `guest === attendee.email` is also case-sensitive, so a stored `test@example.com` does not match `Test@example.com`, which leads to a duplicate attendee row in `BookingAttendee` (no unique constraint on (bookingId,email) prevents it). All email comparisons for guest handling should be lowercased before comparison.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 92,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"Calendar sync after DB commit with no rollback: inconsistent state on failure\",\n      \"body\": \"`prisma.booking.update` is executed before `eventManager.updateCalendarAttendees(evt, booking)`. The calendar update is not wrapped in try/catch, so if it throws (e.g. credentials revoked, Google 5xx) the DB rows have already been inserted but the connected calendar has not been updated. A retry will then hit `uniqueGuests.length === 0` and return a misleading `emails_must_be_unique_valid` error, leaving the meeting with attendees in the DB but not on the calendar and not notified. The handler should either perform the calendar update first (with compensation on DB failure) or wrap both in a transactional pattern.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 160,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"EventManager is built from the caller's credentials instead of the organizer's\",\n      \"body\": \"`new EventManager({ ...user, credentials: [...credentials] })` uses the currently authenticated user's spread and credentials. The booking's actual organizer is loaded into `organizer` but its credentials are not used. When the caller is a team admin or (in the corrected logic) an attendee, the calendar invite will be pushed through whichever calendar integration the caller has, not the organizer's. That causes the organizer to lose control of the event on their primary calendar and may fail entirely if the caller has no calendar credentials for the destinationCalendar.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.schema.ts\",\n      \"line\": 5,\n      \"severity\": \"medium\",\n      \"category\": \"security\",\n      \"title\": \"No upper bound on guests array: trivially exploitable DoS / cost amplification\",\n      \"body\": \"`guests: z.array(z.string().email())` has no `.max(...)`. A single authed user can submit an array of thousands of valid emails. The handler then performs N inserts, N `getTranslation` calls, one big `Promise.all` of N emails, and a calendar update with an attendees list of size N. There is no per-user / per-booking throttle. A reasonable bound (e.g. `.max(50)` or `.max(100)`) should be enforced at the schema layer to prevent abuse and keep the email/calendar blast radius small.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 26,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"findFirst -> filter -> update pattern has a TOCTOU race that can create duplicate attendees\",\n      \"body\": \"The handler reads `booking.attendees` and then issues `prisma.booking.update` with `attendees.createMany`. Between those two statements another request from the same organizer can insert the same guest; because there is no unique index on (bookingId, email) and no transactional check, both requests will succeed and produce duplicate attendee rows that share the same email on the same booking. The de-duplication should be done inside a single transaction (or use a unique constraint) to make the operation atomic.\"\n    },\n    {\n      \"file\": \"packages/emails/email-manager.ts\",\n      \"line\": 541,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"New-guest check is performed after formatCalEvent, mixing raw input with formatted attendees\",\n      \"body\": \"`calendarEvent.attendees` is the formatted list returned from `formatCalEvent(calEvent)`, but `newGuests` is the raw caller-supplied array. If `formatCalEvent` normalizes email casing (or trims/strips display-name suffixes), `newGuests.includes(attendee.email)` will silently mis-classify a new guest as an existing attendee (or vice-versa), causing the wrong email template to be sent. Both sides of the comparison must go through the same normalization.\"\n    },\n    {\n      \"file\": \"packages/emails/templates/attendee-add-guests-email.ts\",\n      \"line\": 19,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Email To header uses empty name for newly-added guests and can crash senders\",\n      \"body\": \"`to: `${this.attendee.name} <${this.attendee.email}>`` is built unconditionally. The handler inserts new attendees with `name: \\\"\\\"` (`addGuests.handler.ts:85`), so every new-guest email is addressed as ` <new@example.com>`, which most SMTP servers reject as malformed. New guests should have a name populated (or the formatter should fall back to the local part of the email).\"\n    },\n    {\n      \"file\": \"packages/emails/templates/organizer-add-guests-email.ts\",\n      \"line\": 28,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Subject reads attendees[0].name without guarding empty array\",\n      \"body\": \"`name: this.calEvent.attendees[0].name` will throw `TypeError: Cannot read properties of undefined` if `attendees` is empty (e.g. an organizer-only booking or a booking whose attendees were wiped before this code path runs). It also produces a blank name in the subject for any new-guest-led booking where the first attendee was inserted with `name: \\\"\\\"`.\"\n    },\n    {\n      \"file\": \"apps/web/components/dialog/AddGuestsDialog.tsx\",\n      \"line\": 26,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Inline Zod schema diverges from the backend schema and validates case-sensitively\",\n      \"body\": \"The dialog defines its own `z.array(z.string().email()).refine(... set uniqueness ...)` which is case-sensitive (`Set('A@x')` and `Set('a@x')` are different keys) and duplicates the rules from `addGuests.schema.ts`. If the two schemas drift, the user sees a confusing 'Emails must be unique and valid' error even when only one specific field is empty/invalid, and the backend may accept what the frontend rejected. The schema should live in a shared module and lower-case emails before the uniqueness check.\"\n    },\n    {\n      \"file\": \"apps/web/components/dialog/AddGuestsDialog.tsx\",\n      \"line\": 43,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"User-facing error toast prefixes the tRPC error code and raw translation key\",\n      \"body\": \"`showToast(`${err.data?.code}: ${t(err.message)}`, 'error')` exposes internal codes like `BAD_REQUEST: booking_not_found` (because `booking_not_found` is not present in the locale file, so `t()` returns the raw key) directly to end users. The fallback `t(\\\"unable_to_add_guests\\\")` is only reached when the constructed string is falsy, which it never is. The toast should display the translated message and use the generic fallback when translation is missing.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 174,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Returns a hard-coded English success message instead of the i18n key\",\n      \"body\": \"The handler returns `{ message: \\\"Guests added\\\" }`. Other handlers in this router return translation keys (e.g. `booking_confirmation_success`) that the client renders via `t()`. Returning an English string here breaks localization and the toast on success (`t(\\\"guests_added\\\")`) is wired separately, so the API contract is inconsistent with the rest of the bookings router.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts\",\n      \"line\": 1,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No tests added for a new mutating handler that touches DB, calendar and email\",\n      \"body\": \"The handler introduces an end-to-end flow with multiple non-trivial branches: permission check (organizer / attendee / team admin / team owner, including the && vs || bug above), blacklist filtering, duplicate attendee detection across casing, calendar sync ordering, and email dispatch for organizer / team members / new guests / existing attendees. None of these paths are exercised by tests in this PR. Given the security-sensitive nature of the changes (any authed user can mutate a booking's attendee list), at least the permission branches, status guard (once added), and the `sendAddGuestsEmails` recipient classification must be covered.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 47,
+   "severity": "critical",
+   "category": "security",
+   "title": "Team admin/owner permission check uses && instead of ||",
+   "body": "The `isTeamAdminOrOwner` check uses `(await isTeamAdmin(...)) && (await isTeamOwner(...))`. In cal.com's role model these are mutually exclusive (a user is either admin OR owner), so the conjunction always evaluates to false. The code clearly intended `||`. Effect: every team admin and every team owner is treated as unauthorized and rejected with `FORBIDDEN`; only direct organizers or existing attendees can add guests to team event bookings, defeating the entire intent of this branch."
+  },
+  {
+   "index": 1,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 54,
+   "severity": "high",
+   "category": "security",
+   "title": "Existing attendees are allowed to add arbitrary guests",
+   "body": "Permission check is `!isTeamAdminOrOwner && !isOrganizer && !isAttendee -> FORBIDDEN`. Because `isAttendee` is satisfied by any existing attendee whose email matches the logged-in user's email, an invitee of a booking can invite unlimited additional people (including themselves under a different email) to that booking without the organizer's consent. This is a privilege escalation: an attendee can grow the meeting's attendee list and trigger calendar invites / emails on behalf of the organizer. At minimum, only the organizer / team admin / owner should be able to add guests."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 168,
+   "severity": "high",
+   "category": "data",
+   "title": "sendAddGuestsEmails is called with unfiltered input, causing duplicate AttendeeScheduledEmail to existing attendees",
+   "body": "The handler passes the original `guests` array (which may contain already-attending emails that were filtered out into `uniqueGuests`) into `sendAddGuestsEmails(evt, guests)`. In `email-manager.ts` the attendees loop then does `if (newGuests.includes(attendee.email))` and sends `AttendeeScheduledEmail` (the standard 'you have been booked' email, full calendar invite) to any existing attendee whose email happens to be in the raw input. If an organizer re-typings an existing attendee's email by mistake, that attendee will be re-issued a brand-new booking confirmation with a fresh ICS REQUEST. The function should receive the deduplicated `uniqueGuests` (or compute the post-update set) instead."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 44,
+   "severity": "medium",
+   "category": "data",
+   "title": "No booking status check: guests can be added to cancelled or past bookings",
+   "body": "The handler never inspects `booking.status` (or `booking.startTime`). The action item in `BookingListItem.tsx` is reachable for past confirmed bookings and any tRPC caller can bypass the UI entirely and call the mutation for a cancelled/rejected booking. Adding attendees to a cancelled booking results in an orphan calendar invite to a meeting that will not occur and may push the meeting back into an active state on connected calendars."
+  },
+  {
+   "index": 4,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 70,
+   "severity": "medium",
+   "category": "security",
+   "title": "Case-sensitive blacklist and existing-attendee filter are trivially bypassable",
+   "body": "`blacklistedGuestEmails` is lowercased but `guest` is compared as-is: `!blacklistedGuestEmails.includes(guest)`. An email like `BOB@example.com` bypasses the env-var blacklist. The existing-attendee filter `guest === attendee.email` is also case-sensitive, so a stored `test@example.com` does not match `Test@example.com`, which leads to a duplicate attendee row in `BookingAttendee` (no unique constraint on (bookingId,email) prevents it). All email comparisons for guest handling should be lowercased before comparison."
+  },
+  {
+   "index": 5,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 92,
+   "severity": "medium",
+   "category": "data",
+   "title": "Calendar sync after DB commit with no rollback: inconsistent state on failure",
+   "body": "`prisma.booking.update` is executed before `eventManager.updateCalendarAttendees(evt, booking)`. The calendar update is not wrapped in try/catch, so if it throws (e.g. credentials revoked, Google 5xx) the DB rows have already been inserted but the connected calendar has not been updated. A retry will then hit `uniqueGuests.length === 0` and return a misleading `emails_must_be_unique_valid` error, leaving the meeting with attendees in the DB but not on the calendar and not notified. The handler should either perform the calendar update first (with compensation on DB failure) or wrap both in a transactional pattern."
+  },
+  {
+   "index": 6,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 160,
+   "severity": "medium",
+   "category": "bug",
+   "title": "EventManager is built from the caller's credentials instead of the organizer's",
+   "body": "`new EventManager({ ...user, credentials: [...credentials] })` uses the currently authenticated user's spread and credentials. The booking's actual organizer is loaded into `organizer` but its credentials are not used. When the caller is a team admin or (in the corrected logic) an attendee, the calendar invite will be pushed through whichever calendar integration the caller has, not the organizer's. That causes the organizer to lose control of the event on their primary calendar and may fail entirely if the caller has no calendar credentials for the destinationCalendar."
+  },
+  {
+   "index": 7,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.schema.ts",
+   "line": 5,
+   "severity": "medium",
+   "category": "security",
+   "title": "No upper bound on guests array: trivially exploitable DoS / cost amplification",
+   "body": "`guests: z.array(z.string().email())` has no `.max(...)`. A single authed user can submit an array of thousands of valid emails. The handler then performs N inserts, N `getTranslation` calls, one big `Promise.all` of N emails, and a calendar update with an attendees list of size N. There is no per-user / per-booking throttle. A reasonable bound (e.g. `.max(50)` or `.max(100)`) should be enforced at the schema layer to prevent abuse and keep the email/calendar blast radius small."
+  },
+  {
+   "index": 8,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 26,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "findFirst -> filter -> update pattern has a TOCTOU race that can create duplicate attendees",
+   "body": "The handler reads `booking.attendees` and then issues `prisma.booking.update` with `attendees.createMany`. Between those two statements another request from the same organizer can insert the same guest; because there is no unique index on (bookingId, email) and no transactional check, both requests will succeed and produce duplicate attendee rows that share the same email on the same booking. The de-duplication should be done inside a single transaction (or use a unique constraint) to make the operation atomic."
+  },
+  {
+   "index": 9,
+   "file": "packages/emails/email-manager.ts",
+   "line": 541,
+   "severity": "medium",
+   "category": "bug",
+   "title": "New-guest check is performed after formatCalEvent, mixing raw input with formatted attendees",
+   "body": "`calendarEvent.attendees` is the formatted list returned from `formatCalEvent(calEvent)`, but `newGuests` is the raw caller-supplied array. If `formatCalEvent` normalizes email casing (or trims/strips display-name suffixes), `newGuests.includes(attendee.email)` will silently mis-classify a new guest as an existing attendee (or vice-versa), causing the wrong email template to be sent. Both sides of the comparison must go through the same normalization."
+  },
+  {
+   "index": 10,
+   "file": "packages/emails/templates/attendee-add-guests-email.ts",
+   "line": 19,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Email To header uses empty name for newly-added guests and can crash senders",
+   "body": "`to: `${this.attendee.name} <${this.attendee.email}>`` is built unconditionally. The handler inserts new attendees with `name: \"\"` (`addGuests.handler.ts:85`), so every new-guest email is addressed as ` <new@example.com>`, which most SMTP servers reject as malformed. New guests should have a name populated (or the formatter should fall back to the local part of the email)."
+  },
+  {
+   "index": 11,
+   "file": "packages/emails/templates/organizer-add-guests-email.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "bug",
+   "title": "Subject reads attendees[0].name without guarding empty array",
+   "body": "`name: this.calEvent.attendees[0].name` will throw `TypeError: Cannot read properties of undefined` if `attendees` is empty (e.g. an organizer-only booking or a booking whose attendees were wiped before this code path runs). It also produces a blank name in the subject for any new-guest-led booking where the first attendee was inserted with `name: \"\"`."
+  },
+  {
+   "index": 12,
+   "file": "apps/web/components/dialog/AddGuestsDialog.tsx",
+   "line": 26,
+   "severity": "low",
+   "category": "bug",
+   "title": "Inline Zod schema diverges from the backend schema and validates case-sensitively",
+   "body": "The dialog defines its own `z.array(z.string().email()).refine(... set uniqueness ...)` which is case-sensitive (`Set('A@x')` and `Set('a@x')` are different keys) and duplicates the rules from `addGuests.schema.ts`. If the two schemas drift, the user sees a confusing 'Emails must be unique and valid' error even when only one specific field is empty/invalid, and the backend may accept what the frontend rejected. The schema should live in a shared module and lower-case emails before the uniqueness check."
+  },
+  {
+   "index": 13,
+   "file": "apps/web/components/dialog/AddGuestsDialog.tsx",
+   "line": 43,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "User-facing error toast prefixes the tRPC error code and raw translation key",
+   "body": "`showToast(`${err.data?.code}: ${t(err.message)}`, 'error')` exposes internal codes like `BAD_REQUEST: booking_not_found` (because `booking_not_found` is not present in the locale file, so `t()` returns the raw key) directly to end users. The fallback `t(\"unable_to_add_guests\")` is only reached when the constructed string is falsy, which it never is. The toast should display the translated message and use the generic fallback when translation is missing."
+  },
+  {
+   "index": 14,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 174,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Returns a hard-coded English success message instead of the i18n key",
+   "body": "The handler returns `{ message: \"Guests added\" }`. Other handlers in this router return translation keys (e.g. `booking_confirmation_success`) that the client renders via `t()`. Returning an English string here breaks localization and the toast on success (`t(\"guests_added\")`) is wired separately, so the API contract is inconsistent with the rest of the bookings router."
+  },
+  {
+   "index": 15,
+   "file": "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+   "line": 1,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests added for a new mutating handler that touches DB, calendar and email",
+   "body": "The handler introduces an end-to-end flow with multiple non-trivial branches: permission check (organizer / attendee / team admin / team owner, including the && vs || bug above), blacklist filtering, duplicate attendee detection across casing, calendar sync ordering, and email dispatch for organizer / team members / new guests / existing attendees. None of these paths are exercised by tests in this PR. Given the security-sensitive nature of the changes (any authed user can mutate a booking's attendee list), at least the permission branches, status guard (once added), and the `sendAddGuestsEmails` recipient classification must be covered."
+  }
+ ],
+ "finding_count": 16
+}

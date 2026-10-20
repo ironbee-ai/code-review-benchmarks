@@ -1,0 +1,138 @@
+{
+ "run_id": "grok-4.7__default__grafana__80329__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__80329",
+ "golden_url": "https://github.com/grafana/grafana/pull/80329",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:27:23Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 65677,
+  "sha": "8d83e49cfc512854",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 21251,
+    "output": 24597,
+    "reasoning": 23436,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.19066,
+   "latency_ms": 355654,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 4841,
+   "raw_usage": {
+    "completion_tokens": 24597,
+    "prompt_tokens": 22403,
+    "total_tokens": 47000,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 23436,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.19066,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.19066,
+     "upstream_inference_prompt_cost": 0.043078,
+     "upstream_inference_completions_cost": 0.147582
+    }
+   },
+   "started_at": "2026-10-17T21:27:23Z",
+   "first_chunk_ms": 2077,
+   "first_text_ms": 343437,
+   "response_id": "gen-1792272443-GeNPkjUSuNMouX5zWeEm",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 21251,
+  "output": 24597,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 23436
+ },
+ "cost_reported": 0.19066,
+ "latency_ms": 355654,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/cleanup/cleanup.go\", \"line\": 77, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Cleanup schedule accidentally changed from 10 minutes to 1 minute\", \"body\": \"Run now starts the background cleanup ticker at 1 minute instead of 10. This is unrelated to the annotation deadlock fix and is not mentioned in the PR. clean() still applies a 9-minute timeout, which was chosen so a cycle finishes before the next 10-minute tick. time.Ticker buffers one tick, and clean() is synchronous, so if any job (annotation cleanup of a large table, snapshot expiry, query-history enforcement, etc.) runs longer than a minute, the buffered tick fires as soon as it returns and cleanup runs back-to-back. That multiplies database load, can hold the cleanup server lock almost continuously, and increases the chance of the annotation insert/cleanup contention this PR is trying to reduce. Restore the 10-minute interval.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 534, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Leftover Error logs fire on every cleanup batch, including idle runs\", \"body\": \"CleanAnnotations and CleanOrphanedAnnotationTags log at Error after every ID fetch and every delete (lines 534, 537, 554, 557, 576, and 579), including when the batch is empty and err is nil. The messages are not failures; they dump the SQL condition and the entire ID slice. Annotation cleanup runs on the periodic cleanup job, so a healthy idle instance emits multiple error-level lines per cycle (age cleanup, count cleanup, and orphan-tag cleanup). Operators who alert on error logs will treat normal retention as an incident, and a large batch (the new test uses 32767 IDs) will format tens of thousands of IDs into each line, spiking memory and log volume. Remove these statements, or drop them to debug and do not log the ID list.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 549, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Max-count cleanup can delete annotations that should be retained\", \"body\": \"The max-count path selects excess IDs with ORDER BY id DESC LIMIT batch OFFSET MaxCount in one session, then deletes those IDs in a later session. Those IDs are excess only relative to rows present at SELECT time. If newer annotations (the ones inside the keep window) are deleted by a user or API between fetchIDs and deleteByIDs, some already-selected IDs now fall inside MaxCount but are still deleted. The previous single-statement DELETE ... WHERE id IN (SELECT ... OFFSET MaxCount) evaluated the window and the delete atomically, so this could not happen. The comment only accepts under-deletion from concurrent inserts; this race over-deletes, and the next cycle will not recreate the rows. With a large batch size, one interleaving can drop retention by up to that batch below MaxCount.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 608, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Batched ID deletes are not bounded to engine parameter limits\", \"body\": \"deleteByIDs issues one statement with one placeholder per ID, except when the DB is SQLite and AnnotationCleanupJobBatchSize is greater than 999, in which case IDs are interpolated. The old cleanup was a DELETE with a LIMIT subquery, so statement size did not grow with the batch. PostgreSQL rejects more than 65535 parameters, and other engines fail or truncate once the packet size is exceeded. Batch size is an operator setting (the new test uses 32767) and nothing chunks len(ids) to a safe bound. If the configured batch is above the engine limit and at least that many rows match, the DELETE fails every cycle after the SELECT succeeds, untilDoneOrCancelled returns the error, and that batch is never removed. The SQLite branch also keys off the configured batch size rather than len(ids), and 999 is the pre-3.32 SQLITE_MAX_VARIABLE_NUMBER (default is 32766 since 3.32), so it does not match the limit the new test name refers to.\"}, {\"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\", \"line\": 609, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"SQLite IN-list is built with quadratic string copies\", \"body\": \"On the SQLite inline path, deleteByIDs builds the ID list by fmt.Sprintf(\\\"%s, %d\\\", values, v) in a loop, copying the whole string on every ID. That path is taken whenever AnnotationCleanupJobBatchSize is above 999, which is exactly the case the new 32767-ID test exercises and the workaround operators would use to get large batches on SQLite. For n IDs the copies are O(n^2): about 32k IDs is on the order of gigabytes of temporary allocations and can stall the cleanup goroutine for seconds. Build the list with strings.Builder (or chunk the delete) so large batches do not spike memory.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/cleanup/cleanup.go",
+   "line": 77,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cleanup schedule accidentally changed from 10 minutes to 1 minute",
+   "body": "Run now starts the background cleanup ticker at 1 minute instead of 10. This is unrelated to the annotation deadlock fix and is not mentioned in the PR. clean() still applies a 9-minute timeout, which was chosen so a cycle finishes before the next 10-minute tick. time.Ticker buffers one tick, and clean() is synchronous, so if any job (annotation cleanup of a large table, snapshot expiry, query-history enforcement, etc.) runs longer than a minute, the buffered tick fires as soon as it returns and cleanup runs back-to-back. That multiplies database load, can hold the cleanup server lock almost continuously, and increases the chance of the annotation insert/cleanup contention this PR is trying to reduce. Restore the 10-minute interval."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 534,
+   "severity": "high",
+   "category": "bug",
+   "title": "Leftover Error logs fire on every cleanup batch, including idle runs",
+   "body": "CleanAnnotations and CleanOrphanedAnnotationTags log at Error after every ID fetch and every delete (lines 534, 537, 554, 557, 576, and 579), including when the batch is empty and err is nil. The messages are not failures; they dump the SQL condition and the entire ID slice. Annotation cleanup runs on the periodic cleanup job, so a healthy idle instance emits multiple error-level lines per cycle (age cleanup, count cleanup, and orphan-tag cleanup). Operators who alert on error logs will treat normal retention as an incident, and a large batch (the new test uses 32767 IDs) will format tens of thousands of IDs into each line, spiking memory and log volume. Remove these statements, or drop them to debug and do not log the ID list."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 549,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Max-count cleanup can delete annotations that should be retained",
+   "body": "The max-count path selects excess IDs with ORDER BY id DESC LIMIT batch OFFSET MaxCount in one session, then deletes those IDs in a later session. Those IDs are excess only relative to rows present at SELECT time. If newer annotations (the ones inside the keep window) are deleted by a user or API between fetchIDs and deleteByIDs, some already-selected IDs now fall inside MaxCount but are still deleted. The previous single-statement DELETE ... WHERE id IN (SELECT ... OFFSET MaxCount) evaluated the window and the delete atomically, so this could not happen. The comment only accepts under-deletion from concurrent inserts; this race over-deletes, and the next cycle will not recreate the rows. With a large batch size, one interleaving can drop retention by up to that batch below MaxCount."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 608,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Batched ID deletes are not bounded to engine parameter limits",
+   "body": "deleteByIDs issues one statement with one placeholder per ID, except when the DB is SQLite and AnnotationCleanupJobBatchSize is greater than 999, in which case IDs are interpolated. The old cleanup was a DELETE with a LIMIT subquery, so statement size did not grow with the batch. PostgreSQL rejects more than 65535 parameters, and other engines fail or truncate once the packet size is exceeded. Batch size is an operator setting (the new test uses 32767) and nothing chunks len(ids) to a safe bound. If the configured batch is above the engine limit and at least that many rows match, the DELETE fails every cycle after the SELECT succeeds, untilDoneOrCancelled returns the error, and that batch is never removed. The SQLite branch also keys off the configured batch size rather than len(ids), and 999 is the pre-3.32 SQLITE_MAX_VARIABLE_NUMBER (default is 32766 since 3.32), so it does not match the limit the new test name refers to."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 609,
+   "severity": "medium",
+   "category": "perf",
+   "title": "SQLite IN-list is built with quadratic string copies",
+   "body": "On the SQLite inline path, deleteByIDs builds the ID list by fmt.Sprintf(\"%s, %d\", values, v) in a loop, copying the whole string on every ID. That path is taken whenever AnnotationCleanupJobBatchSize is above 999, which is exactly the case the new 32767-ID test exercises and the workaround operators would use to get large batches on SQLite. For n IDs the copies are O(n^2): about 32k IDs is on the order of gigabytes of temporary allocations and can stall the cleanup goroutine for seconds. Build the list with strings.Builder (or chunk the delete) so large batches do not spike memory."
+  }
+ ],
+ "finding_count": 5
+}

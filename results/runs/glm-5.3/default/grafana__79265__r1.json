@@ -1,0 +1,171 @@
+{
+ "run_id": "glm-5.3__default__grafana__79265__r1",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:44:11Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30093,
+    "output": 5571,
+    "reasoning": 3986,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0666426,
+   "latency_ms": 68751,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 7158,
+   "raw_usage": {
+    "completion_tokens": 5571,
+    "prompt_tokens": 30093,
+    "total_tokens": 35664,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 3986,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0666426,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0666426,
+     "upstream_inference_prompt_cost": 0.0421302,
+     "upstream_inference_completions_cost": 0.0245124
+    }
+   },
+   "started_at": "2026-10-17T11:44:11Z",
+   "first_chunk_ms": 2550,
+   "first_text_ms": 53670,
+   "response_id": "gen-1792237451-T4uWnas3H10vY5OCeOKN",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30093,
+  "output": 5571,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 3986
+ },
+ "cost_reported": 0.0666426,
+ "latency_ms": 68751,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Local cache is populated before the device write, so the device limit is bypassed on retry\", \"body\": \"In tagDeviceUI, the device's cache key is inserted into the local cache (localCache.SetDefault at line 87) BEFORE calling anonStore.CreateOrUpdateDevice. With the new device-limit feature, an unknown device beyond the limit makes CreateOrUpdateDevice return ErrDeviceLimitReached, so the request is rejected \u2014 but its cache entry has already been set. The very next request from the same device hits the cache, tagDeviceUI returns nil without touching the database, TagDevice returns nil, and Authenticate succeeds. Consequence: an over-limit device (or an attacker generating new device IDs) gets anonymous access simply by retrying once, and the device is never recorded or counted. The cache entry must only be written after a successful store write (or removed on error). There is also no test covering the retry scenario, which would have caught this.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Device tagging moved from background goroutine to the synchronous auth path\", \"body\": \"Authenticate previously ran TagDevice in a fire-and-forget goroutine with its own 2-minute timeout and panic recovery. It is now called synchronously on the request context, so every anonymous request with a cache miss blocks on one or two database round trips (a COUNT(*) over anon_device when a device limit is configured, plus the upsert/update) before the identity is returned. This adds database latency to anonymous page loads and makes anonymous auth fail whenever the device store is slow or unavailable (previously a store outage only logged a warning). The panic recovery that protected the request handler was also removed, so a panic inside TagDevice now propagates into the request. Only the limit-exceeded case needs to be synchronous; the common path (limit not reached or no limit configured) could remain asynchronous.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 109, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Device limit check is a non-atomic count-then-insert\", \"body\": \"CreateOrUpdateDevice enforces the limit by running CountDevices and then, if count < deviceLimit, performing the insert as two separate statements with no transaction or locking. Concurrent requests from different new devices (or requests hitting different Grafana instances behind a load balancer) can all read a count below the limit and all insert, exceeding the configured device limit by however many requests race in the window. If the limit is meant to be a hard cap (it is now used to deny authentication), the count and insert need to be atomic, e.g. a single conditional upsert or a transaction with a locking read.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 95, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"updateDevice treats 'row not updated' as 'device limit reached', locking out existing devices\", \"body\": \"When the limit is reached, updateDevice runs an UPDATE ... WHERE device_id = ? AND updated_at BETWEEN (now-30d) AND (now+1min) and returns ErrDeviceLimitReached whenever rowsAffected == 0. rowsAffected can be 0 for an existing, legitimate device in at least two cases: (1) on MySQL, if none of the SET columns change (updated_at has second precision, so two updates within the same second with same IP/UA report 0 affected rows unless CLIENT_FOUND_ROWS is set), and (2) a device whose last update is older than 30 days falls outside the BETWEEN window. In both cases an existing device that should be allowed (or refreshed) is instead denied authentication with 'device limit reached'. The not-found condition should be distinguished from value-unchanged (e.g., use a SELECT ... FOR UPDATE or check matched rows), and the stale-device case should be handled explicitly.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 52, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Provider signatures changed without any DI/wire registration updates in this PR\", \"body\": \"ProvideAnonDBStore gained a new `deviceLimit int64` parameter and ProvideAnonymousDeviceService changed its parameter from `anonstore.AnonStore` to `db.DB`, but the PR contains no changes to any dependency-injection registration files. If ProvideAnonDBStore is still listed in an fx/wire provider set (it was previously the provider of the anonstore.AnonStore interface), the container will fail at startup because nothing provides a bare `int64`. This needs verification against the registration sites before merge.\"}, {\"file\": \"pkg/api/dtos/frontend_settings.go\", \"line\": 195, \"severity\": \"low\", \"category\": \"api\", \"title\": \"anonymousDeviceLimit is always serialized as 0 when unset, but the frontend type is `number | undefined`\", \"body\": \"The DTO field is `AnonymousDeviceLimit int64 json:\\\"anonymousDeviceLimit\\\"` with no omitempty, so when no device_limit is configured the frontend always receives 0, while the TypeScript type added in packages/grafana-data/src/types/config.ts is `number | undefined` and the runtime default is `undefined`. Frontend consumers distinguishing 'no limit configured' (undefined) from 'limit of 0' will see 0 and can misinterpret the configuration. Either add omitempty (and use a pointer) on the Go side so unset stays undefined, or change the TS type to `number` to match what is actually sent.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No tests for the allowed paths of the device limit, only the rejection path\", \"body\": \"TestIntegrationBeyondDeviceLimit only covers the case where a second, unknown device is rejected when the limit is 1. Missing coverage: (1) an existing device within the 30-day window can still be updated when the limit is reached (the updateDevice success path, which is where the MySQL rowsAffected and stale-window bugs would surface), (2) a device whose updated_at is older than 30 days, and (3) an end-to-end test through Anonymous.Authenticate / AnonDeviceService.TagDevice that a rejected device stays rejected on retry \u2014 which would have caught the local-cache bypass where the cache entry is set before the store write succeeds.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New auth.anonymous device_limit setting is undocumented\", \"body\": \"The PR adds a new configuration option `[auth.anonymous] device_limit` (MustInt64(0)) that changes anonymous-access behavior \u2014 when exceeded, anonymous authentication is rejected \u2014 but no documentation, config example, or comment describing the option (units, 0-means-unlimited semantics, interaction with the 30-day expiration window) is included, despite the PR checklist requiring doc updates. Operators configuring anonymous auth have no way to discover or correctly interpret this setting.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Local cache is populated before the device write, so the device limit is bypassed on retry",
+   "body": "In tagDeviceUI, the device's cache key is inserted into the local cache (localCache.SetDefault at line 87) BEFORE calling anonStore.CreateOrUpdateDevice. With the new device-limit feature, an unknown device beyond the limit makes CreateOrUpdateDevice return ErrDeviceLimitReached, so the request is rejected \u2014 but its cache entry has already been set. The very next request from the same device hits the cache, tagDeviceUI returns nil without touching the database, TagDevice returns nil, and Authenticate succeeds. Consequence: an over-limit device (or an attacker generating new device IDs) gets anonymous access simply by retrying once, and the device is never recorded or counted. The cache entry must only be written after a successful store write (or removed on error). There is also no test covering the retry scenario, which would have caught this."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Device tagging moved from background goroutine to the synchronous auth path",
+   "body": "Authenticate previously ran TagDevice in a fire-and-forget goroutine with its own 2-minute timeout and panic recovery. It is now called synchronously on the request context, so every anonymous request with a cache miss blocks on one or two database round trips (a COUNT(*) over anon_device when a device limit is configured, plus the upsert/update) before the identity is returned. This adds database latency to anonymous page loads and makes anonymous auth fail whenever the device store is slow or unavailable (previously a store outage only logged a warning). The panic recovery that protected the request handler was also removed, so a panic inside TagDevice now propagates into the request. Only the limit-exceeded case needs to be synchronous; the common path (limit not reached or no limit configured) could remain asynchronous."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Device limit check is a non-atomic count-then-insert",
+   "body": "CreateOrUpdateDevice enforces the limit by running CountDevices and then, if count < deviceLimit, performing the insert as two separate statements with no transaction or locking. Concurrent requests from different new devices (or requests hitting different Grafana instances behind a load balancer) can all read a count below the limit and all insert, exceeding the configured device limit by however many requests race in the window. If the limit is meant to be a hard cap (it is now used to deny authentication), the count and insert need to be atomic, e.g. a single conditional upsert or a transaction with a locking read."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 95,
+   "severity": "medium",
+   "category": "bug",
+   "title": "updateDevice treats 'row not updated' as 'device limit reached', locking out existing devices",
+   "body": "When the limit is reached, updateDevice runs an UPDATE ... WHERE device_id = ? AND updated_at BETWEEN (now-30d) AND (now+1min) and returns ErrDeviceLimitReached whenever rowsAffected == 0. rowsAffected can be 0 for an existing, legitimate device in at least two cases: (1) on MySQL, if none of the SET columns change (updated_at has second precision, so two updates within the same second with same IP/UA report 0 affected rows unless CLIENT_FOUND_ROWS is set), and (2) a device whose last update is older than 30 days falls outside the BETWEEN window. In both cases an existing device that should be allowed (or refreshed) is instead denied authentication with 'device limit reached'. The not-found condition should be distinguished from value-unchanged (e.g., use a SELECT ... FOR UPDATE or check matched rows), and the stale-device case should be handled explicitly."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 52,
+   "severity": "low",
+   "category": "bug",
+   "title": "Provider signatures changed without any DI/wire registration updates in this PR",
+   "body": "ProvideAnonDBStore gained a new `deviceLimit int64` parameter and ProvideAnonymousDeviceService changed its parameter from `anonstore.AnonStore` to `db.DB`, but the PR contains no changes to any dependency-injection registration files. If ProvideAnonDBStore is still listed in an fx/wire provider set (it was previously the provider of the anonstore.AnonStore interface), the container will fail at startup because nothing provides a bare `int64`. This needs verification against the registration sites before merge."
+  },
+  {
+   "index": 5,
+   "file": "pkg/api/dtos/frontend_settings.go",
+   "line": 195,
+   "severity": "low",
+   "category": "api",
+   "title": "anonymousDeviceLimit is always serialized as 0 when unset, but the frontend type is `number | undefined`",
+   "body": "The DTO field is `AnonymousDeviceLimit int64 json:\"anonymousDeviceLimit\"` with no omitempty, so when no device_limit is configured the frontend always receives 0, while the TypeScript type added in packages/grafana-data/src/types/config.ts is `number | undefined` and the runtime default is `undefined`. Frontend consumers distinguishing 'no limit configured' (undefined) from 'limit of 0' will see 0 and can misinterpret the configuration. Either add omitempty (and use a pointer) on the Go side so unset stays undefined, or change the TS type to `number` to match what is actually sent."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No tests for the allowed paths of the device limit, only the rejection path",
+   "body": "TestIntegrationBeyondDeviceLimit only covers the case where a second, unknown device is rejected when the limit is 1. Missing coverage: (1) an existing device within the 30-day window can still be updated when the limit is reached (the updateDevice success path, which is where the MySQL rowsAffected and stale-window bugs would surface), (2) a device whose updated_at is older than 30 days, and (3) an end-to-end test through Anonymous.Authenticate / AnonDeviceService.TagDevice that a rejected device stays rejected on retry \u2014 which would have caught the local-cache bypass where the cache entry is set before the store write succeeds."
+  },
+  {
+   "index": 7,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New auth.anonymous device_limit setting is undocumented",
+   "body": "The PR adds a new configuration option `[auth.anonymous] device_limit` (MustInt64(0)) that changes anonymous-access behavior \u2014 when exceeded, anonymous authentication is rejected \u2014 but no documentation, config example, or comment describing the option (units, 0-means-unlimited semantics, interaction with the 30-day expiration window) is included, despite the PR checklist requiring doc updates. Operators configuring anonymous auth have no way to discover or correctly interpret this setting."
+  }
+ ],
+ "finding_count": 8
+}

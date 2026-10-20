@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-opus-5__xhigh__cal.com__14943__r3",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:35:07Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 28652,
+    "output": 6086,
+    "reasoning": 4040,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 76613,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5533,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 28652,
+    "output_tokens": 6086,
+    "output_tokens_details": {
+     "thinking_tokens": 4040
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:35:07Z",
+   "first_chunk_ms": 1809,
+   "first_text_ms": 53205,
+   "response_id": "msg_bdrk_xiednnwtmob2hiu3krl6zozx32anxmqca2uvwwhgb3uqhrrwpe4q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 28652,
+  "output": 6086,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4040
+ },
+ "cost_reported": null,
+ "latency_ms": 76613,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"deleteMany `retryCount > 1` branch is not scoped to SMS or to unscheduled reminders\", \"body\": \"The new OR branch in the `deleteMany` only filters on `retryCount: { gt: 1 }`. Unlike the first branch it does not constrain `method: WorkflowMethods.SMS`, so this SMS-only cron will permanently delete EMAIL and WHATSAPP WorkflowReminder rows as soon as any other code path starts incrementing `retryCount` for them (the column is shared by all methods). It also does not constrain `scheduled: false` / `referenceId: null`, so a reminder that eventually succeeded after failures (scheduled = true, referenceId = Twilio SID) can be deleted; once the row is gone the SID is lost and the queued Twilio message can no longer be cancelled if the booking is cancelled or rescheduled, meaning reminders get sent for dead bookings. Add `method: WorkflowMethods.SMS` and `scheduled: false` to this branch.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"retryCount is incremented for failures unrelated to SMS delivery\", \"body\": \"The `catch` wraps the whole per-reminder body, which includes `getCalEventResponses`, `prisma.profile.findFirst`, `getBookerBaseUrl`, `bookingMetadataSchema.parse` and template rendering \u2014 not just `twilio.scheduleSMS`. Any transient failure there (DB hiccup, Twilio-wide outage, a bad metadata blob) now bumps `retryCount`, and after two cron runs the reminder is deleted for good even though its scheduled date may be days away. A short outage spanning two cron invocations would wipe out all pending SMS reminders instead of retrying them later. The counter should only be bumped for an actual send/schedule failure (or the deletion threshold should account for transient errors).\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 179, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Falsy return from scheduleSMS (e.g. SMS sending locked) is treated as a permanent failure\", \"body\": \"`twilio.scheduleSMS` returns without a value in non-error cases such as the user/team being locked for SMS sending (`SMSLockState` / isLockedForSMSSending). The new `else` branch treats that undefined return as a failed attempt and increments `retryCount`, so after two cron runs the reminder row is deleted. Once the account is unlocked or reviewed, those reminders are gone and will never be sent. Locked/suppressed states should be distinguished from real scheduling failures and should not consume retries.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Unguarded prisma.update inside catch can abort the whole cron run\", \"body\": \"The `prisma.workflowReminder.update` added in the `catch` block is awaited without its own error handling. If it throws (e.g. Prisma P2025 because the row was deleted concurrently, or a connection error \u2014 likely exactly when the original error was a DB problem), the rejection propagates out of the `for` loop and out of the handler, so every remaining unscheduled reminder in the batch is skipped and the endpoint returns a 500 instead of the previous behaviour of logging and continuing. Wrap it in its own try/catch.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"retryCount updated with a read-modify-write instead of an atomic increment\", \"body\": \"Both update calls set `retryCount: reminder.retryCount + 1` based on the value read earlier in the request. If two cron invocations overlap (or the job is retried by the scheduler), both read the same value and both write the same result, so failures are undercounted and the reminder keeps being retried indefinitely. Use Prisma's atomic `retryCount: { increment: 1 }`.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 29, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"OR on unindexed retryCount defeats the existing WorkflowReminder index\", \"body\": \"WorkflowReminder has `@@index([method, scheduled, scheduledDate])`, which the previous delete predicate could use. The new top-level `OR` adds a branch on `retryCount`, which has no index; Postgres will typically fall back to a sequential scan of the whole WorkflowReminder table on every run of this cron. On a table of this size that is an expensive repeated scan. Consider running the retry-exhausted cleanup as a separate narrowly-filtered delete (e.g. `method: SMS, scheduled: false, retryCount: { gt: 1 }`) and/or adding an index covering it.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Reminders with no message or no recipient still loop forever\", \"body\": \"`retryCount` is only touched inside `if (message?.length && message?.length > 0 && sendTo)` or in the catch. A reminder whose `sendTo` resolves to null (e.g. SMS_ATTENDEE with no `booking.smsReminderNumber`) or whose template produces an empty body falls through silently: it stays `scheduled: false` with `retryCount: 0` and is re-fetched by every cron run until its scheduled date passes \u2014 the exact repeated-rescheduling problem this PR is meant to fix. These cases should also consume a retry (or be deleted/marked immediately).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "medium",
+   "category": "data",
+   "title": "deleteMany `retryCount > 1` branch is not scoped to SMS or to unscheduled reminders",
+   "body": "The new OR branch in the `deleteMany` only filters on `retryCount: { gt: 1 }`. Unlike the first branch it does not constrain `method: WorkflowMethods.SMS`, so this SMS-only cron will permanently delete EMAIL and WHATSAPP WorkflowReminder rows as soon as any other code path starts incrementing `retryCount` for them (the column is shared by all methods). It also does not constrain `scheduled: false` / `referenceId: null`, so a reminder that eventually succeeded after failures (scheduled = true, referenceId = Twilio SID) can be deleted; once the row is gone the SID is lost and the queued Twilio message can no longer be cancelled if the booking is cancelled or rescheduled, meaning reminders get sent for dead bookings. Add `method: WorkflowMethods.SMS` and `scheduled: false` to this branch."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "retryCount is incremented for failures unrelated to SMS delivery",
+   "body": "The `catch` wraps the whole per-reminder body, which includes `getCalEventResponses`, `prisma.profile.findFirst`, `getBookerBaseUrl`, `bookingMetadataSchema.parse` and template rendering \u2014 not just `twilio.scheduleSMS`. Any transient failure there (DB hiccup, Twilio-wide outage, a bad metadata blob) now bumps `retryCount`, and after two cron runs the reminder is deleted for good even though its scheduled date may be days away. A short outage spanning two cron invocations would wipe out all pending SMS reminders instead of retrying them later. The counter should only be bumped for an actual send/schedule failure (or the deletion threshold should account for transient errors)."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 179,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Falsy return from scheduleSMS (e.g. SMS sending locked) is treated as a permanent failure",
+   "body": "`twilio.scheduleSMS` returns without a value in non-error cases such as the user/team being locked for SMS sending (`SMSLockState` / isLockedForSMSSending). The new `else` branch treats that undefined return as a failed attempt and increments `retryCount`, so after two cron runs the reminder row is deleted. Once the account is unlocked or reviewed, those reminders are gone and will never be sent. Locked/suppressed states should be distinguished from real scheduling failures and should not consume retries."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Unguarded prisma.update inside catch can abort the whole cron run",
+   "body": "The `prisma.workflowReminder.update` added in the `catch` block is awaited without its own error handling. If it throws (e.g. Prisma P2025 because the row was deleted concurrently, or a connection error \u2014 likely exactly when the original error was a DB problem), the rejection propagates out of the `for` loop and out of the handler, so every remaining unscheduled reminder in the batch is skipped and the endpoint returns a 500 instead of the previous behaviour of logging and continuing. Wrap it in its own try/catch."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "retryCount updated with a read-modify-write instead of an atomic increment",
+   "body": "Both update calls set `retryCount: reminder.retryCount + 1` based on the value read earlier in the request. If two cron invocations overlap (or the job is retried by the scheduler), both read the same value and both write the same result, so failures are undercounted and the reminder keeps being retried indefinitely. Use Prisma's atomic `retryCount: { increment: 1 }`."
+  },
+  {
+   "index": 5,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 29,
+   "severity": "low",
+   "category": "perf",
+   "title": "OR on unindexed retryCount defeats the existing WorkflowReminder index",
+   "body": "WorkflowReminder has `@@index([method, scheduled, scheduledDate])`, which the previous delete predicate could use. The new top-level `OR` adds a branch on `retryCount`, which has no index; Postgres will typically fall back to a sequential scan of the whole WorkflowReminder table on every run of this cron. On a table of this size that is an expensive repeated scan. Consider running the retry-exhausted cleanup as a separate narrowly-filtered delete (e.g. `method: SMS, scheduled: false, retryCount: { gt: 1 }`) and/or adding an index covering it."
+  },
+  {
+   "index": 6,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "low",
+   "category": "bug",
+   "title": "Reminders with no message or no recipient still loop forever",
+   "body": "`retryCount` is only touched inside `if (message?.length && message?.length > 0 && sendTo)` or in the catch. A reminder whose `sendTo` resolves to null (e.g. SMS_ATTENDEE with no `booking.smsReminderNumber`) or whose template produces an empty body falls through silently: it stays `scheduled: false` with `retryCount: 0` and is re-fetched by every cron run until its scheduled date passes \u2014 the exact repeated-rescheduling problem this PR is meant to fix. These cases should also consume a retry (or be deleted/marked immediately)."
+  }
+ ],
+ "finding_count": 7
+}

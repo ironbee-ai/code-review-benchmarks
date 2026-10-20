@@ -1,0 +1,175 @@
+{
+ "run_id": "kimi-k3__xhigh__grafana__90045__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__90045",
+ "golden_url": "https://github.com/grafana/grafana/pull/90045",
+ "repeat": 2,
+ "started_at": "2026-10-17T23:28:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 95721,
+  "sha": "77e3d2aa5b0c8a17",
+  "patch_only": [
+   "go.work.sum"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 29303,
+    "output": 6676,
+    "reasoning": 5000,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 195169,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 7542,
+   "raw_usage": {
+    "completion_tokens": 6676,
+    "prompt_tokens": 29303,
+    "total_tokens": 35979,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 5000,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T23:28:57Z",
+   "first_chunk_ms": 11460,
+   "first_text_ms": 158545,
+   "response_id": "chatcmpl-q5szxko2ypqy5zlgwqqvpxccjqvgyyezk6se6goe6ksm2hdrs4ta",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 29303,
+  "output": 6676,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5000
+ },
+ "cost_reported": null,
+ "latency_ms": 195169,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 51, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Async legacy writes inherit the request context and are cancelled when the HTTP handler returns\", \"body\": \"In Create (and identically in Delete line 110, Update line 135, DeleteCollection line 163) the fire-and-forget goroutine does context.WithTimeoutCause(ctx, 10s, ...) on the incoming request ctx. The request context is cancelled as soon as the API handler finishes writing the response, which typically happens immediately after the synchronous unified-storage write returns \u2014 long before the 10s timeout matters. The legacy write will therefore be aborted with context.Canceled in the common case (any legacy call slower than handler teardown), so the 'safe measure' legacy copy silently diverges from unified storage, with the failure only visible as a metric bump. The goroutine should derive from context.WithoutCancel(ctx) (or a detached background context carrying the logger/values) so the legacy write can actually complete.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 103, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Delete no longer attempts legacy deletion when unified storage returns NotFound\", \"body\": \"The previous implementation distinguished NotFound: if d.Storage.Delete returned an IsNotFound error it still went on to delete from Legacy, so objects that exist only in the legacy store (e.g., written before mode 3 was enabled, or whose legacy write succeeded while unified failed) could still be cleaned up. The new code returns immediately on any error from unified storage, so a Get in mode 3 would 404 while the object still exists in the legacy store, and there is no way through the dual writer to delete that orphaned legacy object. This leaves permanent legacy orphans during the migration window mode 3 is designed for.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 106, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Delete records storage duration with the object name as the resource label\", \"body\": \"On the success path of Delete, d.recordStorageDuration(false, mode3Str, name, method, startStorage) passes the object name where every other call site passes options.Kind as the resource label. This both mislabels the metric (deletes appear under a different 'resource' than all other operations) and turns a bounded label (kind) into an unbounded one (every individual object name becomes a label value), causing a Prometheus cardinality explosion on servers with many objects.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 139, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Legacy Update re-derives the object from legacy's own old object instead of mirroring what unified storage stored\", \"body\": \"The previous mode 3 Update fetched the old object, computed the updated object once via objInfo.UpdatedObject, and used updateWrapper so that the legacy store persisted exactly the object returned by unified storage. The new code hands the raw objInfo to d.Legacy.Update inside the goroutine, so legacy's store invokes objInfo.UpdatedObject against legacy's own (possibly stale) old object. If legacy is behind unified storage (which is expected in mode 3, since legacy writes are async), the legacy update can conflict or produce a different object than what unified storage stored, and the resulting error is only counted in a metric \u2014 never logged and never surfaced. The legacy 'safety net' copy can thus silently and permanently drift from unified storage.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 108, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Fire-and-forget legacy writes can be applied out of order\", \"body\": \"Because every mutating operation spawns an independent goroutine for the legacy write with no sequencing, two rapid operations on the same object (e.g., Update then Delete, or two Updates) can be applied to the legacy store in the opposite order \u2014 the delete goroutine can run before the update goroutine, resurrecting the object in legacy, or an older update can overwrite a newer one. Since mode 3 treats legacy as the fallback store to migrate back to, this reordering can leave the legacy copy in a state that never matched unified storage. Some ordering mechanism (per-key queue, or at minimum synchronous ordering guarantees) is needed.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 45, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Create storage-error path records a legacy-duration metric\", \"body\": \"When d.Storage.Create fails, the code calls d.recordLegacyDuration(true, mode3Str, options.Kind, method, startStorage) even though no legacy call was ever made and the measured duration is the unified-storage create. It should be recordStorageDuration(true, ...). As written, unified-storage create failures are reported as legacy errors and the storage error metric is never incremented, making alerting on unified-storage failures blind to create errors.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 129, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Update storage-error path records a legacy-duration metric\", \"body\": \"When d.Storage.Update fails, d.recordLegacyDuration(true, mode3Str, options.Kind, method, startStorage) is called even though the failure came from unified storage and no legacy update was attempted. It should be recordStorageDuration(true, ...). Unified-storage update failures will be misattributed to legacy in the dual-writer metrics.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 166, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"DeleteCollection legacy write records a storage-duration metric\", \"body\": \"Inside the DeleteCollection goroutine, the result of d.Legacy.DeleteCollection is recorded with d.recordStorageDuration(err != nil, ...) instead of recordLegacyDuration. Legacy delete-collection latency and failures are attributed to unified storage, and the legacy metric for this method is never populated.\"}, {\"file\": \"pkg/apiserver/rest/dualwriter_mode3.go\", \"line\": 97, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Delete installs the base logger into the context instead of the enriched one\", \"body\": \"Delete builds log := d.Log.WithValues(\\\"name\\\", name, \\\"kind\\\", options.Kind, \\\"method\\\", method) but then calls klog.NewContext(ctx, d.Log), dropping all of those values. Every other method in this file installs its enriched logger. Downstream log lines emitted via klog.FromContext during a delete will lack the name/kind/method fields.\"}, {\"file\": \"pkg/tests/apis/playlist/playlist_test.go\", \"line\": 132, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Mode 3 integration tests assert legacy API state synchronously while legacy writes are asynchronous\", \"body\": \"doPlaylistTests contains checks like 'Do CRUD via k8s (and check that legacy api still works)' that write through the k8s API and immediately read via the legacy /api/playlists endpoints (getFromBothAPIs). In mode 3 the legacy write happens in a detached goroutine after the response is returned, so these assertions race with the legacy write: on a loaded CI worker the legacy GET can observe the pre-write state and fail intermittently (and combined with the request-context cancellation in dualwriter_mode3.go, the legacy write may never land at all). The mode 3 subtests need to poll/wait for the legacy state to converge instead of asserting it immediately.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 51,
+   "severity": "high",
+   "category": "data",
+   "title": "Async legacy writes inherit the request context and are cancelled when the HTTP handler returns",
+   "body": "In Create (and identically in Delete line 110, Update line 135, DeleteCollection line 163) the fire-and-forget goroutine does context.WithTimeoutCause(ctx, 10s, ...) on the incoming request ctx. The request context is cancelled as soon as the API handler finishes writing the response, which typically happens immediately after the synchronous unified-storage write returns \u2014 long before the 10s timeout matters. The legacy write will therefore be aborted with context.Canceled in the common case (any legacy call slower than handler teardown), so the 'safe measure' legacy copy silently diverges from unified storage, with the failure only visible as a metric bump. The goroutine should derive from context.WithoutCancel(ctx) (or a detached background context carrying the logger/values) so the legacy write can actually complete."
+  },
+  {
+   "index": 1,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 103,
+   "severity": "medium",
+   "category": "data",
+   "title": "Delete no longer attempts legacy deletion when unified storage returns NotFound",
+   "body": "The previous implementation distinguished NotFound: if d.Storage.Delete returned an IsNotFound error it still went on to delete from Legacy, so objects that exist only in the legacy store (e.g., written before mode 3 was enabled, or whose legacy write succeeded while unified failed) could still be cleaned up. The new code returns immediately on any error from unified storage, so a Get in mode 3 would 404 while the object still exists in the legacy store, and there is no way through the dual writer to delete that orphaned legacy object. This leaves permanent legacy orphans during the migration window mode 3 is designed for."
+  },
+  {
+   "index": 2,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 106,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Delete records storage duration with the object name as the resource label",
+   "body": "On the success path of Delete, d.recordStorageDuration(false, mode3Str, name, method, startStorage) passes the object name where every other call site passes options.Kind as the resource label. This both mislabels the metric (deletes appear under a different 'resource' than all other operations) and turns a bounded label (kind) into an unbounded one (every individual object name becomes a label value), causing a Prometheus cardinality explosion on servers with many objects."
+  },
+  {
+   "index": 3,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 139,
+   "severity": "medium",
+   "category": "data",
+   "title": "Legacy Update re-derives the object from legacy's own old object instead of mirroring what unified storage stored",
+   "body": "The previous mode 3 Update fetched the old object, computed the updated object once via objInfo.UpdatedObject, and used updateWrapper so that the legacy store persisted exactly the object returned by unified storage. The new code hands the raw objInfo to d.Legacy.Update inside the goroutine, so legacy's store invokes objInfo.UpdatedObject against legacy's own (possibly stale) old object. If legacy is behind unified storage (which is expected in mode 3, since legacy writes are async), the legacy update can conflict or produce a different object than what unified storage stored, and the resulting error is only counted in a metric \u2014 never logged and never surfaced. The legacy 'safety net' copy can thus silently and permanently drift from unified storage."
+  },
+  {
+   "index": 4,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 108,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Fire-and-forget legacy writes can be applied out of order",
+   "body": "Because every mutating operation spawns an independent goroutine for the legacy write with no sequencing, two rapid operations on the same object (e.g., Update then Delete, or two Updates) can be applied to the legacy store in the opposite order \u2014 the delete goroutine can run before the update goroutine, resurrecting the object in legacy, or an older update can overwrite a newer one. Since mode 3 treats legacy as the fallback store to migrate back to, this reordering can leave the legacy copy in a state that never matched unified storage. Some ordering mechanism (per-key queue, or at minimum synchronous ordering guarantees) is needed."
+  },
+  {
+   "index": 5,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 45,
+   "severity": "low",
+   "category": "bug",
+   "title": "Create storage-error path records a legacy-duration metric",
+   "body": "When d.Storage.Create fails, the code calls d.recordLegacyDuration(true, mode3Str, options.Kind, method, startStorage) even though no legacy call was ever made and the measured duration is the unified-storage create. It should be recordStorageDuration(true, ...). As written, unified-storage create failures are reported as legacy errors and the storage error metric is never incremented, making alerting on unified-storage failures blind to create errors."
+  },
+  {
+   "index": 6,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 129,
+   "severity": "low",
+   "category": "bug",
+   "title": "Update storage-error path records a legacy-duration metric",
+   "body": "When d.Storage.Update fails, d.recordLegacyDuration(true, mode3Str, options.Kind, method, startStorage) is called even though the failure came from unified storage and no legacy update was attempted. It should be recordStorageDuration(true, ...). Unified-storage update failures will be misattributed to legacy in the dual-writer metrics."
+  },
+  {
+   "index": 7,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 166,
+   "severity": "low",
+   "category": "bug",
+   "title": "DeleteCollection legacy write records a storage-duration metric",
+   "body": "Inside the DeleteCollection goroutine, the result of d.Legacy.DeleteCollection is recorded with d.recordStorageDuration(err != nil, ...) instead of recordLegacyDuration. Legacy delete-collection latency and failures are attributed to unified storage, and the legacy metric for this method is never populated."
+  },
+  {
+   "index": 8,
+   "file": "pkg/apiserver/rest/dualwriter_mode3.go",
+   "line": 97,
+   "severity": "low",
+   "category": "bug",
+   "title": "Delete installs the base logger into the context instead of the enriched one",
+   "body": "Delete builds log := d.Log.WithValues(\"name\", name, \"kind\", options.Kind, \"method\", method) but then calls klog.NewContext(ctx, d.Log), dropping all of those values. Every other method in this file installs its enriched logger. Downstream log lines emitted via klog.FromContext during a delete will lack the name/kind/method fields."
+  },
+  {
+   "index": 9,
+   "file": "pkg/tests/apis/playlist/playlist_test.go",
+   "line": 132,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Mode 3 integration tests assert legacy API state synchronously while legacy writes are asynchronous",
+   "body": "doPlaylistTests contains checks like 'Do CRUD via k8s (and check that legacy api still works)' that write through the k8s API and immediately read via the legacy /api/playlists endpoints (getFromBothAPIs). In mode 3 the legacy write happens in a detached goroutine after the response is returned, so these assertions race with the legacy write: on a loaded CI worker the legacy GET can observe the pre-write state and fail intermittently (and combined with the request-context cancellation in dualwriter_mode3.go, the legacy write may never land at all). The mode 3 subtests need to poll/wait for the legacy state to converge instead of asserting it immediately."
+  }
+ ],
+ "finding_count": 10
+}

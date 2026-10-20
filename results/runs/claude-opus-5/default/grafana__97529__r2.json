@@ -1,0 +1,154 @@
+{
+ "run_id": "claude-opus-5__default__grafana__97529__r2",
+ "model_id": "claude-opus-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-18T21:07:02Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55076,
+    "output": 5790,
+    "reasoning": 3360,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 78955,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6926,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55076,
+    "output_tokens": 5790,
+    "output_tokens_details": {
+     "thinking_tokens": 3360
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:07:02Z",
+   "first_chunk_ms": 2735,
+   "first_text_ms": 48320,
+   "response_id": "msg_bdrk_flbnwk2pw4smo3773gcm7vzas7inithpseztr2okc3idgwvspfha",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55076,
+  "output": 5790,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 3360
+ },
+ "cost_reported": null,
+ "latency_ms": 78955,
+ "served_model": "claude-opus-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Removing the BuildIndex-wide lock allows duplicate concurrent builds of the same index\", \"body\": \"Previously `BuildIndex` held `cacheMu` for its whole duration, which made a concurrent `GetIndex` (RLock) block until the build finished, so a second caller observed the finished index instead of starting its own build. Now the lock is only taken around the final `b.cache[key] = idx` write, so two callers (e.g. the startup indexing goroutines in `searchSupport.init` and a watch event going through `getOrCreateIndex`) can both see `GetIndex == nil` for the same NamespacedResource and build in parallel. For file-based indexes this means two goroutines call `bleve.New(dir, ...)` on the same directory (`Root/namespace/resource.group`), and the second one fails (path already exists) or corrupts the on-disk index; for memory indexes the work is duplicated and one index is silently dropped from the cache while documents may still be written to it. The duplicate-build window needs to be guarded per key (e.g. keyed mutex / singleflight) rather than removed entirely.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the index cache without holding cacheMu\", \"body\": \"`TotalDocs()` ranges over `b.cache` with no lock, while `BuildIndex` now writes to that map from many concurrent goroutines (the lock was narrowed to just the map write). Concurrent map read + write causes a fatal `concurrent map read and map write` runtime panic. This path is newly exercised on every startup by the added log line in `searchSupport.init` (`s.search.TotalDocs()`), and can also be hit at any time if metrics/logging call it while a watch event triggers a lazy index build. `TotalDocs` should take `cacheMu.RLock()`.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 189, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"init() goroutines write shared `err` and `totalBatchesIndexed` without synchronization\", \"body\": \"Inside `group.Go(...)` the closures do `totalBatchesIndexed++` and `_, _, err = s.build(...)`, both of which mutate variables declared in the enclosing function from up to `initWorkers` goroutines running in parallel. This is a data race (detectable by `-race`, and the counter reported in the `namespaces indexed` span event can be wrong/undercounted), and assigning to the shared `err` instead of returning the value through the errgroup can also overwrite an error from another worker. Use a local `err :=` inside the closure (returning it) and an atomic counter.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Stop()'s initErr is no longer surfaced; requests are served after shutdown\", \"body\": \"All the per-RPC `if err := s.Init(ctx); err != nil { return ... }` guards were removed, but `Stop()` still communicates shutdown exclusively by setting `s.initErr = \\\"service is stopping\\\"` / `\\\"service is stopped\\\"`. Since nothing reads `initErr` after construction anymore, calls arriving during or after shutdown no longer fail fast; they proceed against a backend whose lifecycle hooks have been stopped and whose watcher context has been cancelled, producing confusing internal errors instead of a clear \\\"service is stopping\\\" response. Either add an explicit closed/stopped check on the request paths or drop the now-dead initErr mutation in Stop().\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 259, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Context cancel func leaked when Init fails in NewResourceServer\", \"body\": \"`ctx, cancel := context.WithCancel(...)` is created a few lines above, and on the new `s.Init(ctx)` error path the function returns `nil, err` without ever calling `cancel()`. The cancel func is also only reachable through the discarded `server` value, so the derived context (and any timer/goroutine attached to it) is leaked for the lifetime of the process. Call `cancel()` before returning the error (also applies to the `newSearchSupport` error return just above).\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Index build now blocks server construction and makes startup fail hard\", \"body\": \"`NewResourceServer` now runs the full `Init` (lifecycle init + building every namespace's search index) synchronously before returning. Two consequences worth confirming: (1) process/DI startup is blocked for as long as indexing takes (the PR description says it can exceed a gRPC deadline, i.e. potentially minutes on large installs), so nothing else that depends on this constructor \u2014 including the HTTP server/readiness endpoint in single-binary mode \u2014 comes up during that time; (2) any transient failure during index build (DB hiccup, bleve directory error) now aborts construction and prevents the server from starting at all, whereas before only the failing request errored and a later request would retry `Init`. Consider doing the index build in the background with a readiness gate, or at least bounding it with a timeout and tolerating per-namespace failures.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 88, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"BuildIndex still discards the span context, breaking the trace fix for builder work\", \"body\": \"The PR fixes trace propagation in `searchSupport.build` and `GetResourceStats` by assigning the derived context, but `bleveBackend.BuildIndex` still does `_, span := b.tracer.Start(ctx, ...)`. The builder callback invoked at line 126 uses the context captured from `searchSupport.build`, so all storage/list spans produced during the actual index build are siblings of the `BuildIndex` span rather than children, and the BuildIndex span appears empty in traces. Propagate the derived context into `builder(idx)` (e.g. by making the builder accept a ctx or by assigning `ctx, span := ...`).\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Postgres integration coverage for the storage-server target is silently disabled\", \"body\": \"`TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer` now skips whenever `GRAFANA_TEST_DB=postgres`, leaving only MySQL exercising the storage-server module path. Given this PR changes when unified storage initializes (now inside `NewResourceServer`, i.e. during module startup), postgres is exactly the configuration where a startup regression would go unnoticed. The skip reason (\\\"works locally\\\") suggests the test is actually failing with these changes in CI; the root cause should be understood before merging, and the TODO should reference a tracking issue so the coverage is restored.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Removing the BuildIndex-wide lock allows duplicate concurrent builds of the same index",
+   "body": "Previously `BuildIndex` held `cacheMu` for its whole duration, which made a concurrent `GetIndex` (RLock) block until the build finished, so a second caller observed the finished index instead of starting its own build. Now the lock is only taken around the final `b.cache[key] = idx` write, so two callers (e.g. the startup indexing goroutines in `searchSupport.init` and a watch event going through `getOrCreateIndex`) can both see `GetIndex == nil` for the same NamespacedResource and build in parallel. For file-based indexes this means two goroutines call `bleve.New(dir, ...)` on the same directory (`Root/namespace/resource.group`), and the second one fails (path already exists) or corrupts the on-disk index; for memory indexes the work is duplicated and one index is silently dropped from the cache while documents may still be written to it. The duplicate-build window needs to be guarded per key (e.g. keyed mutex / singleflight) rather than removed entirely."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the index cache without holding cacheMu",
+   "body": "`TotalDocs()` ranges over `b.cache` with no lock, while `BuildIndex` now writes to that map from many concurrent goroutines (the lock was narrowed to just the map write). Concurrent map read + write causes a fatal `concurrent map read and map write` runtime panic. This path is newly exercised on every startup by the added log line in `searchSupport.init` (`s.search.TotalDocs()`), and can also be hit at any time if metrics/logging call it while a watch event triggers a lazy index build. `TotalDocs` should take `cacheMu.RLock()`."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "init() goroutines write shared `err` and `totalBatchesIndexed` without synchronization",
+   "body": "Inside `group.Go(...)` the closures do `totalBatchesIndexed++` and `_, _, err = s.build(...)`, both of which mutate variables declared in the enclosing function from up to `initWorkers` goroutines running in parallel. This is a data race (detectable by `-race`, and the counter reported in the `namespaces indexed` span event can be wrong/undercounted), and assigning to the shared `err` instead of returning the value through the errgroup can also overwrite an error from another worker. Use a local `err :=` inside the closure (returning it) and an atomic counter."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Stop()'s initErr is no longer surfaced; requests are served after shutdown",
+   "body": "All the per-RPC `if err := s.Init(ctx); err != nil { return ... }` guards were removed, but `Stop()` still communicates shutdown exclusively by setting `s.initErr = \"service is stopping\"` / `\"service is stopped\"`. Since nothing reads `initErr` after construction anymore, calls arriving during or after shutdown no longer fail fast; they proceed against a backend whose lifecycle hooks have been stopped and whose watcher context has been cancelled, producing confusing internal errors instead of a clear \"service is stopping\" response. Either add an explicit closed/stopped check on the request paths or drop the now-dead initErr mutation in Stop()."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 259,
+   "severity": "low",
+   "category": "bug",
+   "title": "Context cancel func leaked when Init fails in NewResourceServer",
+   "body": "`ctx, cancel := context.WithCancel(...)` is created a few lines above, and on the new `s.Init(ctx)` error path the function returns `nil, err` without ever calling `cancel()`. The cancel func is also only reachable through the discarded `server` value, so the derived context (and any timer/goroutine attached to it) is leaked for the lifetime of the process. Call `cancel()` before returning the error (also applies to the `newSearchSupport` error return just above)."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Index build now blocks server construction and makes startup fail hard",
+   "body": "`NewResourceServer` now runs the full `Init` (lifecycle init + building every namespace's search index) synchronously before returning. Two consequences worth confirming: (1) process/DI startup is blocked for as long as indexing takes (the PR description says it can exceed a gRPC deadline, i.e. potentially minutes on large installs), so nothing else that depends on this constructor \u2014 including the HTTP server/readiness endpoint in single-binary mode \u2014 comes up during that time; (2) any transient failure during index build (DB hiccup, bleve directory error) now aborts construction and prevents the server from starting at all, whereas before only the failing request errored and a later request would retry `Init`. Consider doing the index build in the background with a readiness gate, or at least bounding it with a timeout and tolerating per-namespace failures."
+  },
+  {
+   "index": 6,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "low",
+   "category": "bug",
+   "title": "BuildIndex still discards the span context, breaking the trace fix for builder work",
+   "body": "The PR fixes trace propagation in `searchSupport.build` and `GetResourceStats` by assigning the derived context, but `bleveBackend.BuildIndex` still does `_, span := b.tracer.Start(ctx, ...)`. The builder callback invoked at line 126 uses the context captured from `searchSupport.build`, so all storage/list spans produced during the actual index build are siblings of the `BuildIndex` span rather than children, and the BuildIndex span appears empty in traces. Propagate the derived context into `builder(idx)` (e.g. by making the builder accept a ctx or by assigning `ctx, span := ...`)."
+  },
+  {
+   "index": 7,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres integration coverage for the storage-server target is silently disabled",
+   "body": "`TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer` now skips whenever `GRAFANA_TEST_DB=postgres`, leaving only MySQL exercising the storage-server module path. Given this PR changes when unified storage initializes (now inside `NewResourceServer`, i.e. during module startup), postgres is exactly the configuration where a startup regression would go unnoticed. The skip reason (\"works locally\") suggests the test is actually failing with these changes in CI; the root cause should be understood before merging, and the TODO should reference a tracking issue so the coverage is restored."
+  }
+ ],
+ "finding_count": 8
+}

@@ -1,0 +1,177 @@
+{
+ "run_id": "claude-fable-5.1__low__discourse-graphite__4__r2",
+ "model_id": "claude-fable-5.1",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-fable-5-1",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "effort": "low"
+ },
+ "set": "frontier",
+ "pr_id": "discourse-graphite__4",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:27:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 196560,
+  "sha": "134647f45cf88f8a",
+  "patch_only": [
+   "Gemfile_rails4.lock",
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 84083,
+    "output": 7947,
+    "reasoning": 5291,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 108795,
+   "finish_reason": "end_turn",
+   "served_model": "claude-fable-5-1",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6879,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 84083,
+    "output_tokens": 7947,
+    "output_tokens_details": {
+     "thinking_tokens": 5291
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T20:27:04Z",
+   "first_chunk_ms": 4440,
+   "first_text_ms": 77631,
+   "response_id": "msg_bdrk_bcxgas42iyulqgrsklbhbdthejrg7tt6btfvlosmejiyoe2qqbya",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 84083,
+  "output": 7947,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5291
+ },
+ "cost_reported": null,
+ "latency_ms": 108795,
+ "served_model": "claude-fable-5-1",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/topic_embed.rb\", \"line\": 13, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Unescaped URL interpolated into raw-HTML post (stored XSS)\", \"body\": \"`TopicEmbed.import` appends `<a href='#{url}'>#{url}</a>` to the contents without any HTML escaping, and the resulting post is stored with `cook_method = raw_html`, so `Post#cook` returns `raw` verbatim and it is rendered with `raw post.cooked` in the embed view and as `cooked` on the main site. The `url` comes from the user-controlled `embed_url` query parameter (via `Jobs::RetrieveTopic` -> `TopicRetriever#fetch_http` -> `import_remote`); only the host is validated, the path is attacker-controlled and URI parsing permits `'`. A URL such as `http://<embeddable_host>/x'onmouseover='alert(1)` breaks out of the href attribute and Nokogiri's `absolutize_urls` round-trip preserves the injected attribute. Escape `url` (e.g. `ERB::Util.html_escape`) or build the anchor with Nokogiri.\"}, {\"file\": \"lib/topic_retriever.rb\", \"line\": 52, \"severity\": \"high\", \"category\": \"data\", \"title\": \"Any unauthenticated visitor can create unlimited topics by varying embed_url\", \"body\": \"`EmbedController#best` enqueues `RetrieveTopic` for any `embed_url` that has no existing `TopicEmbed`. `TopicRetriever` only checks that the URL's host equals `embeddable_host` and throttles per exact URL (60s). An attacker who can set the Referer (or simply a visitor of the embedding site) can request `embed/best?embed_url=http://host/page?x=1`, `?x=2`, ... each of which passes the host check, triggers an outbound HTTP fetch of the page (plus a full RSS poll if enabled), and creates a brand new topic and post as `embed_by_username` because `import_remote` imports whatever 200 response comes back. This allows unbounded topic spam and outbound request amplification from unauthenticated requests. The URL should be normalized (strip query/fragment) and ideally only created when it appears in the feed or a per-host rate limit should be applied.\"}, {\"file\": \"app/models/topic_embed.rb\", \"line\": 48, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"import_remote relies on open-uri being loaded elsewhere\", \"body\": \"`TopicEmbed.import_remote` calls `open(url).read` on an http URL but `topic_embed.rb` never requires `open-uri`; the only `require 'open-uri'` is in `app/jobs/scheduled/poll_feed.rb`. When autoloading (development, or any process where `Jobs::PollFeed` has not been referenced, e.g. `feed_polling_enabled` is false so `TopicRetriever#perform_retrieve` never touches it), `Kernel#open` treats the URL as a filename and raises `Errno::ENOENT`, so embeds are never retrieved. Add `require 'open-uri'` in `topic_embed.rb` (and preferably use an explicit HTTP client rather than `Kernel#open`, which also executes shell commands for strings beginning with `|`).\"}, {\"file\": \"app/jobs/scheduled/poll_feed.rb\", \"line\": 35, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`i.content.scrub` fails on RSS items and on Ruby < 2.1\", \"body\": \"SimpleRSS items only populate `content` for Atom feeds (RSS 2.0 items use `description`), so `i.content` is frequently `nil` and `nil.scrub` raises `NoMethodError`, aborting the whole poll (the job also has `retry: false`). Additionally `String#scrub` was added in Ruby 2.1; on the Ruby 2.0 this codebase targets it does not exist. Use `i.content || i.description` with a nil guard and avoid `scrub` or add a fallback. There is also no per-item rescue, so one bad item prevents importing all others.\"}, {\"file\": \"app/views/embed/best.html.erb\", \"line\": 6, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`<%- end if %>` is a malformed ERB block terminator\", \"body\": \"The header `if/else` block is closed with `<%- end if %>`. Ruby treats the trailing `if` as a statement modifier and, because a newline after `if` is permitted, consumes the next generated buffer-append statement as its condition. The template only works by accident (the append expression is truthy) and any change to the following markup can turn this into a syntax error or silently skip the `end`. It should be `<%- end %>`.\"}, {\"file\": \"spec/controllers/embed_controller_spec.rb\", \"line\": 50, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Success spec mocks TopicView.new with a nil return, so the best template cannot render\", \"body\": \"`TopicView.expects(:new).with(123, nil, {best: 5})` has no `returns`, so `@topic_view` is nil and `best.html.erb` calls `@topic_view.posts` on nil. The `after` hook asserts `response.should be_success`, so either this spec fails or the view is not actually being exercised. Return a stubbed topic view (with `posts` and `topic`) so the template, including the `end if` block and the header/footer branches, is genuinely rendered and verified.\"}, {\"file\": \"app/models/topic_embed.rb\", \"line\": 64, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Protocol-relative URLs are rewritten to wrong absolute URLs\", \"body\": \"`absolutize_urls` treats every href/src starting with `/` as site-relative and strips all leading slashes, so a protocol-relative URL like `//cdn.example.com/img.png` becomes `http://<host>/cdn.example.com/img.png`, breaking images and links. Check for `start_with?('//')` and prefix only the scheme (or leave such URLs alone).\"}, {\"file\": \"lib/topic_retriever.rb\", \"line\": 27, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"setnx/expire throttle is not atomic; key can become permanent\", \"body\": \"`retrieved_recently?` does `$redis.setnx` and then a separate `$redis.expire`. If the process dies or the connection drops between the two calls, the `retrieved:<url>` key is left with no TTL and that URL is permanently throttled for non-staff users, so the embed never loads. Use a single atomic `SET key 1 NX EX 60` (or a MULTI block).\"}, {\"file\": \"app/models/topic_embed.rb\", \"line\": 24, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Failed PostCreator result treated as success\", \"body\": \"`PostCreator#create` returns the `Post` object even when creation was rolled back (e.g. host-spam detection), in which case the post is unsaved with errors. `post.present?` is true for such an object, so `TopicEmbed.create!` is attempted with `post_id: nil`/`topic_id: nil` and raises `ActiveRecord::RecordInvalid`, and `import` returns an unsaved post to callers. Check `post.errors.blank? && post.persisted?` instead.\"}, {\"file\": \"app/assets/javascripts/embed.js\", \"line\": 17, \"severity\": \"low\", \"category\": \"security\", \"title\": \"Origin check uses substring match\", \"body\": \"`discourseUrl.indexOf(e.origin) === -1` accepts any origin that is a substring of `discourseUrl`, e.g. an origin `http://forum.example.co` passes when `discourseUrl` is `http://forum.example.com/`. Impact is limited to iframe height manipulation, but the check should compare `e.origin` with the exact origin derived from `discourseUrl`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/topic_embed.rb",
+   "line": 13,
+   "severity": "high",
+   "category": "security",
+   "title": "Unescaped URL interpolated into raw-HTML post (stored XSS)",
+   "body": "`TopicEmbed.import` appends `<a href='#{url}'>#{url}</a>` to the contents without any HTML escaping, and the resulting post is stored with `cook_method = raw_html`, so `Post#cook` returns `raw` verbatim and it is rendered with `raw post.cooked` in the embed view and as `cooked` on the main site. The `url` comes from the user-controlled `embed_url` query parameter (via `Jobs::RetrieveTopic` -> `TopicRetriever#fetch_http` -> `import_remote`); only the host is validated, the path is attacker-controlled and URI parsing permits `'`. A URL such as `http://<embeddable_host>/x'onmouseover='alert(1)` breaks out of the href attribute and Nokogiri's `absolutize_urls` round-trip preserves the injected attribute. Escape `url` (e.g. `ERB::Util.html_escape`) or build the anchor with Nokogiri."
+  },
+  {
+   "index": 1,
+   "file": "lib/topic_retriever.rb",
+   "line": 52,
+   "severity": "high",
+   "category": "data",
+   "title": "Any unauthenticated visitor can create unlimited topics by varying embed_url",
+   "body": "`EmbedController#best` enqueues `RetrieveTopic` for any `embed_url` that has no existing `TopicEmbed`. `TopicRetriever` only checks that the URL's host equals `embeddable_host` and throttles per exact URL (60s). An attacker who can set the Referer (or simply a visitor of the embedding site) can request `embed/best?embed_url=http://host/page?x=1`, `?x=2`, ... each of which passes the host check, triggers an outbound HTTP fetch of the page (plus a full RSS poll if enabled), and creates a brand new topic and post as `embed_by_username` because `import_remote` imports whatever 200 response comes back. This allows unbounded topic spam and outbound request amplification from unauthenticated requests. The URL should be normalized (strip query/fragment) and ideally only created when it appears in the feed or a per-host rate limit should be applied."
+  },
+  {
+   "index": 2,
+   "file": "app/models/topic_embed.rb",
+   "line": 48,
+   "severity": "medium",
+   "category": "bug",
+   "title": "import_remote relies on open-uri being loaded elsewhere",
+   "body": "`TopicEmbed.import_remote` calls `open(url).read` on an http URL but `topic_embed.rb` never requires `open-uri`; the only `require 'open-uri'` is in `app/jobs/scheduled/poll_feed.rb`. When autoloading (development, or any process where `Jobs::PollFeed` has not been referenced, e.g. `feed_polling_enabled` is false so `TopicRetriever#perform_retrieve` never touches it), `Kernel#open` treats the URL as a filename and raises `Errno::ENOENT`, so embeds are never retrieved. Add `require 'open-uri'` in `topic_embed.rb` (and preferably use an explicit HTTP client rather than `Kernel#open`, which also executes shell commands for strings beginning with `|`)."
+  },
+  {
+   "index": 3,
+   "file": "app/jobs/scheduled/poll_feed.rb",
+   "line": 35,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`i.content.scrub` fails on RSS items and on Ruby < 2.1",
+   "body": "SimpleRSS items only populate `content` for Atom feeds (RSS 2.0 items use `description`), so `i.content` is frequently `nil` and `nil.scrub` raises `NoMethodError`, aborting the whole poll (the job also has `retry: false`). Additionally `String#scrub` was added in Ruby 2.1; on the Ruby 2.0 this codebase targets it does not exist. Use `i.content || i.description` with a nil guard and avoid `scrub` or add a fallback. There is also no per-item rescue, so one bad item prevents importing all others."
+  },
+  {
+   "index": 4,
+   "file": "app/views/embed/best.html.erb",
+   "line": 6,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`<%- end if %>` is a malformed ERB block terminator",
+   "body": "The header `if/else` block is closed with `<%- end if %>`. Ruby treats the trailing `if` as a statement modifier and, because a newline after `if` is permitted, consumes the next generated buffer-append statement as its condition. The template only works by accident (the append expression is truthy) and any change to the following markup can turn this into a syntax error or silently skip the `end`. It should be `<%- end %>`."
+  },
+  {
+   "index": 5,
+   "file": "spec/controllers/embed_controller_spec.rb",
+   "line": 50,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Success spec mocks TopicView.new with a nil return, so the best template cannot render",
+   "body": "`TopicView.expects(:new).with(123, nil, {best: 5})` has no `returns`, so `@topic_view` is nil and `best.html.erb` calls `@topic_view.posts` on nil. The `after` hook asserts `response.should be_success`, so either this spec fails or the view is not actually being exercised. Return a stubbed topic view (with `posts` and `topic`) so the template, including the `end if` block and the header/footer branches, is genuinely rendered and verified."
+  },
+  {
+   "index": 6,
+   "file": "app/models/topic_embed.rb",
+   "line": 64,
+   "severity": "low",
+   "category": "bug",
+   "title": "Protocol-relative URLs are rewritten to wrong absolute URLs",
+   "body": "`absolutize_urls` treats every href/src starting with `/` as site-relative and strips all leading slashes, so a protocol-relative URL like `//cdn.example.com/img.png` becomes `http://<host>/cdn.example.com/img.png`, breaking images and links. Check for `start_with?('//')` and prefix only the scheme (or leave such URLs alone)."
+  },
+  {
+   "index": 7,
+   "file": "lib/topic_retriever.rb",
+   "line": 27,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "setnx/expire throttle is not atomic; key can become permanent",
+   "body": "`retrieved_recently?` does `$redis.setnx` and then a separate `$redis.expire`. If the process dies or the connection drops between the two calls, the `retrieved:<url>` key is left with no TTL and that URL is permanently throttled for non-staff users, so the embed never loads. Use a single atomic `SET key 1 NX EX 60` (or a MULTI block)."
+  },
+  {
+   "index": 8,
+   "file": "app/models/topic_embed.rb",
+   "line": 24,
+   "severity": "low",
+   "category": "bug",
+   "title": "Failed PostCreator result treated as success",
+   "body": "`PostCreator#create` returns the `Post` object even when creation was rolled back (e.g. host-spam detection), in which case the post is unsaved with errors. `post.present?` is true for such an object, so `TopicEmbed.create!` is attempted with `post_id: nil`/`topic_id: nil` and raises `ActiveRecord::RecordInvalid`, and `import` returns an unsaved post to callers. Check `post.errors.blank? && post.persisted?` instead."
+  },
+  {
+   "index": 9,
+   "file": "app/assets/javascripts/embed.js",
+   "line": 17,
+   "severity": "low",
+   "category": "security",
+   "title": "Origin check uses substring match",
+   "body": "`discourseUrl.indexOf(e.origin) === -1` accepts any origin that is a substring of `discourseUrl`, e.g. an origin `http://forum.example.co` passes when `discourseUrl` is `http://forum.example.com/`. Impact is limited to iframe height manipulation, but the check should compare `e.origin` with the exact origin derived from `discourseUrl`."
+  }
+ ],
+ "finding_count": 10
+}

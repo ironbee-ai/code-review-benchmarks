@@ -1,0 +1,199 @@
+{
+ "run_id": "minimax-m3__xhigh__discourse-graphite__4__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__4",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:36:34Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 196560,
+  "sha": "134647f45cf88f8a",
+  "patch_only": [
+   "Gemfile_rails4.lock",
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 56344,
+    "output": 17107,
+    "reasoning": 15197,
+    "cache_read": 164,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03744144,
+   "latency_ms": 189077,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 7841,
+   "raw_usage": {
+    "completion_tokens": 17107,
+    "prompt_tokens": 56508,
+    "total_tokens": 73615,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 15197,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 164,
+     "video_tokens": 0
+    },
+    "cost": 0.03744144,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03744144,
+     "upstream_inference_prompt_cost": 0.01691304,
+     "upstream_inference_completions_cost": 0.0205284
+    }
+   },
+   "started_at": "2026-10-18T12:36:34Z",
+   "first_chunk_ms": 4463,
+   "first_text_ms": 168623,
+   "response_id": "gen-1792326994-gY8i9nRD2s9JDX7A4zQi",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 56344,
+  "output": 17107,
+  "cache_read": 164,
+  "cache_write": 0,
+  "reasoning": 15197
+ },
+ "cost_reported": 0.03744144,
+ "latency_ms": 189077,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"db/migrate/20131219203905_add_cook_method_to_posts.rb\", \"line\": 3, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"cook_method default of 1 makes every existing post render raw markdown\", \"body\": \"The migration adds the column with `default: 1`. Post.cook_methods is defined in app/models/post.rb as `Enum.new(:regular, :raw_html)`, which assigns 0 to :regular and 1 to :raw_html. Post#cook returns raw when `cook_method == Post.cook_methods[:raw_html]`, so every existing post in the database will, after this migration runs, have cooked == raw. The default value should be 0 so legacy posts continue to cook normally; only newly imported RSS/Readability posts (which explicitly set the option in TopicEmbed.import) should be raw_html.\"}, {\"file\": \"app/views/embed/best.html.erb\", \"line\": 19, \"severity\": \"critical\", \"category\": \"security\", \"title\": \"Stored XSS via raw_html cook_method and RSS content\", \"body\": \"For posts whose cook_method is :raw_html, Post#cook sets cooked equal to raw. The embed view then renders the post with `<%= raw post.cooked %>`, which outputs the stored content as raw HTML with no escaping. The PollFeed path (app/jobs/scheduled/poll_feed.rb) calls `CGI.unescapeHTML(i.content.scrub)` before passing it into TopicEmbed.import \u2014 String#scrub only removes invalid UTF-8 bytes and does NOT strip HTML, so `<script>`, `<iframe>`, etc. from a crafted RSS feed end up stored verbatim and executed in the embed view. The Readability-based import_remote path uses a tag/attribute allow-list, but the RSS path does not. This gives an attacker who can supply a feed (or any party whose source page gets fetched by import_remote without sanitization) a stored XSS that runs in the discourse forum's embed origin.\"}, {\"file\": \"lib/topic_retriever.rb\", \"line\": 41, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"TopicRetriever runs the full PollFeed job synchronously per retrieval\", \"body\": \"`perform_retrieve` invokes `Jobs::PollFeed.new.execute({})` directly. PollFeed is meant to be a Scheduled hourly job that fetches the configured RSS feed and imports all items via TopicEmbed.import. Calling its execute synchronously inside every RetrieveTopic job means each concurrent embed retrieval triggers a full feed fetch + parse + per-item TopicEmbed.import \u2014 effectively O(N) feed polls for N concurrent retrievals. Under any non-trivial traffic this hammers the upstream feed and multiplies database writes. The scheduled recurring PollFeed should be left to sidekiq/sidetiq, or TopicRetriever should enqueue PollFeed rather than executing it on the worker thread.\"}, {\"file\": \"lib/topic_retriever.rb\", \"line\": 41, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"PollFeed reused without distributed locking\", \"body\": \"Beyond the synchronous call, even enqueueing PollFeed per retrieval is unsafe because the job body has no distributed lock keyed on the feed URL. With sidekiq concurrency > 1, simultaneous RetrieveTopic jobs would all enqueue PollFeed and they would each import the full feed (TopicEmbed.import is idempotent per embed_url but still does N TopicEmbed.where checks). Use the `feed_key` (declared at the top of poll_feed.rb but never used) as a SETNX-based lock, or rely solely on the scheduled recurrence.\"}, {\"file\": \"app/jobs/scheduled/poll_feed.rb\", \"line\": 35, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"NoMethodError when RSS item has nil content or title\", \"body\": \"The body does `content = CGI.unescapeHTML(i.content.scrub)` followed by `TopicEmbed.import(user, url, i.title, content)`. SimpleRSS returns nil for missing fields, and `nil.scrub` raises NoMethodError, which crashes the job (`sidekiq_options retry: false`). A single malformed feed item aborts the entire poll, so no later items are imported either. Guard with `i.content.to_s.scrub` (or a presence check) and skip items whose title/link are blank.\"}, {\"file\": \"app/assets/javascripts/embed.js\", \"line\": 6, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Embed iframe is created without a sandbox attribute\", \"body\": \"The iframe has no `sandbox` (or `allow-scripts`/`allow-same-origin` flags), so the embedded page can run JavaScript with full access to its origin: it can navigate the parent, open popups, send form fields, etc. Even though the embed view is intended to be simple, defense in depth requires `iframe.sandbox = 'allow-scripts allow-same-origin'` (or similar) so that a compromised embed view cannot escalate into the embedder site.\"}, {\"file\": \"app/controllers/embed_controller.rb\", \"line\": 9, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"embed_url is never validated against embeddable_host\", \"body\": \"ensure_embeddable checks that `URI(request.referer).host == SiteSetting.embeddable_host`, but the action then uses the user-supplied `embed_url` parameter to look up `TopicEmbed.topic_id_for_embed(embed_url)` and, when missing, enqueues `RetrieveTopic` for `embed_url`. A caller who can spoof or sit on the embeddable host (any XSS / open redirect there) can query the controller for arbitrary embed URLs and cause RetrieveTopic jobs to fetch arbitrary remote pages reachable to the Discourse server (SSRF). At minimum the controller should reject embed_urls whose host is not embeddable_host; ideally it should compare path/host as well.\"}, {\"file\": \"app/views/layouts/embed.html.erb\", \"line\": 11, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"postMessage targetOrigin uses full request.referer URL\", \"body\": \"`parent.postMessage({...}, '<%= request.referer %>')` passes the entire referer (including path and query) as the targetOrigin. The browser uses only the origin portion of that string, but cross-origin framing and referrer-policy quirks can produce referer values that are unexpected (e.g. `null`, or some proxied form). The right thing is to compute the origin from `request.referer` in the controller (e.g. via URI) and pass only scheme://host[:port]. Also, no fallback exists when referer is blank, in which case targetOrigin is the empty string and postMessage silently fails to deliver \u2014 combined with the embed.js listener's permissive origin check this may surprise integrators.\"}, {\"file\": \"spec/models/topic_embed_spec.rb\", \"line\": 17, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No test that imported raw_html content is sanitized against XSS\", \"body\": \"The 'works as expected with a new URL' spec only asserts cooked == raw, which actively cements the unsafe behavior. There is no regression test covering the PollFeed path or import(content containing <script>) that would have caught the stored-XSS issue. Add a fixture whose contents include `<script>alert(1)</script>` and assert the post does not render that script in embed/best.\"}, {\"file\": \"spec/jobs/poll_feed_spec.rb\", \"line\": 1, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test for nil/missing RSS fields\", \"body\": \"The spec only checks the gating SiteSettings. There is no test for poll_feed's handling of an RSS item with no `content` or no `title`, which is what causes the NoMethodError. Add a fixture where the SimpleRSS stub returns an item whose content/title is nil and assert the job completes (or at least skips gracefully).\"}, {\"file\": \"app/views/embed/best.html.erb\", \"line\": 6, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`<%- end if %>` is a Ruby syntax error\", \"body\": \"The closing construct is `<%- end if %>`. ERB compiles to Ruby that contains `... end if` at the end of the generated method body. `end` followed by the `if` modifier requires an expression; `end if` with nothing after the `if` (and a `%>` terminator) raises `SyntaxError: unexpected keyword_end`. The view will fail to render whenever it is compiled. Replace with `<%- end %>` (or attach a real condition to the postfix `if`).\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "db/migrate/20131219203905_add_cook_method_to_posts.rb",
+   "line": 3,
+   "severity": "critical",
+   "category": "bug",
+   "title": "cook_method default of 1 makes every existing post render raw markdown",
+   "body": "The migration adds the column with `default: 1`. Post.cook_methods is defined in app/models/post.rb as `Enum.new(:regular, :raw_html)`, which assigns 0 to :regular and 1 to :raw_html. Post#cook returns raw when `cook_method == Post.cook_methods[:raw_html]`, so every existing post in the database will, after this migration runs, have cooked == raw. The default value should be 0 so legacy posts continue to cook normally; only newly imported RSS/Readability posts (which explicitly set the option in TopicEmbed.import) should be raw_html."
+  },
+  {
+   "index": 1,
+   "file": "app/views/embed/best.html.erb",
+   "line": 19,
+   "severity": "critical",
+   "category": "security",
+   "title": "Stored XSS via raw_html cook_method and RSS content",
+   "body": "For posts whose cook_method is :raw_html, Post#cook sets cooked equal to raw. The embed view then renders the post with `<%= raw post.cooked %>`, which outputs the stored content as raw HTML with no escaping. The PollFeed path (app/jobs/scheduled/poll_feed.rb) calls `CGI.unescapeHTML(i.content.scrub)` before passing it into TopicEmbed.import \u2014 String#scrub only removes invalid UTF-8 bytes and does NOT strip HTML, so `<script>`, `<iframe>`, etc. from a crafted RSS feed end up stored verbatim and executed in the embed view. The Readability-based import_remote path uses a tag/attribute allow-list, but the RSS path does not. This gives an attacker who can supply a feed (or any party whose source page gets fetched by import_remote without sanitization) a stored XSS that runs in the discourse forum's embed origin."
+  },
+  {
+   "index": 2,
+   "file": "lib/topic_retriever.rb",
+   "line": 41,
+   "severity": "high",
+   "category": "perf",
+   "title": "TopicRetriever runs the full PollFeed job synchronously per retrieval",
+   "body": "`perform_retrieve` invokes `Jobs::PollFeed.new.execute({})` directly. PollFeed is meant to be a Scheduled hourly job that fetches the configured RSS feed and imports all items via TopicEmbed.import. Calling its execute synchronously inside every RetrieveTopic job means each concurrent embed retrieval triggers a full feed fetch + parse + per-item TopicEmbed.import \u2014 effectively O(N) feed polls for N concurrent retrievals. Under any non-trivial traffic this hammers the upstream feed and multiplies database writes. The scheduled recurring PollFeed should be left to sidekiq/sidetiq, or TopicRetriever should enqueue PollFeed rather than executing it on the worker thread."
+  },
+  {
+   "index": 3,
+   "file": "lib/topic_retriever.rb",
+   "line": 41,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "PollFeed reused without distributed locking",
+   "body": "Beyond the synchronous call, even enqueueing PollFeed per retrieval is unsafe because the job body has no distributed lock keyed on the feed URL. With sidekiq concurrency > 1, simultaneous RetrieveTopic jobs would all enqueue PollFeed and they would each import the full feed (TopicEmbed.import is idempotent per embed_url but still does N TopicEmbed.where checks). Use the `feed_key` (declared at the top of poll_feed.rb but never used) as a SETNX-based lock, or rely solely on the scheduled recurrence."
+  },
+  {
+   "index": 4,
+   "file": "app/jobs/scheduled/poll_feed.rb",
+   "line": 35,
+   "severity": "medium",
+   "category": "bug",
+   "title": "NoMethodError when RSS item has nil content or title",
+   "body": "The body does `content = CGI.unescapeHTML(i.content.scrub)` followed by `TopicEmbed.import(user, url, i.title, content)`. SimpleRSS returns nil for missing fields, and `nil.scrub` raises NoMethodError, which crashes the job (`sidekiq_options retry: false`). A single malformed feed item aborts the entire poll, so no later items are imported either. Guard with `i.content.to_s.scrub` (or a presence check) and skip items whose title/link are blank."
+  },
+  {
+   "index": 5,
+   "file": "app/assets/javascripts/embed.js",
+   "line": 6,
+   "severity": "medium",
+   "category": "security",
+   "title": "Embed iframe is created without a sandbox attribute",
+   "body": "The iframe has no `sandbox` (or `allow-scripts`/`allow-same-origin` flags), so the embedded page can run JavaScript with full access to its origin: it can navigate the parent, open popups, send form fields, etc. Even though the embed view is intended to be simple, defense in depth requires `iframe.sandbox = 'allow-scripts allow-same-origin'` (or similar) so that a compromised embed view cannot escalate into the embedder site."
+  },
+  {
+   "index": 6,
+   "file": "app/controllers/embed_controller.rb",
+   "line": 9,
+   "severity": "medium",
+   "category": "security",
+   "title": "embed_url is never validated against embeddable_host",
+   "body": "ensure_embeddable checks that `URI(request.referer).host == SiteSetting.embeddable_host`, but the action then uses the user-supplied `embed_url` parameter to look up `TopicEmbed.topic_id_for_embed(embed_url)` and, when missing, enqueues `RetrieveTopic` for `embed_url`. A caller who can spoof or sit on the embeddable host (any XSS / open redirect there) can query the controller for arbitrary embed URLs and cause RetrieveTopic jobs to fetch arbitrary remote pages reachable to the Discourse server (SSRF). At minimum the controller should reject embed_urls whose host is not embeddable_host; ideally it should compare path/host as well."
+  },
+  {
+   "index": 7,
+   "file": "app/views/layouts/embed.html.erb",
+   "line": 11,
+   "severity": "medium",
+   "category": "security",
+   "title": "postMessage targetOrigin uses full request.referer URL",
+   "body": "`parent.postMessage({...}, '<%= request.referer %>')` passes the entire referer (including path and query) as the targetOrigin. The browser uses only the origin portion of that string, but cross-origin framing and referrer-policy quirks can produce referer values that are unexpected (e.g. `null`, or some proxied form). The right thing is to compute the origin from `request.referer` in the controller (e.g. via URI) and pass only scheme://host[:port]. Also, no fallback exists when referer is blank, in which case targetOrigin is the empty string and postMessage silently fails to deliver \u2014 combined with the embed.js listener's permissive origin check this may surprise integrators."
+  },
+  {
+   "index": 8,
+   "file": "spec/models/topic_embed_spec.rb",
+   "line": 17,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test that imported raw_html content is sanitized against XSS",
+   "body": "The 'works as expected with a new URL' spec only asserts cooked == raw, which actively cements the unsafe behavior. There is no regression test covering the PollFeed path or import(content containing <script>) that would have caught the stored-XSS issue. Add a fixture whose contents include `<script>alert(1)</script>` and assert the post does not render that script in embed/best."
+  },
+  {
+   "index": 9,
+   "file": "spec/jobs/poll_feed_spec.rb",
+   "line": 1,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test for nil/missing RSS fields",
+   "body": "The spec only checks the gating SiteSettings. There is no test for poll_feed's handling of an RSS item with no `content` or no `title`, which is what causes the NoMethodError. Add a fixture where the SimpleRSS stub returns an item whose content/title is nil and assert the job completes (or at least skips gracefully)."
+  },
+  {
+   "index": 10,
+   "file": "app/views/embed/best.html.erb",
+   "line": 6,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`<%- end if %>` is a Ruby syntax error",
+   "body": "The closing construct is `<%- end if %>`. ERB compiles to Ruby that contains `... end if` at the end of the generated method body. `end` followed by the `if` modifier requires an expression; `end if` with nothing after the `if` (and a `%>` terminator) raises `SyntaxError: unexpected keyword_end`. The view will fail to render whenever it is compiled. Replace with `<%- end %>` (or attach a real condition to the postfix `if`)."
+  }
+ ],
+ "finding_count": 11
+}

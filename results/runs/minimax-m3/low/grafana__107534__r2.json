@@ -1,0 +1,124 @@
+{
+ "run_id": "minimax-m3__low__grafana__107534__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__107534",
+ "golden_url": "https://github.com/grafana/grafana/pull/107534",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:36:48Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 82337,
+  "sha": "aaf42312b6b501c4",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 22156,
+    "output": 39129,
+    "reasoning": 37898,
+    "cache_read": 461,
+    "cache_write": 0
+   },
+   "cost_reported": 0.05362926,
+   "latency_ms": 160146,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5415,
+   "raw_usage": {
+    "completion_tokens": 39129,
+    "prompt_tokens": 22617,
+    "total_tokens": 61746,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 37898,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 461,
+     "video_tokens": 0
+    },
+    "cost": 0.05362926,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.05362926,
+     "upstream_inference_prompt_cost": 0.00667446,
+     "upstream_inference_completions_cost": 0.0469548
+    }
+   },
+   "started_at": "2026-10-17T20:36:48Z",
+   "first_chunk_ms": 1585,
+   "first_text_ms": 155006,
+   "response_id": "gen-1792269408-3IJGpxa2p4LJmmnMDWjf",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 22156,
+  "output": 39129,
+  "cache_read": 461,
+  "cache_write": 0,
+  "reasoning": 37898
+ },
+ "cost_reported": 0.05362926,
+ "latency_ms": 160146,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR, I need to carefully review:\n1. The change in `runSplitQuery` to interpolate variables at the start\n2. The change in `runShardSplitQuery` to use per-query interpolation\n3. The corresponding test updates\n\nLet me trace through the code flow carefully, particularly the interaction between `runShardSplitQuery` and `runSplitQuery`, since `runShardSplitQuery` calls `runSplitQuery` internally for each shard group.\n\n**Tracing the shard splitting flow:**\n1. `runShardSplitQuery` now calls `applyTemplateVariables` on each target (line 52 of shardQuerySplitting.ts)\n2. These interpolated targets flow through `splitQueriesByStreamShard`\n3. For each shard group, `runNextRequest` calls `runSplitQuery` with a sub-request containing the already-interpolated targets\n4. `runSplitQuery` ALSO calls `applyTemplateVariables` on the targets (line 299 of querySplitting.ts)\n\n**This means each target is interpolated twice when shard splitting is active.** The second call is a no-op for idempotent interpolation, but it's wasteful work and could cause double side-effects (logging, analytics) if `applyTemplateVariables` had any.\n\n**Test in shardQuerySplitting.test.ts:** The new test `Interpolates queries before execution` doesn't set `direction: LokiQueryDirection.Scan` on the query, but expects sharded output (`__stream_shard__=~\"20|10\"`). All other tests in this file that exercise sharding explicitly set `direction: Scan`. This inconsistency is suspicious - if `requestSupportsSharding` requires `Scan` direction, this test would fail because the query would not go through `interpolateShardingSelector`.\n\n**Test \"Interpolates queries before running\" count:** It expects `applyTemplateVariables` to be called 5 times. The mock count of 5 confirms the double-interpolation: 1 call in `runShardSplitQuery` + 4 calls in `runSplitQuery` (one per shard group). This is the test acknowledging/encoding the redundancy.\n\n**Mutation concern:** Both `runSplitQuery` and `runShardSplitQuery` now call `applyTemplateVariables` on `request.targets[i]` directly. Since the test mock mutates (and many real implementations of `applyTemplateVariables` also mutate), this mutates the original `request.targets`. While this was happening before via `interpolateVariablesInQueries`, it's worth noting.\n\n```json\n{\"findings\": [{\"file\": \"public/app/plugins/datasource/loki/querySplitting.ts\", \"line\": 299, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Redundant applyTemplateVariables calls in shard splitting flow\", \"body\": \"When shard splitting is active, runShardSplitQuery calls applyTemplateVariables on each target (line 52 of shardQuerySplitting.ts), then for every shard group runSplitQuery is invoked which calls applyTemplateVariables again on the same targets (line 299 of querySplitting.ts). This is confirmed by the test 'Interpolates queries before running' which expects applyTemplateVariables to be called 5 times = 1 (in runShardSplitQuery) + 4 (one per shard group in runSplitQuery). For idempotent interpolation this is functionally correct but wasteful; any non-idempotent side effects in applyTemplateVariables (logging, analytics) would occur twice. The redundant call could be avoided by either skipping applyTemplateVariables in runSplitQuery when called from runShardSplitQuery, or by not re-interpolating in the inner runSplitQuery call.\"}, {\"file\": \"public/app/plugins/datasource/loki/shardQuerySplitting.test.ts\", \"line\": 85, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"New shard-splitting interpolation test missing direction: Scan\", \"body\": \"The new test 'Interpolates queries before execution' creates a query with `expr: 'count_over_time({a=\\\"b\\\"}[$__auto])'` and `step: '$step'` but does not set `direction: LokiQueryDirection.Scan`. All other tests in this file that exercise sharding explicitly set `direction: Scan` (e.g. lines 53, 75, 173). The expected expression contains `__stream_shard__=~\\\"20|10\\\"` which is only added by `interpolateShardingSelector` after `requestSupportsSharding` returns true. If `requestSupportsSharding` requires the Scan direction, this query would fall into `otherQueries` instead of being sharded, the expression would not contain the shard selector, and the assertion would fail. The test should explicitly set `direction: LokiQueryDirection.Scan` to match the established convention and to ensure deterministic behavior.\"}, {\"file\": \"public/app/plugins/datasource/loki/querySplitting.ts\", \"line\": 299, \"severity\": \"low\", \"category\": \"data\", \"title\": \"applyTemplateVariables may mutate request.targets\", \"body\": \"The new code calls `datasource.applyTemplateVariables(query, request.scopedVars, request.filters)` on items of `request.targets` directly. Standard implementations of `applyTemplateVariables` mutate the input query and return it (as evidenced by the test mock at shardQuerySplitting.test.ts lines 56-59). This means the caller's `request.targets[i]` will have its `expr` and `step` mutated to interpolated values as a side effect of running split queries. If the caller (or downstream code) inspects `request.targets` after `runSplitQuery`/`runShardSplitQuery` returns, it will see the interpolated values rather than the original template expressions. This is the same behavior as the previous `interpolateVariablesInQueries` call, but worth noting that the original request object is no longer pristine after splitting.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "public/app/plugins/datasource/loki/querySplitting.ts",
+   "line": 299,
+   "severity": "low",
+   "category": "perf",
+   "title": "Redundant applyTemplateVariables calls in shard splitting flow",
+   "body": "When shard splitting is active, runShardSplitQuery calls applyTemplateVariables on each target (line 52 of shardQuerySplitting.ts), then for every shard group runSplitQuery is invoked which calls applyTemplateVariables again on the same targets (line 299 of querySplitting.ts). This is confirmed by the test 'Interpolates queries before running' which expects applyTemplateVariables to be called 5 times = 1 (in runShardSplitQuery) + 4 (one per shard group in runSplitQuery). For idempotent interpolation this is functionally correct but wasteful; any non-idempotent side effects in applyTemplateVariables (logging, analytics) would occur twice. The redundant call could be avoided by either skipping applyTemplateVariables in runSplitQuery when called from runShardSplitQuery, or by not re-interpolating in the inner runSplitQuery call."
+  },
+  {
+   "index": 1,
+   "file": "public/app/plugins/datasource/loki/shardQuerySplitting.test.ts",
+   "line": 85,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "New shard-splitting interpolation test missing direction: Scan",
+   "body": "The new test 'Interpolates queries before execution' creates a query with `expr: 'count_over_time({a=\"b\"}[$__auto])'` and `step: '$step'` but does not set `direction: LokiQueryDirection.Scan`. All other tests in this file that exercise sharding explicitly set `direction: Scan` (e.g. lines 53, 75, 173). The expected expression contains `__stream_shard__=~\"20|10\"` which is only added by `interpolateShardingSelector` after `requestSupportsSharding` returns true. If `requestSupportsSharding` requires the Scan direction, this query would fall into `otherQueries` instead of being sharded, the expression would not contain the shard selector, and the assertion would fail. The test should explicitly set `direction: LokiQueryDirection.Scan` to match the established convention and to ensure deterministic behavior."
+  },
+  {
+   "index": 2,
+   "file": "public/app/plugins/datasource/loki/querySplitting.ts",
+   "line": 299,
+   "severity": "low",
+   "category": "data",
+   "title": "applyTemplateVariables may mutate request.targets",
+   "body": "The new code calls `datasource.applyTemplateVariables(query, request.scopedVars, request.filters)` on items of `request.targets` directly. Standard implementations of `applyTemplateVariables` mutate the input query and return it (as evidenced by the test mock at shardQuerySplitting.test.ts lines 56-59). This means the caller's `request.targets[i]` will have its `expr` and `step` mutated to interpolated values as a side effect of running split queries. If the caller (or downstream code) inspects `request.targets` after `runSplitQuery`/`runShardSplitQuery` returns, it will see the interpolated values rather than the original template expressions. This is the same behavior as the previous `interpolateVariablesInQueries` call, but worth noting that the original request object is no longer pristine after splitting."
+  }
+ ],
+ "finding_count": 3
+}

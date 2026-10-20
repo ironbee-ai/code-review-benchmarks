@@ -1,0 +1,119 @@
+{
+ "run_id": "kimi-k3__xhigh__sentry__93824__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__93824",
+ "golden_url": "https://github.com/getsentry/sentry/pull/93824",
+ "repeat": 3,
+ "started_at": "2026-10-18T15:25:38Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 103248,
+  "sha": "c0258f2250a8cd35",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 25084,
+    "output": 13384,
+    "reasoning": 12439,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 529864,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 3993,
+   "raw_usage": {
+    "completion_tokens": 13384,
+    "prompt_tokens": 25084,
+    "total_tokens": 38468,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 12439,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T15:25:38Z",
+   "first_chunk_ms": 35543,
+   "first_text_ms": 496490,
+   "response_id": "chatcmpl-b23txnrb256wenz4ob7vy54efuhez5lvifl2hc5imausg2xotkrq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 25084,
+  "output": 13384,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 12439
+ },
+ "cost_reported": null,
+ "latency_ms": 529864,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 254, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"isinstance check uses the wrong Process class, so hung flusher processes are never killed\", \"body\": \"In `_ensure_processes_alive`, `process.kill()` is now guarded by `if isinstance(process, multiprocessing.Process)`. The real flusher processes are created via `self.mp_context.Process` where `mp_context = multiprocessing.get_context(\\\"spawn\\\")`, so they are instances of `multiprocessing.context.SpawnProcess` \u2014 a sibling class of `multiprocessing.Process` (both subclass `BaseProcess`), and `isinstance(spawn_process, multiprocessing.Process)` is always False (the file's own type annotation on `self.processes` acknowledges the type is `SpawnProcess`). Before this change the kill was unconditional; the new guard silently disables it for every production flusher process (it only 'works' to skip threads, which was its presumed intent). Consequence: when a flusher process is detected as hung (cause=\\\"hang\\\"), the old process is left running while `_create_process_for_shards` immediately starts a replacement handling the same shards, so two (and with repeated restarts, up to MAX_PROCESS_RESTARTS) flusher processes concurrently flush the same Redis shards and keep duplicate Kafka producers alive. The check should be inverted to exclude threads instead, e.g. `if not isinstance(process, threading.Thread)`.\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 346, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"join()'s terminate() is dead code for spawn flusher processes\", \"body\": \"In `join()`, `if isinstance(process, multiprocessing.Process): process.terminate()` uses the same wrong isinstance check: spawn flusher processes are `multiprocessing.context.SpawnProcess` instances, never instances of `multiprocessing.Process`, so `terminate()` is never executed for real flusher processes. This pattern predates the PR but is carried into the new per-process loop: any flusher process still alive after the join deadline (the loop `break`s once the deadline passes, so later processes don't even get their wait loop) is left running and only dies via the daemon flag at interpreter exit, potentially mid-produce with unflushed Kafka futures. Additionally, `remaining_time` is computed at the top of the loop and never used other than the `<= 0` check.\"}, {\"file\": \"tests/sentry/spans/consumers/process/test_consumer.py\", \"line\": 62, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"time.sleep(0.1) in test_basic is a no-op because time.sleep is monkeypatched\", \"body\": \"The test adds `time.sleep(0.1)` with the comment \\\"Give flusher threads time to process after drift change\\\", but line 15 of the same test does `monkeypatch.setattr(\\\"time.sleep\\\", lambda _: None)`, which patches the `sleep` attribute of the `time` module globally \u2014 including the call on line 62. The sleep therefore does nothing and the comment is misleading. The test only passes because `step.join()` provides the actual synchronization with the flusher thread; if a future reader relies on this sleep for timing it will be a source of flakiness confusion. Either remove the line/comment or use the real sleep (e.g. via `time.sleep` saved before patching).\"}, {\"file\": \"src/sentry/spans/consumers/process/flusher.py\", \"line\": 199, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Inconsistent metric tag keys 'shard' vs 'shards' on flusher timers\", \"body\": \"The new per-process metrics use `tags={\\\"shard\\\": shard_tag}` for `spans.buffer.flusher.produce` and `spans.buffer.segment_size_bytes`, but `tags={\\\"shards\\\": shard_tag}` for `spans.buffer.flusher.wait_produce` (line 199). Since these timers describe the same per-process shard grouping, the mismatched tag key means dashboards and alerts that group or filter by `shard` will silently miss the `wait_produce` series (and vice versa for `shards`). Unify the tag key across all three metrics.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 254,
+   "severity": "high",
+   "category": "bug",
+   "title": "isinstance check uses the wrong Process class, so hung flusher processes are never killed",
+   "body": "In `_ensure_processes_alive`, `process.kill()` is now guarded by `if isinstance(process, multiprocessing.Process)`. The real flusher processes are created via `self.mp_context.Process` where `mp_context = multiprocessing.get_context(\"spawn\")`, so they are instances of `multiprocessing.context.SpawnProcess` \u2014 a sibling class of `multiprocessing.Process` (both subclass `BaseProcess`), and `isinstance(spawn_process, multiprocessing.Process)` is always False (the file's own type annotation on `self.processes` acknowledges the type is `SpawnProcess`). Before this change the kill was unconditional; the new guard silently disables it for every production flusher process (it only 'works' to skip threads, which was its presumed intent). Consequence: when a flusher process is detected as hung (cause=\"hang\"), the old process is left running while `_create_process_for_shards` immediately starts a replacement handling the same shards, so two (and with repeated restarts, up to MAX_PROCESS_RESTARTS) flusher processes concurrently flush the same Redis shards and keep duplicate Kafka producers alive. The check should be inverted to exclude threads instead, e.g. `if not isinstance(process, threading.Thread)`."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 346,
+   "severity": "low",
+   "category": "bug",
+   "title": "join()'s terminate() is dead code for spawn flusher processes",
+   "body": "In `join()`, `if isinstance(process, multiprocessing.Process): process.terminate()` uses the same wrong isinstance check: spawn flusher processes are `multiprocessing.context.SpawnProcess` instances, never instances of `multiprocessing.Process`, so `terminate()` is never executed for real flusher processes. This pattern predates the PR but is carried into the new per-process loop: any flusher process still alive after the join deadline (the loop `break`s once the deadline passes, so later processes don't even get their wait loop) is left running and only dies via the daemon flag at interpreter exit, potentially mid-produce with unflushed Kafka futures. Additionally, `remaining_time` is computed at the top of the loop and never used other than the `<= 0` check."
+  },
+  {
+   "index": 2,
+   "file": "tests/sentry/spans/consumers/process/test_consumer.py",
+   "line": 62,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "time.sleep(0.1) in test_basic is a no-op because time.sleep is monkeypatched",
+   "body": "The test adds `time.sleep(0.1)` with the comment \"Give flusher threads time to process after drift change\", but line 15 of the same test does `monkeypatch.setattr(\"time.sleep\", lambda _: None)`, which patches the `sleep` attribute of the `time` module globally \u2014 including the call on line 62. The sleep therefore does nothing and the comment is misleading. The test only passes because `step.join()` provides the actual synchronization with the flusher thread; if a future reader relies on this sleep for timing it will be a source of flakiness confusion. Either remove the line/comment or use the real sleep (e.g. via `time.sleep` saved before patching)."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/spans/consumers/process/flusher.py",
+   "line": 199,
+   "severity": "low",
+   "category": "bug",
+   "title": "Inconsistent metric tag keys 'shard' vs 'shards' on flusher timers",
+   "body": "The new per-process metrics use `tags={\"shard\": shard_tag}` for `spans.buffer.flusher.produce` and `spans.buffer.segment_size_bytes`, but `tags={\"shards\": shard_tag}` for `spans.buffer.flusher.wait_produce` (line 199). Since these timers describe the same per-process shard grouping, the mismatched tag key means dashboards and alerts that group or filter by `shard` will silently miss the `wait_produce` series (and vice versa for `shards`). Unify the tag key across all three metrics."
+  }
+ ],
+ "finding_count": 4
+}

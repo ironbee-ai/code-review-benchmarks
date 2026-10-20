@@ -1,0 +1,160 @@
+{
+ "run_id": "minimax-m3__xhigh__cal.com__8330__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__8330",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8330",
+ "repeat": 2,
+ "started_at": "2026-10-17T21:19:44Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 98948,
+  "sha": "ea327e75345e8def",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 28113,
+    "output": 46167,
+    "reasoning": 44488,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.06384198,
+   "latency_ms": 191262,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6782,
+   "raw_usage": {
+    "completion_tokens": 46167,
+    "prompt_tokens": 28241,
+    "total_tokens": 74408,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 44488,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.06384198,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.06384198,
+     "upstream_inference_prompt_cost": 0.00844158,
+     "upstream_inference_completions_cost": 0.0554004
+    }
+   },
+   "started_at": "2026-10-17T21:19:44Z",
+   "first_chunk_ms": 1605,
+   "first_text_ms": 184208,
+   "response_id": "gen-1792271984-qETDh3AKHANy3xLQSEFS",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 28113,
+  "output": 46167,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 44488
+ },
+ "cost_reported": 0.06384198,
+ "latency_ms": 191262,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR, I need to carefully examine the date override logic in `checkIfIsAvailable` and the slot generation in `getSlots`. Let me analyze the changes systematically.\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/slots.ts\",\n      \"line\": 142,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Duplicate start/end computation in working hours check\",\n      \"body\": \"Inside the working-hours check in `checkIfIsAvailable`, both `start` and `end` are computed from `slotStartTime`, making them identical. As written, the upper-bound check `end > workingHour.endTime` is the same as `start > workingHour.endTime`, so a slot that starts inside the working window but whose `slotEndTime` extends past `workingHour.endTime` is never rejected here. The intent is clearly to compare the slot's end against `workingHour.endTime`; `end` should be `slotEndTime.hour() * 60 + slotEndTime.minute()`. While `getTimeSlots` generally generates slots that fit, this validator is supposed to be a defense-in-depth check and is currently incorrect for any case where a slot can extend past working hours (e.g., events that cross the boundary).\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/slots.ts\",\n      \"line\": 140,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"slotStartTime.day() is UTC but workingHour.days is organizer's local day\",\n      \"body\": \"`slotStartTime = time.utc()` is converted to UTC before the check, so `slotStartTime.day()` returns the day-of-week in UTC. `workingHour.days` represents the organizer's local days (the schedule is defined in the organizer's timezone). At day boundaries this mismatches: a slot at, say, 23:30 UTC on Monday is Tuesday 05:00 in Kolkata (UTC+5:30), so `workingHour.days.includes(1)` looks for Monday entries that don't apply, and Tuesday entries that do apply are never consulted. The slot will be incorrectly treated as outside working hours. The day lookup should use `slotStartTime.tz(organizerTimeZone).day()`.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/slots.ts\",\n      \"line\": 110,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Date override day comparison depends on server's local timezone\",\n      \"body\": \"The check `dayjs(date.start).add(utcOffset, 'minutes').format('YYYY MM DD') === slotStartTime.format('YYYY MM DD')` mixes two different reference frames: the left side is computed in the dayjs instance's local timezone (i.e. the Node server's TZ) after a numeric offset shift, and the right side is UTC because `slotStartTime = time.utc()`. If the server runs in any timezone other than the organizer's, the comparison produces wrong results near day boundaries, so a date override can fail to match a slot that occurs on the same calendar day in the organizer's timezone. The correct comparison is `dayjs.tz(date.start, organizerTimeZone).format('YYYY MM DD') === slotStartTime.tz(organizerTimeZone).format('YYYY MM DD')`. The current code is also semantically fragile - the `utcOffset * -1` arithmetic is not doing what the variable name suggests.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/slots.ts\",\n      \"line\": 146,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Working-hours find returns the wrong boolean for split/missing schedules\",\n      \"body\": \"`workingHours.find(...)` returns truthy as soon as any single working-hour entry reports the slot as outside its range, then the slot is rejected. This is inverted: a slot should be considered inside working hours if it fits inside ANY entry, not outside if it doesn't fit every entry. For a user with split shifts (e.g. 09:00-12:00 and 14:00-17:00) the first entry's 'outside' will incorrectly mark a 15:00 slot as unavailable. Likewise, when no workingHour entry covers the slot's day at all, every callback returns falsy, the find returns undefined and the slot is treated as available even though the user has no working hours that day. The logic needs `find` to return when the slot is INSIDE a working hour (or no entries match at all \u2192 unavailable).\"\n    },\n    {\n      \"file\": \"apps/web/test/lib/getSchedule.test.ts\",\n      \"line\": 805,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No regression test for the round-robin fixed-host date-override fix\",\n      \"body\": \"The PR description and the linked issue (#8207) call out that round-robin events were being booked when fixed hosts were unavailable due to a date override. The `checkIfIsAvailable` call site for `fixedHosts` is precisely what addresses this. The only new test added in this PR is the 'different timezone' variant of the existing personal-event date-override test; nothing exercises a `ROUND_ROBIN` event type with a `hosts: [{ isFixed: true }, { isFixed: false }]` setup plus a date override on the fixed host. Without such a test, the very behavior this PR is supposed to fix can silently regress.\"\n    },\n    {\n      \"file\": \"apps/web/test/lib/getSchedule.test.ts\",\n      \"line\": 109,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Test fixture name and stored times disagree on the override's timezone\",\n      \"body\": \"The schedule description for `IstWorkHoursWithDateOverride` says 'Date Override for 2PM to 6PM IST (in GST time it is 8:30AM to 12:30PM)' which corresponds to 08:30-12:30 UTC, but the fixture stores `startTime: '1970-01-01T14:00:00.000Z'` and `endTime: '1970-01-01T18:00:00.000Z'` (14:00-18:00 UTC, i.e. 19:30-23:30 IST). The expected slot list ('08:30:00.000Z', '09:30:00.000Z', ...) corresponds to the description, not to the stored UTC values. Either the fixture should store 08:30/12:30 UTC or the description should be corrected, otherwise a future maintainer cannot tell which interpretation the system relies on.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/slots.ts\",\n      \"line\": 581,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"selectedSlots branch silently skips working-hours/date-override checks\",\n      \"body\": \"In the final `if (selectedSlots?.length > 0)` branch, `checkIfIsAvailable` is called with `busy` (from selectedSlots) but without passing `dateOverrides` or `workingHours` from `userSchedule`, so the parameter defaults `[]` apply. If a host's availability changed between when the slot was generated and when the reservation was checked, or if a previous filter was bypassed by some future refactor, the slot could pass this check while being outside the host's availability. At minimum it is inconsistent with the other two call sites which do pass these fields; the comment explaining why this branch intentionally omits them is missing.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 142,
+   "severity": "high",
+   "category": "bug",
+   "title": "Duplicate start/end computation in working hours check",
+   "body": "Inside the working-hours check in `checkIfIsAvailable`, both `start` and `end` are computed from `slotStartTime`, making them identical. As written, the upper-bound check `end > workingHour.endTime` is the same as `start > workingHour.endTime`, so a slot that starts inside the working window but whose `slotEndTime` extends past `workingHour.endTime` is never rejected here. The intent is clearly to compare the slot's end against `workingHour.endTime`; `end` should be `slotEndTime.hour() * 60 + slotEndTime.minute()`. While `getTimeSlots` generally generates slots that fit, this validator is supposed to be a defense-in-depth check and is currently incorrect for any case where a slot can extend past working hours (e.g., events that cross the boundary)."
+  },
+  {
+   "index": 1,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 140,
+   "severity": "high",
+   "category": "bug",
+   "title": "slotStartTime.day() is UTC but workingHour.days is organizer's local day",
+   "body": "`slotStartTime = time.utc()` is converted to UTC before the check, so `slotStartTime.day()` returns the day-of-week in UTC. `workingHour.days` represents the organizer's local days (the schedule is defined in the organizer's timezone). At day boundaries this mismatches: a slot at, say, 23:30 UTC on Monday is Tuesday 05:00 in Kolkata (UTC+5:30), so `workingHour.days.includes(1)` looks for Monday entries that don't apply, and Tuesday entries that do apply are never consulted. The slot will be incorrectly treated as outside working hours. The day lookup should use `slotStartTime.tz(organizerTimeZone).day()`."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 110,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Date override day comparison depends on server's local timezone",
+   "body": "The check `dayjs(date.start).add(utcOffset, 'minutes').format('YYYY MM DD') === slotStartTime.format('YYYY MM DD')` mixes two different reference frames: the left side is computed in the dayjs instance's local timezone (i.e. the Node server's TZ) after a numeric offset shift, and the right side is UTC because `slotStartTime = time.utc()`. If the server runs in any timezone other than the organizer's, the comparison produces wrong results near day boundaries, so a date override can fail to match a slot that occurs on the same calendar day in the organizer's timezone. The correct comparison is `dayjs.tz(date.start, organizerTimeZone).format('YYYY MM DD') === slotStartTime.tz(organizerTimeZone).format('YYYY MM DD')`. The current code is also semantically fragile - the `utcOffset * -1` arithmetic is not doing what the variable name suggests."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 146,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Working-hours find returns the wrong boolean for split/missing schedules",
+   "body": "`workingHours.find(...)` returns truthy as soon as any single working-hour entry reports the slot as outside its range, then the slot is rejected. This is inverted: a slot should be considered inside working hours if it fits inside ANY entry, not outside if it doesn't fit every entry. For a user with split shifts (e.g. 09:00-12:00 and 14:00-17:00) the first entry's 'outside' will incorrectly mark a 15:00 slot as unavailable. Likewise, when no workingHour entry covers the slot's day at all, every callback returns falsy, the find returns undefined and the slot is treated as available even though the user has no working hours that day. The logic needs `find` to return when the slot is INSIDE a working hour (or no entries match at all \u2192 unavailable)."
+  },
+  {
+   "index": 4,
+   "file": "apps/web/test/lib/getSchedule.test.ts",
+   "line": 805,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No regression test for the round-robin fixed-host date-override fix",
+   "body": "The PR description and the linked issue (#8207) call out that round-robin events were being booked when fixed hosts were unavailable due to a date override. The `checkIfIsAvailable` call site for `fixedHosts` is precisely what addresses this. The only new test added in this PR is the 'different timezone' variant of the existing personal-event date-override test; nothing exercises a `ROUND_ROBIN` event type with a `hosts: [{ isFixed: true }, { isFixed: false }]` setup plus a date override on the fixed host. Without such a test, the very behavior this PR is supposed to fix can silently regress."
+  },
+  {
+   "index": 5,
+   "file": "apps/web/test/lib/getSchedule.test.ts",
+   "line": 109,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Test fixture name and stored times disagree on the override's timezone",
+   "body": "The schedule description for `IstWorkHoursWithDateOverride` says 'Date Override for 2PM to 6PM IST (in GST time it is 8:30AM to 12:30PM)' which corresponds to 08:30-12:30 UTC, but the fixture stores `startTime: '1970-01-01T14:00:00.000Z'` and `endTime: '1970-01-01T18:00:00.000Z'` (14:00-18:00 UTC, i.e. 19:30-23:30 IST). The expected slot list ('08:30:00.000Z', '09:30:00.000Z', ...) corresponds to the description, not to the stored UTC values. Either the fixture should store 08:30/12:30 UTC or the description should be corrected, otherwise a future maintainer cannot tell which interpretation the system relies on."
+  },
+  {
+   "index": 6,
+   "file": "packages/trpc/server/routers/viewer/slots.ts",
+   "line": 581,
+   "severity": "low",
+   "category": "bug",
+   "title": "selectedSlots branch silently skips working-hours/date-override checks",
+   "body": "In the final `if (selectedSlots?.length > 0)` branch, `checkIfIsAvailable` is called with `busy` (from selectedSlots) but without passing `dateOverrides` or `workingHours` from `userSchedule`, so the parameter defaults `[]` apply. If a host's availability changed between when the slot was generated and when the reservation was checked, or if a previous filter was bypassed by some future refactor, the slot could pass this check while being outside the host's availability. At minimum it is inconsistent with the other two call sites which do pass these fields; the comment explaining why this branch intentionally omits them is missing."
+  }
+ ],
+ "finding_count": 7
+}

@@ -1,0 +1,153 @@
+{
+ "run_id": "glm-5.3__low__grafana__79265__r1",
+ "model_id": "glm-5.3",
+ "family": "zai",
+ "route": "openrouter",
+ "provider_model": "z-ai/glm-5.3",
+ "provider_pin": {
+  "order": [
+   "z-ai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:25:32Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30093,
+    "output": 1524,
+    "reasoning": 509,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.0488358,
+   "latency_ms": 19682,
+   "finish_reason": "stop",
+   "served_model": "z-ai/glm-5.3",
+   "provider_served": "Z.AI",
+   "http_attempts": 1,
+   "text_chars": 4432,
+   "raw_usage": {
+    "completion_tokens": 1524,
+    "prompt_tokens": 30093,
+    "total_tokens": 31617,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 509,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.0488358,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.0488358,
+     "upstream_inference_prompt_cost": 0.0421302,
+     "upstream_inference_completions_cost": 0.0067056
+    }
+   },
+   "started_at": "2026-10-17T11:25:32Z",
+   "first_chunk_ms": 2645,
+   "first_text_ms": 9582,
+   "response_id": "gen-1792236332-O0Q9XsgSQIe4g4dySDcc",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30093,
+  "output": 1524,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 509
+ },
+ "cost_reported": 0.0488358,
+ "latency_ms": 19682,
+ "served_model": "z-ai/glm-5.3",
+ "provider_served": "Z.AI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Anonymous auth now performs a blocking DB write on the request path\", \"body\": \"The previous code tagged anonymous devices in a background goroutine with a 2-minute timeout, decoupling it from request latency. This change makes `Authenticate` call `TagDevice` synchronously on the request context, so every anonymous request from a device not in the 29-minute local cache adds a database roundtrip (and a COUNT query plus INSERT/UPDATE when a device limit is configured) to login/authn latency. Under load on anonymous-enabled instances this measurably slows requests and adds DB pressure; the original async design existed for this reason and no replacement (e.g. async with error propagation for the limit case only) was provided.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 45, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"ErrDeviceLimitReached returned raw to authn produces an opaque auth failure\", \"body\": \"When the device limit is reached, `Authenticate` returns `anonstore.ErrDeviceLimitReached` directly as the authentication error. There is no mapping to an HTTP status or user-facing message, so a user exceeding the device limit will get a generic internal auth error (likely 500) with only \\\"device limit reached\\\" in logs, instead of a clear 4xx with an explanatory message. The error should be wrapped/mapped to a proper authn error type before being returned.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 109, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Device limit check is not atomic (count-then-insert race)\", \"body\": \"`CreateOrUpdateDevice` first runs a COUNT query and then a separate INSERT/UPSERT, without a transaction or lock. Concurrent requests from multiple new devices can all observe a count below the limit and all insert, overshooting `device_limit` arbitrarily under load. The check and insert (or the update fallback) need to be done atomically (e.g. in a transaction with a row lock, or by enforcing the limit inside the upsert statement) for the limit to actually hold.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Local cache marker set before the store call masks the device-limit error for 29 minutes\", \"body\": \"In `tagDeviceUI`, `a.localCache.SetDefault(key, struct{}{})` is executed before `CreateOrUpdateDevice`. If the store call then fails \u2014 including with `ErrDeviceLimitReached` or any transient DB error \u2014 the cache still holds the device key for up to 29 minutes, so all subsequent requests for that device return nil early from the cache. This means the limit error is reported only on the first request per device per cache window (inconsistent enforcement), and transient DB failures are silently swallowed after the first attempt. The cache entry should be set only after a successful store write, or rolled back on error.\"}, {\"file\": \"pkg/api/dtos/frontend_settings.go\", \"line\": 195, \"severity\": \"low\", \"category\": \"api\", \"title\": \"anonymousDeviceLimit always serialized, contradicting the optional TS type\", \"body\": \"The Go DTO field `AnonymousDeviceLimit int64` has no `omitempty`, so the frontend settings JSON always contains `anonymousDeviceLimit: 0` when unlimited, while the TypeScript type declares it as `number | undefined`. Code distinguishing \\\"no limit\\\" via `undefined` (e.g. `if (config.anonymousDeviceLimit)`) works, but code using `=== undefined` or relying on the key's absence will misbehave. The Go field should be a pointer with `omitempty` (like `TokenExpirationDayLimit`-style optional fields) to match the declared contract.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1655, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New device_limit setting is undocumented and the PR description is a template\", \"body\": \"A new `device_limit` key is added under `[auth.anonymous]`, but the configuration documentation (configure-security/configure-authentication docs in grafana/grafana) is not updated in this PR, and the PR description still contains unfilled template placeholders (\\\"[Add a description...]\\\", \\\"Fixes #\\\"). Users cannot discover or correctly use the setting, and the intended semantics (0 = unlimited, expiry window of 30 days) are only visible in code.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Anonymous auth now performs a blocking DB write on the request path",
+   "body": "The previous code tagged anonymous devices in a background goroutine with a 2-minute timeout, decoupling it from request latency. This change makes `Authenticate` call `TagDevice` synchronously on the request context, so every anonymous request from a device not in the 29-minute local cache adds a database roundtrip (and a COUNT query plus INSERT/UPDATE when a device limit is configured) to login/authn latency. Under load on anonymous-enabled instances this measurably slows requests and adds DB pressure; the original async design existed for this reason and no replacement (e.g. async with error propagation for the limit case only) was provided."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 45,
+   "severity": "medium",
+   "category": "bug",
+   "title": "ErrDeviceLimitReached returned raw to authn produces an opaque auth failure",
+   "body": "When the device limit is reached, `Authenticate` returns `anonstore.ErrDeviceLimitReached` directly as the authentication error. There is no mapping to an HTTP status or user-facing message, so a user exceeding the device limit will get a generic internal auth error (likely 500) with only \"device limit reached\" in logs, instead of a clear 4xx with an explanatory message. The error should be wrapped/mapped to a proper authn error type before being returned."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 109,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Device limit check is not atomic (count-then-insert race)",
+   "body": "`CreateOrUpdateDevice` first runs a COUNT query and then a separate INSERT/UPSERT, without a transaction or lock. Concurrent requests from multiple new devices can all observe a count below the limit and all insert, overshooting `device_limit` arbitrarily under load. The check and insert (or the update fallback) need to be done atomically (e.g. in a transaction with a row lock, or by enforcing the limit inside the upsert statement) for the limit to actually hold."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Local cache marker set before the store call masks the device-limit error for 29 minutes",
+   "body": "In `tagDeviceUI`, `a.localCache.SetDefault(key, struct{}{})` is executed before `CreateOrUpdateDevice`. If the store call then fails \u2014 including with `ErrDeviceLimitReached` or any transient DB error \u2014 the cache still holds the device key for up to 29 minutes, so all subsequent requests for that device return nil early from the cache. This means the limit error is reported only on the first request per device per cache window (inconsistent enforcement), and transient DB failures are silently swallowed after the first attempt. The cache entry should be set only after a successful store write, or rolled back on error."
+  },
+  {
+   "index": 4,
+   "file": "pkg/api/dtos/frontend_settings.go",
+   "line": 195,
+   "severity": "low",
+   "category": "api",
+   "title": "anonymousDeviceLimit always serialized, contradicting the optional TS type",
+   "body": "The Go DTO field `AnonymousDeviceLimit int64` has no `omitempty`, so the frontend settings JSON always contains `anonymousDeviceLimit: 0` when unlimited, while the TypeScript type declares it as `number | undefined`. Code distinguishing \"no limit\" via `undefined` (e.g. `if (config.anonymousDeviceLimit)`) works, but code using `=== undefined` or relying on the key's absence will misbehave. The Go field should be a pointer with `omitempty` (like `TokenExpirationDayLimit`-style optional fields) to match the declared contract."
+  },
+  {
+   "index": 5,
+   "file": "pkg/setting/setting.go",
+   "line": 1655,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New device_limit setting is undocumented and the PR description is a template",
+   "body": "A new `device_limit` key is added under `[auth.anonymous]`, but the configuration documentation (configure-security/configure-authentication docs in grafana/grafana) is not updated in this PR, and the PR description still contains unfilled template placeholders (\"[Add a description...]\", \"Fixes #\"). Users cannot discover or correctly use the setting, and the intended semantics (0 = unlimited, expiry window of 30 days) are only visible in code."
+  }
+ ],
+ "finding_count": 6
+}

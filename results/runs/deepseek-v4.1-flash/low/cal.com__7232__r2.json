@@ -1,0 +1,142 @@
+{
+ "run_id": "deepseek-v4.1-flash__low__cal.com__7232__r2",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 2,
+ "started_at": "2026-10-18T18:09:10Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 254,
+    "output": 18436,
+    "reasoning": 17374,
+    "cache_read": 72448,
+    "cache_write": 0
+   },
+   "cost_reported": 0.011317044,
+   "latency_ms": 85176,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 4638,
+   "raw_usage": {
+    "completion_tokens": 18436,
+    "prompt_tokens": 72702,
+    "total_tokens": 91138,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 17374,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 72448,
+     "video_tokens": 0
+    },
+    "cost": 0.011317044,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.011317044,
+     "upstream_inference_prompt_cost": 0.000255444,
+     "upstream_inference_completions_cost": 0.0110616
+    }
+   },
+   "started_at": "2026-10-18T18:09:10Z",
+   "first_chunk_ms": 1645,
+   "first_text_ms": 82006,
+   "response_id": "gen-1792346950-K6EPYpmqsT0rrZrKT2AB",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 254,
+  "output": 18436,
+  "cache_read": 72448,
+  "cache_write": 0,
+  "reasoning": 17374
+ },
+ "cost_reported": 0.011317044,
+ "latency_ms": 85176,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\":[{\"file\":\"packages/features/bookings/lib/handleCancelBooking.ts\",\"line\":485,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Reminder cancellation promises are not awaited\",\"body\":\"In the reminder-cancellation loop, `deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are async but are invoked inside `updatedBookings.forEach(...).forEach(...)` without `await`ing them, and the resulting promises are never collected or awaited. For EMAIL reminders the only thing that prevents delivery is the `cancelled: true` DB write performed inside `deleteScheduledEmailReminder`; if that floating promise has not completed when the handler returns (likely on serverless, where the lambda can be frozen right after the response is sent), the reminder stays scheduled and the email is still delivered \u2014 the exact bug this PR is meant to fix. Collect and `await Promise.all(...)` all cancellation promises before returning.\"},{\"file\":\"packages/features/bookings/lib/handleNewBooking.ts\",\"line\":964,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Reschedule reminder cleanup: try/catch is dead code and calls are unawaited\",\"body\":\"The new reschedule cleanup wraps the loop in `try { originalRescheduledBooking.workflowReminders.forEach((reminder) => { deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true); deleteScheduledSMSReminder(...) }) } catch (error) { log.error(...) }`. The callback is async and its promises are not awaited, so (a) any rejection from the cancellation calls becomes an unhandled rejection and is never caught by this `catch`, making the error handling dead code, and (b) the SendGrid cancellation / DB update may not complete before the handler finishes, so reminders for the old (now rescheduled) booking can still be sent. Additionally, passing `immediateDelete=true` for email performs an immediate SendGrid `status: cancel` POST, which is exactly the pending-cancellation behaviour (max 100 entries in `scheduled_sends`) this PR is trying to avoid, so reschedule-heavy accounts can still exhaust that limit and fail to cancel. Await the calls and consider using the mark-cancelled path for reschedules too.\"},{\"file\":\"packages/trpc/server/routers/viewer/bookings.tsx\",\"line\":488,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"requestReschedule reminder cancellation not awaited\",\"body\":\"In `requestReschedule`, `deleteScheduledEmailReminder(reminder.id, reminder.referenceId)` / `deleteScheduledSMSReminder(...)` are called inside `bookingToReschedule.workflowReminders.forEach(...)` without awaiting. For EMAIL these functions only mark the row `cancelled: true`, so if the floating promise does not run before the request completes (serverless freeze), the reminder for the now-cancelled/rescheduled booking stays live and the reminder email is still sent \u2014 the bug being fixed. Await or `Promise.all` these calls.\"},{\"file\":\"packages/features/ee/workflows/api/scheduleEmailReminders.ts\",\"line\":34,\"severity\":\"medium\",\"category\":\"bug\",\"title\":\"Past-reminder cleanup deletes cancelled reminders before they can be cancelled\",\"body\":\"The handler first runs `prisma.workflowReminder.deleteMany({ where: { method: EMAIL, scheduledDate: { lte: now } } })` and only afterwards looks up `cancelled: true` reminders with `scheduledDate <= now + 1 hour`. Because the cleanup runs first, any cancelled reminder whose `scheduledDate` has just passed is deleted from the DB without ever being cancelled in SendGrid, so the reminder email is delivered. Since this cron runs every 15 minutes, a cancellation made within ~15 minutes of a reminder's send time (after the last cron run while the reminder was still in the future) falls into this gap and the email goes out. The cancellation pass should run before/independent of the past-reminder cleanup, and the window/cadence must guarantee every reminder is cancelled before its send time.\"},{\"file\":\"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\",\"line\":213,\"severity\":\"low\",\"category\":\"data\",\"title\":\"immediateDelete path leaves orphan WorkflowReminder rows\",\"body\":\"When `immediateDelete` is true the function cancels the send in SendGrid and returns, but it never deletes the `workflowReminder` row nor marks it `cancelled`. Callers in `handleNewBooking` (reschedule) no longer perform a separate `prisma.workflowReminder.deleteMany`, so for a rescheduled booking the old reminders remain in the table as `scheduled: true` rows referencing the cancelled booking until the cron's past-reminder cleanup eventually deletes them. Delete the row here (or set `cancelled`) so the DB state matches the actual SendGrid state.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reminder cancellation promises are not awaited",
+   "body": "In the reminder-cancellation loop, `deleteScheduledEmailReminder` and `deleteScheduledSMSReminder` are async but are invoked inside `updatedBookings.forEach(...).forEach(...)` without `await`ing them, and the resulting promises are never collected or awaited. For EMAIL reminders the only thing that prevents delivery is the `cancelled: true` DB write performed inside `deleteScheduledEmailReminder`; if that floating promise has not completed when the handler returns (likely on serverless, where the lambda can be frozen right after the response is sent), the reminder stays scheduled and the email is still delivered \u2014 the exact bug this PR is meant to fix. Collect and `await Promise.all(...)` all cancellation promises before returning."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 964,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Reschedule reminder cleanup: try/catch is dead code and calls are unawaited",
+   "body": "The new reschedule cleanup wraps the loop in `try { originalRescheduledBooking.workflowReminders.forEach((reminder) => { deleteScheduledEmailReminder(reminder.id, reminder.referenceId, true); deleteScheduledSMSReminder(...) }) } catch (error) { log.error(...) }`. The callback is async and its promises are not awaited, so (a) any rejection from the cancellation calls becomes an unhandled rejection and is never caught by this `catch`, making the error handling dead code, and (b) the SendGrid cancellation / DB update may not complete before the handler finishes, so reminders for the old (now rescheduled) booking can still be sent. Additionally, passing `immediateDelete=true` for email performs an immediate SendGrid `status: cancel` POST, which is exactly the pending-cancellation behaviour (max 100 entries in `scheduled_sends`) this PR is trying to avoid, so reschedule-heavy accounts can still exhaust that limit and fail to cancel. Await the calls and consider using the mark-cancelled path for reschedules too."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 488,
+   "severity": "medium",
+   "category": "bug",
+   "title": "requestReschedule reminder cancellation not awaited",
+   "body": "In `requestReschedule`, `deleteScheduledEmailReminder(reminder.id, reminder.referenceId)` / `deleteScheduledSMSReminder(...)` are called inside `bookingToReschedule.workflowReminders.forEach(...)` without awaiting. For EMAIL these functions only mark the row `cancelled: true`, so if the floating promise does not run before the request completes (serverless freeze), the reminder for the now-cancelled/rescheduled booking stays live and the reminder email is still sent \u2014 the bug being fixed. Await or `Promise.all` these calls."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 34,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Past-reminder cleanup deletes cancelled reminders before they can be cancelled",
+   "body": "The handler first runs `prisma.workflowReminder.deleteMany({ where: { method: EMAIL, scheduledDate: { lte: now } } })` and only afterwards looks up `cancelled: true` reminders with `scheduledDate <= now + 1 hour`. Because the cleanup runs first, any cancelled reminder whose `scheduledDate` has just passed is deleted from the DB without ever being cancelled in SendGrid, so the reminder email is delivered. Since this cron runs every 15 minutes, a cancellation made within ~15 minutes of a reminder's send time (after the last cron run while the reminder was still in the future) falls into this gap and the email goes out. The cancellation pass should run before/independent of the past-reminder cleanup, and the window/cadence must guarantee every reminder is cancelled before its send time."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "low",
+   "category": "data",
+   "title": "immediateDelete path leaves orphan WorkflowReminder rows",
+   "body": "When `immediateDelete` is true the function cancels the send in SendGrid and returns, but it never deletes the `workflowReminder` row nor marks it `cancelled`. Callers in `handleNewBooking` (reschedule) no longer perform a separate `prisma.workflowReminder.deleteMany`, so for a rescheduled booking the old reminders remain in the table as `scheduled: true` rows referencing the cancelled booking until the cron's past-reminder cleanup eventually deletes them. Delete the row here (or set `cancelled`) so the DB state matches the actual SendGrid state."
+  }
+ ],
+ "finding_count": 5
+}

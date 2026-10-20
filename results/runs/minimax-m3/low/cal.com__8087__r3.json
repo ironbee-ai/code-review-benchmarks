@@ -1,0 +1,171 @@
+{
+ "run_id": "minimax-m3__low__cal.com__8087__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:38:32Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 39170,
+    "output": 10724,
+    "reasoning": 9119,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02462748,
+   "latency_ms": 48257,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 6980,
+   "raw_usage": {
+    "completion_tokens": 10724,
+    "prompt_tokens": 39298,
+    "total_tokens": 50022,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 9119,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.02462748,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02462748,
+     "upstream_inference_prompt_cost": 0.01175868,
+     "upstream_inference_completions_cost": 0.0128688
+    }
+   },
+   "started_at": "2026-10-18T11:38:32Z",
+   "first_chunk_ms": 1837,
+   "first_text_ms": 40131,
+   "response_id": "gen-1792323513-1pPdtEbY40O63hqZGpEk",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 39170,
+  "output": 10724,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 9119
+ },
+ "cost_reported": 0.02462748,
+ "latency_ms": 48257,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"forEach(async) fire-and-forget on calendar/video deletions\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { ... })` discards the returned promises. The surrounding `try { ... } catch (error) { ... }` cannot catch rejections from inside the async callback, and the caller (reschedule API) returns to the user once the synchronous portion of the loop ends. As a result, calendar `deleteEvent` / `deleteMeeting` calls may still be in flight when the function returns `true` and the reschedule email is sent, leading to inconsistent state (booking marked rescheduled while old events are not yet deleted). This was made worse by the async conversion because both `getCalendar` and the deletion calls are now Promise-returning; before, only `deleteEvent`/`deleteMeeting` were promise-returning. Replace with `for (const bookingRef of bookingRefsFiltered)` and `await` each step, or build an array of promises and `await Promise.all(...)`.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"forEach(async) fire-and-forget on calendar/video deletions\", \"body\": \"Identical issue to `packages/app-store/vital/lib/reschedule.ts:125`. The async `forEach` callback's promises are dropped, so `deleteEvent`/`deleteMeeting` calls may not complete (and rejections are uncaught) before this function returns `true` and the reschedule flow continues. Replace with a sequential `for ... of` loop or `Promise.all(...)` over the references.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"forEach(async) on calendar/video deletions in requestReschedule\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { ... })` does not await the returned promises. The function falls straight through to `await sendRequestRescheduleEmail(...)` and the rest of the mutation while the calendar `deleteEvent` and `deleteMeeting` calls are still pending. There is no `try/catch` around the loop either, so any rejection becomes an unhandled promise rejection. With the new async `getCalendar`, the call now performs a lazy chunk download for every credential in addition to the network call to the provider, making the race more likely to be observed. Convert to `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))` or a sequential `for ... of` with awaited steps.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"forEach(async) on recurring-event calendar deletions\", \"body\": \"In the recurring-event branch of cancellation, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { ... })` discards the returned promises, so the function reaches `await Promise.all(prismaPromises.concat(apiDeletes))` and returns the HTTP response before the per-credential calendar deletions have finished. The outer `try/catch` does not cover this loop either. Because `getCalendar` is now async, this serializes per-credential dynamic chunk loads behind an unawaited loop, widening the race window. Replace with a proper loop that collects promises and lets `Promise.all` drive completion.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 466, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Resolved value pushed to apiDeletes instead of the promise\", \"body\": \"Inside the unawaited forEach above, `const deletedEvent = await calendar?.deleteEvent(uid, evt, externalCalendarId); apiDeletes.push(deletedEvent);` pushes the already-resolved value (or `undefined`) into `apiDeletes` rather than the pending Promise. The later `await Promise.all(prismaPromises.concat(apiDeletes))` therefore never waits for those deleteEvent calls in the recurring-event path (and even if forEach were fixed to await, the push would still capture resolved values). Push the Promise returned by `deleteEvent` directly, i.e. `apiDeletes.push(calendar?.deleteEvent(uid, evt, externalCalendarId) as Promise<unknown> | undefined);` and let `Promise.all` await it.\"}, {\"file\": \"packages/core/videoClient.ts\", \"line\": 21, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"getVideoAdapters serializes dynamic imports\", \"body\": \"The previous `reduce` implementation ran the entire synchronous mapping in one pass; the new implementation uses a sequential `for (const cred of withCredentials) { const app = await appStore[...]; ... }`, so every credential now blocks the next on its dynamic import + module evaluation. With multiple video credentials attached (Zoom, Daily, Whereby, etc.) this turns into N sequential async chunks where it used to be one synchronous pass and could be N parallel `Promise.all(creds.map(...))` calls. Replace with `Promise.all(withCredentials.map(...))` to keep the parallel cost similar to before.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 23, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"getCalendarCredentials is sync but leaks Promise<Calendar> in its result\", \"body\": \"`getCalendarCredentials` was kept synchronous, yet inside it `const calendar = getCalendar(credential);` now returns `Promise<Calendar | null>` because `getCalendar` became async. The returned objects therefore carry `calendar: Promise<Calendar | null>`, but the function signature does not advertise that and callers must remember to `await item.calendar` (which is exactly what the new `getConnectedCalendars` body now has to do). Either make `getCalendarCredentials` async and `await getCalendar`, or stop calling `getCalendar` inside it and only return `{ integration, credential }`, leaving adapter construction to the caller. As written, the public type lies about its return value and any future caller that treats `item.calendar` as a sync `Calendar` will get a rejected promise.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 277, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Awaiting already-resolved apiDeletes entries in seat cancellation\", \"body\": \"After `Promise.all(integrationsToDelete).then(async () => { ... })` resolves, the code schedules `prisma.booking.update` for last-attendee seat cancellation, but `integrationsToDelete` was built by `await getCalendar(credential); integrationsToDelete.push(calendar?.deleteEvent(...))`. Since `deleteEvent` is not awaited here, the pushed value is the unresolved Promise, which is correct. However this pattern is mixed with the broken recurring-event branch (see the other findings on lines 460/466), and the inconsistency makes the file easy to misread. After fixing the recurring branch, ensure the whole file consistently pushes pending Promises into the arrays that `Promise.all` later drains, instead of awaiting-then-pushing.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "forEach(async) fire-and-forget on calendar/video deletions",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { ... })` discards the returned promises. The surrounding `try { ... } catch (error) { ... }` cannot catch rejections from inside the async callback, and the caller (reschedule API) returns to the user once the synchronous portion of the loop ends. As a result, calendar `deleteEvent` / `deleteMeeting` calls may still be in flight when the function returns `true` and the reschedule email is sent, leading to inconsistent state (booking marked rescheduled while old events are not yet deleted). This was made worse by the async conversion because both `getCalendar` and the deletion calls are now Promise-returning; before, only `deleteEvent`/`deleteMeeting` were promise-returning. Replace with `for (const bookingRef of bookingRefsFiltered)` and `await` each step, or build an array of promises and `await Promise.all(...)`."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "forEach(async) fire-and-forget on calendar/video deletions",
+   "body": "Identical issue to `packages/app-store/vital/lib/reschedule.ts:125`. The async `forEach` callback's promises are dropped, so `deleteEvent`/`deleteMeeting` calls may not complete (and rejections are uncaught) before this function returns `true` and the reschedule flow continues. Replace with a sequential `for ... of` loop or `Promise.all(...)` over the references."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "forEach(async) on calendar/video deletions in requestReschedule",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { ... })` does not await the returned promises. The function falls straight through to `await sendRequestRescheduleEmail(...)` and the rest of the mutation while the calendar `deleteEvent` and `deleteMeeting` calls are still pending. There is no `try/catch` around the loop either, so any rejection becomes an unhandled promise rejection. With the new async `getCalendar`, the call now performs a lazy chunk download for every credential in addition to the network call to the provider, making the race more likely to be observed. Convert to `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))` or a sequential `for ... of` with awaited steps."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "forEach(async) on recurring-event calendar deletions",
+   "body": "In the recurring-event branch of cancellation, `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { ... })` discards the returned promises, so the function reaches `await Promise.all(prismaPromises.concat(apiDeletes))` and returns the HTTP response before the per-credential calendar deletions have finished. The outer `try/catch` does not cover this loop either. Because `getCalendar` is now async, this serializes per-credential dynamic chunk loads behind an unawaited loop, widening the race window. Replace with a proper loop that collects promises and lets `Promise.all` drive completion."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 466,
+   "severity": "high",
+   "category": "bug",
+   "title": "Resolved value pushed to apiDeletes instead of the promise",
+   "body": "Inside the unawaited forEach above, `const deletedEvent = await calendar?.deleteEvent(uid, evt, externalCalendarId); apiDeletes.push(deletedEvent);` pushes the already-resolved value (or `undefined`) into `apiDeletes` rather than the pending Promise. The later `await Promise.all(prismaPromises.concat(apiDeletes))` therefore never waits for those deleteEvent calls in the recurring-event path (and even if forEach were fixed to await, the push would still capture resolved values). Push the Promise returned by `deleteEvent` directly, i.e. `apiDeletes.push(calendar?.deleteEvent(uid, evt, externalCalendarId) as Promise<unknown> | undefined);` and let `Promise.all` await it."
+  },
+  {
+   "index": 5,
+   "file": "packages/core/videoClient.ts",
+   "line": 21,
+   "severity": "medium",
+   "category": "perf",
+   "title": "getVideoAdapters serializes dynamic imports",
+   "body": "The previous `reduce` implementation ran the entire synchronous mapping in one pass; the new implementation uses a sequential `for (const cred of withCredentials) { const app = await appStore[...]; ... }`, so every credential now blocks the next on its dynamic import + module evaluation. With multiple video credentials attached (Zoom, Daily, Whereby, etc.) this turns into N sequential async chunks where it used to be one synchronous pass and could be N parallel `Promise.all(creds.map(...))` calls. Replace with `Promise.all(withCredentials.map(...))` to keep the parallel cost similar to before."
+  },
+  {
+   "index": 6,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 23,
+   "severity": "medium",
+   "category": "api",
+   "title": "getCalendarCredentials is sync but leaks Promise<Calendar> in its result",
+   "body": "`getCalendarCredentials` was kept synchronous, yet inside it `const calendar = getCalendar(credential);` now returns `Promise<Calendar | null>` because `getCalendar` became async. The returned objects therefore carry `calendar: Promise<Calendar | null>`, but the function signature does not advertise that and callers must remember to `await item.calendar` (which is exactly what the new `getConnectedCalendars` body now has to do). Either make `getCalendarCredentials` async and `await getCalendar`, or stop calling `getCalendar` inside it and only return `{ integration, credential }`, leaving adapter construction to the caller. As written, the public type lies about its return value and any future caller that treats `item.calendar` as a sync `Calendar` will get a rejected promise."
+  },
+  {
+   "index": 7,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 277,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Awaiting already-resolved apiDeletes entries in seat cancellation",
+   "body": "After `Promise.all(integrationsToDelete).then(async () => { ... })` resolves, the code schedules `prisma.booking.update` for last-attendee seat cancellation, but `integrationsToDelete` was built by `await getCalendar(credential); integrationsToDelete.push(calendar?.deleteEvent(...))`. Since `deleteEvent` is not awaited here, the pushed value is the unresolved Promise, which is correct. However this pattern is mixed with the broken recurring-event branch (see the other findings on lines 460/466), and the inconsistency makes the file easy to misread. After fixing the recurring branch, ensure the whole file consistently pushes pending Promises into the arrays that `Promise.all` later drains, instead of awaiting-then-pushing."
+  }
+ ],
+ "finding_count": 8
+}

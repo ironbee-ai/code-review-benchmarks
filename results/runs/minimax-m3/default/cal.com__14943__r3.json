@@ -1,0 +1,138 @@
+{
+ "run_id": "minimax-m3__default__cal.com__14943__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:05:18Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18491,
+    "output": 7575,
+    "reasoning": 6419,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01464498,
+   "latency_ms": 49450,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4803,
+   "raw_usage": {
+    "completion_tokens": 7575,
+    "prompt_tokens": 18619,
+    "total_tokens": 26194,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 6419,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01464498,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01464498,
+     "upstream_inference_prompt_cost": 0.00555498,
+     "upstream_inference_completions_cost": 0.00909
+    }
+   },
+   "started_at": "2026-10-18T12:05:18Z",
+   "first_chunk_ms": 1599,
+   "first_text_ms": 42970,
+   "response_id": "gen-1792325119-i1ipGFsqqhxUWbIry8it",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18491,
+  "output": 7575,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 6419
+ },
+ "cost_reported": 0.01464498,
+ "latency_ms": 49450,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"retryCount delete branch is not scoped to SMS method\", \"body\": \"In the new OR clause of the deleteMany, the `retryCount > 1` branch has no `method: WorkflowMethods.SMS` filter, while the sibling branch is filtered to SMS. The original deleteMany only ever deleted SMS reminders. retryCount is currently only ever incremented in this SMS handler, so today no non-SMS row can reach retryCount > 1, but the schema places `retryCount` on the shared `WorkflowReminder` model (used by EMAIL/SMS/WHATSAPP). If a future change (or manual DB edit) sets retryCount > 1 on an EMAIL or WHATSAPP reminder, this cron will silently delete it. The OR branch should be wrapped under the same `method: WorkflowMethods.SMS` predicate as the other branch, e.g. `method: WorkflowMethods.SMS, scheduledDate: { lte: now }` OR `method: WorkflowMethods.SMS, retryCount: { gt: 1 }`, or expressed as `method: SMS AND (scheduledDate <= now OR retryCount > 1)`.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 28, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Stale comment above deleteMany\", \"body\": \"The comment `//delete all scheduled sms reminders where scheduled date is past current date` no longer describes the deleteMany. The query now also deletes reminders with `retryCount > 1`, and after the OR rewrite it deletes any reminder (regardless of method) that matches either branch. The comment should be updated to reflect the new semantics, otherwise future readers will misunderstand the cleanup behavior.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 67, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests cover the new retry/delete behavior\", \"body\": \"The PR introduces a meaningful behavior change in a cron-handler that mutates the database on every run (increment of retryCount on Twilio failure and on throw, plus deletion of reminders with retryCount > 1). There are no tests in the diff covering: (a) retryCount increments on a falsy return from twilio.scheduleSMS, (b) retryCount increments inside the catch block, (c) deleteMany removing reminders with retryCount > 1, (d) a reminder that fails twice being deleted on the subsequent run. Without tests, regressions in retry semantics (e.g. off-by-one in the threshold, double-increment under retry, or accidentally deleting scheduled rows) would go unnoticed.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Retries continue past scheduledDate once retryCount is < 2\", \"body\": \"The findMany filter is `scheduledDate: { lte: dayjs().add(7, 'day').toISOString() }`, which still includes reminders whose scheduledDate is in the past. Combined with the new retry logic, a reminder that fails twice will sit in the DB with retryCount=2 and scheduledDate in the past, then be deleted on the next cron run by the `retryCount > 1` branch. However, on the second cron run, after the first failure (retryCount=1) the reminder with a past-dated scheduledDate is not deleted by either branch (date <= now but method=SMS only matches the first OR branch, which it does \u2014 actually the date-past branch matches, so this is fine). The real concern is that between the first and second failure, the reminder whose date has passed continues to be passed to twilio.scheduleSMS in subsequent cron runs even though Twilio will obviously reject a send in the past, only to fail again and waste the second retry budget. The findMany should either skip past-dated unscheduled rows or the deleteMany should also delete past-dated + retryCount > 0 rows so a wasted retry isn't spent on an already-elapsed reminder.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 67, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"retryCount update is non-atomic; parallel runs double-count\", \"body\": \"The handler reads `reminder.retryCount` from the findMany result and writes `reminder.retryCount + 1` in a separate update. If two cron invocations (or this handler and any other process touching the same row) overlap, both will read the same `retryCount` value and both will write `value + 1`, undercounting retries by 1. This matters here because the deletion threshold (`gt: 1`) is tight \u2014 a single lost increment means a perpetually-failing reminder is retried indefinitely instead of being deleted after 2 attempts. The update should use a conditional increment (`{ retryCount: { increment: 1 } }`) or be guarded by a `where: { id, retryCount: reminder.retryCount }` clause so concurrent writers can't clobber each other.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "low",
+   "category": "bug",
+   "title": "retryCount delete branch is not scoped to SMS method",
+   "body": "In the new OR clause of the deleteMany, the `retryCount > 1` branch has no `method: WorkflowMethods.SMS` filter, while the sibling branch is filtered to SMS. The original deleteMany only ever deleted SMS reminders. retryCount is currently only ever incremented in this SMS handler, so today no non-SMS row can reach retryCount > 1, but the schema places `retryCount` on the shared `WorkflowReminder` model (used by EMAIL/SMS/WHATSAPP). If a future change (or manual DB edit) sets retryCount > 1 on an EMAIL or WHATSAPP reminder, this cron will silently delete it. The OR branch should be wrapped under the same `method: WorkflowMethods.SMS` predicate as the other branch, e.g. `method: WorkflowMethods.SMS, scheduledDate: { lte: now }` OR `method: WorkflowMethods.SMS, retryCount: { gt: 1 }`, or expressed as `method: SMS AND (scheduledDate <= now OR retryCount > 1)`."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Stale comment above deleteMany",
+   "body": "The comment `//delete all scheduled sms reminders where scheduled date is past current date` no longer describes the deleteMany. The query now also deletes reminders with `retryCount > 1`, and after the OR rewrite it deletes any reminder (regardless of method) that matches either branch. The comment should be updated to reflect the new semantics, otherwise future readers will misunderstand the cleanup behavior."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 67,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests cover the new retry/delete behavior",
+   "body": "The PR introduces a meaningful behavior change in a cron-handler that mutates the database on every run (increment of retryCount on Twilio failure and on throw, plus deletion of reminders with retryCount > 1). There are no tests in the diff covering: (a) retryCount increments on a falsy return from twilio.scheduleSMS, (b) retryCount increments inside the catch block, (c) deleteMany removing reminders with retryCount > 1, (d) a reminder that fails twice being deleted on the subsequent run. Without tests, regressions in retry semantics (e.g. off-by-one in the threshold, double-increment under retry, or accidentally deleting scheduled rows) would go unnoticed."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "medium",
+   "category": "data",
+   "title": "Retries continue past scheduledDate once retryCount is < 2",
+   "body": "The findMany filter is `scheduledDate: { lte: dayjs().add(7, 'day').toISOString() }`, which still includes reminders whose scheduledDate is in the past. Combined with the new retry logic, a reminder that fails twice will sit in the DB with retryCount=2 and scheduledDate in the past, then be deleted on the next cron run by the `retryCount > 1` branch. However, on the second cron run, after the first failure (retryCount=1) the reminder with a past-dated scheduledDate is not deleted by either branch (date <= now but method=SMS only matches the first OR branch, which it does \u2014 actually the date-past branch matches, so this is fine). The real concern is that between the first and second failure, the reminder whose date has passed continues to be passed to twilio.scheduleSMS in subsequent cron runs even though Twilio will obviously reject a send in the past, only to fail again and waste the second retry budget. The findMany should either skip past-dated unscheduled rows or the deleteMany should also delete past-dated + retryCount > 0 rows so a wasted retry isn't spent on an already-elapsed reminder."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 67,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "retryCount update is non-atomic; parallel runs double-count",
+   "body": "The handler reads `reminder.retryCount` from the findMany result and writes `reminder.retryCount + 1` in a separate update. If two cron invocations (or this handler and any other process touching the same row) overlap, both will read the same `retryCount` value and both will write `value + 1`, undercounting retries by 1. This matters here because the deletion threshold (`gt: 1`) is tight \u2014 a single lost increment means a perpetually-failing reminder is retried indefinitely instead of being deleted after 2 attempts. The update should use a conditional increment (`{ retryCount: { increment: 1 } }`) or be guarded by a `where: { id, retryCount: reminder.retryCount }` clause so concurrent writers can't clobber each other."
+  }
+ ],
+ "finding_count": 5
+}

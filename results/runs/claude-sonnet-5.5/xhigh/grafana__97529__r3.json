@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-sonnet-5.5__xhigh__grafana__97529__r3",
+ "model_id": "claude-sonnet-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:48:16Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55078,
+    "output": 7144,
+    "reasoning": 5091,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 74485,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5544,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55078,
+    "output_tokens": 7144,
+    "output_tokens_details": {
+     "thinking_tokens": 5091
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:48:16Z",
+   "first_chunk_ms": 22125,
+   "first_text_ms": 60938,
+   "response_id": "msg_bdrk_efy4avq7c3ves3m3o3gz7cpccermn7vtbmafgglkecll6rmcqmfq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55078,
+  "output": 7144,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5091
+ },
+ "cost_reported": null,
+ "latency_ms": 74485,
+ "served_model": "claude-sonnet-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 144, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates b.cache without holding cacheMu; new init log call makes the race reachable\", \"body\": \"`TotalDocs` ranges over `b.cache` without taking `cacheMu.RLock()`, while `BuildIndex` writes `b.cache[key]` under `cacheMu.Lock()`. This PR adds `s.search.TotalDocs()` to the 'search index initialized' log line in `searchSupport.init`. That call runs right after the goroutine consuming `WatchWriteEvents` has been started. `handleEvent` can call `getOrCreateIndex`, then `build`, then `BuildIndex` and write the map at the same moment. Go treats concurrent map iteration and write as an unrecoverable fatal error, so the process can crash at startup. Because the lock around the whole of `BuildIndex` was removed, builds now overlap more, which widens the window. `TotalDocs` should take `cacheMu.RLock()`.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 189, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on shared `err` and `totalBatchesIndexed` in errgroup workers\", \"body\": \"Inside `group.Go`, each worker does `totalBatchesIndexed++` and `_, _, err = s.build(...)`. Both write to variables shared by all workers (the outer `err`, which is also assigned from `GetResourceStats`) with no synchronization. Previously `BuildIndex` was serialized by the bleve-wide mutex, which hid this. Now that the lock is removed so builds run truly in parallel (the stated goal), the races are real. `go test -race` would flag them. They can also lose a build error: one worker's `err` can be overwritten by another's `nil` result, and `group.Wait()` returns the goroutine's returned value, not the shared one. Use a local `err :=` per worker and an `atomic.Int64` (or mutex) for the counter.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Unlocked BuildIndex allows concurrent duplicate builds and silently overwrites/leaks the previous index\", \"body\": \"With the whole-function lock gone, two concurrent `getOrCreateIndex` calls for the same key (for example a search request and a watch event) both see `GetIndex == nil` and both run a full build. The last writer replaces `b.cache[key]`, and the replaced `bleveIndex` is never closed, so bleve resources are leaked. For file-backed indexes the second `bleve.New(dir, ...)` fails because the directory already exists, so the caller gets an error. The existing TODO in `getOrCreateIndex` acknowledges there is no per-key dedupe. Removing the lock without adding per-key singleflight or a recheck-under-lock before storing makes this worse.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Integration test disabled for postgres instead of fixing it\", \"body\": \"The test is skipped for postgres with 'not working with postgres in Drone'. It is the integration test that starts the storage-server module, which is exactly the path this PR changes by running `Init` (lifecycle, DB init, search index) eagerly in `NewResourceServer`. Skipping it for a whole database backend hides a possible regression from the eager-init change, and nothing tracks it beyond a TODO. The PR also adds no test of its own for eager initialization (init failure propagating from `NewResourceServer`, or no first-request init).\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"NewResourceServer does not clean up when eager Init fails\", \"body\": \"If `s.Init(ctx)` fails, `NewResourceServer` returns `nil, err` without calling `s.cancel()` or `lifecycle.Stop`. The cancelable context, and anything already started in `Init`, stays alive: the SQL backend and its DB handle from `lifecycle.Init`, and any goroutines started by `search.init` or the watcher. Init can partially succeed, for example when the search init starts its event goroutine and the watcher then fails. The caller has no handle to stop it. Cancel the context (and stop the lifecycle) on the error path.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 321, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Stop() no longer gates requests because the per-RPC Init checks were removed\", \"body\": \"`Stop` sets `s.initErr` to 'service is stopping/stopped'. That error used to reach clients because every RPC called `s.Init(ctx)` and returned `initErr` from the `sync.Once`. With all those calls removed, nothing reads `initErr` after construction. Requests arriving after `Stop` now run against a stopped backend and a cancelled watcher context instead of getting a clear 'service is stopped' error. Either keep a cheap stopped/initErr check in the handlers or drop the dead state.\"}, {\"file\": \"pkg/storage/unified/sql/backend.go\", \"line\": 158, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Trace-context propagation fix is incomplete\", \"body\": \"The PR is described as fixing trace propagation by passing span contexts down, but only `GetResourceStats` (plus search `init`/`build`) was changed. `WriteEvent` (`_, span := b.tracer.Start(ctx, ...)`), `ReadResource` and `ListIterator` here, and `bleveBackend.BuildIndex` in bleve.go, still discard the context returned by `Start`. Child spans created afterwards (`create`, `update`, `listLatest`, and so on) are therefore parented to the caller's span rather than to these spans, which leaves broken trace hierarchies.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 144,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates b.cache without holding cacheMu; new init log call makes the race reachable",
+   "body": "`TotalDocs` ranges over `b.cache` without taking `cacheMu.RLock()`, while `BuildIndex` writes `b.cache[key]` under `cacheMu.Lock()`. This PR adds `s.search.TotalDocs()` to the 'search index initialized' log line in `searchSupport.init`. That call runs right after the goroutine consuming `WatchWriteEvents` has been started. `handleEvent` can call `getOrCreateIndex`, then `build`, then `BuildIndex` and write the map at the same moment. Go treats concurrent map iteration and write as an unrecoverable fatal error, so the process can crash at startup. Because the lock around the whole of `BuildIndex` was removed, builds now overlap more, which widens the window. `TotalDocs` should take `cacheMu.RLock()`."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on shared `err` and `totalBatchesIndexed` in errgroup workers",
+   "body": "Inside `group.Go`, each worker does `totalBatchesIndexed++` and `_, _, err = s.build(...)`. Both write to variables shared by all workers (the outer `err`, which is also assigned from `GetResourceStats`) with no synchronization. Previously `BuildIndex` was serialized by the bleve-wide mutex, which hid this. Now that the lock is removed so builds run truly in parallel (the stated goal), the races are real. `go test -race` would flag them. They can also lose a build error: one worker's `err` can be overwritten by another's `nil` result, and `group.Wait()` returns the goroutine's returned value, not the shared one. Use a local `err :=` per worker and an `atomic.Int64` (or mutex) for the counter."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Unlocked BuildIndex allows concurrent duplicate builds and silently overwrites/leaks the previous index",
+   "body": "With the whole-function lock gone, two concurrent `getOrCreateIndex` calls for the same key (for example a search request and a watch event) both see `GetIndex == nil` and both run a full build. The last writer replaces `b.cache[key]`, and the replaced `bleveIndex` is never closed, so bleve resources are leaked. For file-backed indexes the second `bleve.New(dir, ...)` fails because the directory already exists, so the caller gets an error. The existing TODO in `getOrCreateIndex` acknowledges there is no per-key dedupe. Removing the lock without adding per-key singleflight or a recheck-under-lock before storing makes this worse."
+  },
+  {
+   "index": 3,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Integration test disabled for postgres instead of fixing it",
+   "body": "The test is skipped for postgres with 'not working with postgres in Drone'. It is the integration test that starts the storage-server module, which is exactly the path this PR changes by running `Init` (lifecycle, DB init, search index) eagerly in `NewResourceServer`. Skipping it for a whole database backend hides a possible regression from the eager-init change, and nothing tracks it beyond a TODO. The PR also adds no test of its own for eager initialization (init failure propagating from `NewResourceServer`, or no first-request init)."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "low",
+   "category": "bug",
+   "title": "NewResourceServer does not clean up when eager Init fails",
+   "body": "If `s.Init(ctx)` fails, `NewResourceServer` returns `nil, err` without calling `s.cancel()` or `lifecycle.Stop`. The cancelable context, and anything already started in `Init`, stays alive: the SQL backend and its DB handle from `lifecycle.Init`, and any goroutines started by `search.init` or the watcher. Init can partially succeed, for example when the search init starts its event goroutine and the watcher then fails. The caller has no handle to stop it. Cancel the context (and stop the lifecycle) on the error path."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 321,
+   "severity": "low",
+   "category": "bug",
+   "title": "Stop() no longer gates requests because the per-RPC Init checks were removed",
+   "body": "`Stop` sets `s.initErr` to 'service is stopping/stopped'. That error used to reach clients because every RPC called `s.Init(ctx)` and returned `initErr` from the `sync.Once`. With all those calls removed, nothing reads `initErr` after construction. Requests arriving after `Stop` now run against a stopped backend and a cancelled watcher context instead of getting a clear 'service is stopped' error. Either keep a cheap stopped/initErr check in the handlers or drop the dead state."
+  },
+  {
+   "index": 6,
+   "file": "pkg/storage/unified/sql/backend.go",
+   "line": 158,
+   "severity": "low",
+   "category": "bug",
+   "title": "Trace-context propagation fix is incomplete",
+   "body": "The PR is described as fixing trace propagation by passing span contexts down, but only `GetResourceStats` (plus search `init`/`build`) was changed. `WriteEvent` (`_, span := b.tracer.Start(ctx, ...)`), `ReadResource` and `ListIterator` here, and `bleveBackend.BuildIndex` in bleve.go, still discard the context returned by `Start`. Child spans created afterwards (`create`, `update`, `listLatest`, and so on) are therefore parented to the caller's span rather than to these spans, which leaves broken trace hierarchies."
+  }
+ ],
+ "finding_count": 7
+}

@@ -1,0 +1,138 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__grafana__97529__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T22:26:01Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55076,
+    "output": 22343,
+    "reasoning": 20184,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 235844,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6247,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55076,
+    "output_tokens": 22343,
+    "output_tokens_details": {
+     "thinking_tokens": 20184
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:26:01Z",
+   "first_chunk_ms": 2233,
+   "first_text_ms": 215227,
+   "response_id": "msg_bdrk_bfzwjqyogip53jkwqn7mpqzqvpthuqmobu3gfhtb6sxszfhu4poq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55076,
+  "output": 22343,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 20184
+ },
+ "cost_reported": null,
+ "latency_ms": 235844,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"high\", \"category\": \"api\", \"title\": \"NewResourceServer now blocks synchronously on full index build\", \"body\": \"NewResourceServer now calls s.Init(ctx) before returning, and Init() runs the full search index build for every namespace (searchSupport.init). Previously NewResourceServer returned immediately and Init() was deferred to the first gRPC call. Index building can take a long time (this is exactly the problem the PR is trying to avoid inside gRPC request contexts), so now the constructor itself can block for an arbitrarily long time, and will fail outright (returning nil, err) if anything in Init fails. Any caller of NewResourceServer that expects a cheap/fast constructor (process startup with readiness/liveness timeouts, module startup sequencing, tests) can now time out or fail to start. The PR description itself asks 'what could this break?' which indicates this tradeoff was not fully evaluated; no caller-side timeout/async handling was added to accommodate the new blocking behavior.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"BuildIndex no longer serializes concurrent builds for the same key\", \"body\": \"The previous implementation locked cacheMu for the entire BuildIndex call, which (while slow) also serialized concurrent build attempts for the same NamespacedResource key. Now the lock only protects the final `b.cache[key] = idx` write. getOrCreateIndex() in search.go has no locking either (it just checks GetIndex() for nil and calls build() if so), so two concurrent calls for the same cold key (e.g. two simultaneous Search requests, or a Search racing with a watch event) can both perform a full BuildIndex, each creating its own bleve.Index (including on-disk files for file-backed indexes), and whichever finishes last silently overwrites b.cache[key]; the loser's index/resources are never closed or cleaned up, leaking file handles/disk usage and duplicating work.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 147, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TotalDocs() reads cache map without holding cacheMu, racing with BuildIndex writes\", \"body\": \"TotalDocs() iterates over b.cache with `for _, v := range b.cache` without acquiring cacheMu (neither RLock nor Lock), while BuildIndex now writes to the same map under cacheMu.Lock() after doing the (now unlocked) expensive build work concurrently. Since BuildIndex calls can run concurrently for different keys (that is the whole point of this PR's locking change) and TotalDocs can be invoked at the same time (e.g. the search.go init() logging call right after group.Wait(), or any external caller/metrics path), this is an unsynchronized concurrent map read/write. Go maps are not safe for concurrent read/write; this can produce a 'fatal error: concurrent map read and map write' crash, not just a benign race. GetIndex already correctly uses RLock for cache reads; TotalDocs should do the same.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Parallel index build goroutines race on shared err and counter variables\", \"body\": \"In searchSupport.init(), the errgroup loop spawns one goroutine per namespace (group.SetLimit(s.initWorkers) allows real concurrency) and each goroutine does `totalBatchesIndexed++` and `_, _, err = s.build(...); return err`, where both `err` and `totalBatchesIndexed` are variables captured from the enclosing scope and written concurrently by multiple goroutines without any mutex/atomic. This is a data race: concurrent non-atomic increments of totalBatchesIndexed can lose updates, and concurrent writes to the shared `err` mean a goroutine's `return err` can read a value written by a different goroutine between assignment and return, causing errgroup to receive an incorrect per-goroutine result (e.g. returning another goroutine's error for a successful build, or masking a real failure with nil from a later successful goroutine). This can cause init() to incorrectly fail startup, or silently swallow a failed index build. Each goroutine should use its own local err variable and totalBatchesIndexed should be an atomic counter or protected by a mutex.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Postgres integration test skipped instead of fixed, masking potential regression\", \"body\": \"The test now unconditionally skips when dbType == 'postgres' with the comment 'test not working with postgres in Drone. Works locally.' This removes CI coverage of the storage-server module startup path for Postgres, one of the supported production databases, right in the same PR that changes resource-server initialization to run synchronously and eagerly at construction time. Skipping rather than diagnosing/fixing risks hiding a real regression introduced by the eager-Init change (e.g., startup taking too long or behaving differently under Postgres in CI) and leaves no coverage to catch future regressions on that backend until the TODO is addressed.\"}, {\"file\": \"pkg/storage/unified/sql/backend.go\", \"line\": 353, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Trace-context propagation fix applied inconsistently within the same file\", \"body\": \"The PR fixes span propagation in GetResourceStats by reassigning `ctx, span := b.tracer.Start(ctx, ...)` so the span is attached to the context used by the subsequent DB call. However, sibling methods in the same file with the identical bug were left unfixed, e.g. ReadResource (line 353: `_, span := b.tracer.Start(ctx, tracePrefix+\\\".Read\\\")`, followed by `b.db.WithTx(ctx, ...)` using the original, span-less ctx), WriteEvent (line ~158), and ListIterator (line ~388). Since the PR's stated goal is 'fixes trace propagation by passing span contexts down', leaving these other call sites with the same discarded-context pattern means their DB operations still won't appear nested under their respective spans in traces, contradicting the PR's intent and leaving inconsistent tracing behavior in the same backend file.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "high",
+   "category": "api",
+   "title": "NewResourceServer now blocks synchronously on full index build",
+   "body": "NewResourceServer now calls s.Init(ctx) before returning, and Init() runs the full search index build for every namespace (searchSupport.init). Previously NewResourceServer returned immediately and Init() was deferred to the first gRPC call. Index building can take a long time (this is exactly the problem the PR is trying to avoid inside gRPC request contexts), so now the constructor itself can block for an arbitrarily long time, and will fail outright (returning nil, err) if anything in Init fails. Any caller of NewResourceServer that expects a cheap/fast constructor (process startup with readiness/liveness timeouts, module startup sequencing, tests) can now time out or fail to start. The PR description itself asks 'what could this break?' which indicates this tradeoff was not fully evaluated; no caller-side timeout/async handling was added to accommodate the new blocking behavior."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "BuildIndex no longer serializes concurrent builds for the same key",
+   "body": "The previous implementation locked cacheMu for the entire BuildIndex call, which (while slow) also serialized concurrent build attempts for the same NamespacedResource key. Now the lock only protects the final `b.cache[key] = idx` write. getOrCreateIndex() in search.go has no locking either (it just checks GetIndex() for nil and calls build() if so), so two concurrent calls for the same cold key (e.g. two simultaneous Search requests, or a Search racing with a watch event) can both perform a full BuildIndex, each creating its own bleve.Index (including on-disk files for file-backed indexes), and whichever finishes last silently overwrites b.cache[key]; the loser's index/resources are never closed or cleaned up, leaking file handles/disk usage and duplicating work."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 147,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TotalDocs() reads cache map without holding cacheMu, racing with BuildIndex writes",
+   "body": "TotalDocs() iterates over b.cache with `for _, v := range b.cache` without acquiring cacheMu (neither RLock nor Lock), while BuildIndex now writes to the same map under cacheMu.Lock() after doing the (now unlocked) expensive build work concurrently. Since BuildIndex calls can run concurrently for different keys (that is the whole point of this PR's locking change) and TotalDocs can be invoked at the same time (e.g. the search.go init() logging call right after group.Wait(), or any external caller/metrics path), this is an unsynchronized concurrent map read/write. Go maps are not safe for concurrent read/write; this can produce a 'fatal error: concurrent map read and map write' crash, not just a benign race. GetIndex already correctly uses RLock for cache reads; TotalDocs should do the same."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Parallel index build goroutines race on shared err and counter variables",
+   "body": "In searchSupport.init(), the errgroup loop spawns one goroutine per namespace (group.SetLimit(s.initWorkers) allows real concurrency) and each goroutine does `totalBatchesIndexed++` and `_, _, err = s.build(...); return err`, where both `err` and `totalBatchesIndexed` are variables captured from the enclosing scope and written concurrently by multiple goroutines without any mutex/atomic. This is a data race: concurrent non-atomic increments of totalBatchesIndexed can lose updates, and concurrent writes to the shared `err` mean a goroutine's `return err` can read a value written by a different goroutine between assignment and return, causing errgroup to receive an incorrect per-goroutine result (e.g. returning another goroutine's error for a successful build, or masking a real failure with nil from a later successful goroutine). This can cause init() to incorrectly fail startup, or silently swallow a failed index build. Each goroutine should use its own local err variable and totalBatchesIndexed should be an atomic counter or protected by a mutex."
+  },
+  {
+   "index": 4,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Postgres integration test skipped instead of fixed, masking potential regression",
+   "body": "The test now unconditionally skips when dbType == 'postgres' with the comment 'test not working with postgres in Drone. Works locally.' This removes CI coverage of the storage-server module startup path for Postgres, one of the supported production databases, right in the same PR that changes resource-server initialization to run synchronously and eagerly at construction time. Skipping rather than diagnosing/fixing risks hiding a real regression introduced by the eager-Init change (e.g., startup taking too long or behaving differently under Postgres in CI) and leaves no coverage to catch future regressions on that backend until the TODO is addressed."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/sql/backend.go",
+   "line": 353,
+   "severity": "low",
+   "category": "bug",
+   "title": "Trace-context propagation fix applied inconsistently within the same file",
+   "body": "The PR fixes span propagation in GetResourceStats by reassigning `ctx, span := b.tracer.Start(ctx, ...)` so the span is attached to the context used by the subsequent DB call. However, sibling methods in the same file with the identical bug were left unfixed, e.g. ReadResource (line 353: `_, span := b.tracer.Start(ctx, tracePrefix+\".Read\")`, followed by `b.db.WithTx(ctx, ...)` using the original, span-less ctx), WriteEvent (line ~158), and ListIterator (line ~388). Since the PR's stated goal is 'fixes trace propagation by passing span contexts down', leaving these other call sites with the same discarded-context pattern means their DB operations still won't appear nested under their respective spans in traces, contradicting the PR's intent and leaving inconsistent tracing behavior in the same backend file."
+  }
+ ],
+ "finding_count": 6
+}

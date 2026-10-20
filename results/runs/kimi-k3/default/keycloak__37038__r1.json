@@ -1,0 +1,119 @@
+{
+ "run_id": "kimi-k3__default__keycloak__37038__r1",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "keycloak__37038",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/37038",
+ "repeat": 1,
+ "started_at": "2026-10-17T13:16:20Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 304183,
+  "sha": "27305572236283fe",
+  "patch_only": [
+   "server-spi-private/src/main/java/org/keycloak/models/utils/ModelToRepresentation.java"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70104,
+    "output": 23279,
+    "reasoning": 22040,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 654560,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5767,
+   "raw_usage": {
+    "completion_tokens": 23279,
+    "prompt_tokens": 70104,
+    "total_tokens": 93383,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 22040,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T13:16:20Z",
+   "first_chunk_ms": 9476,
+   "first_text_ms": 628721,
+   "response_id": "chatcmpl-62gj4ob7noivh6vjmcidjufgmpupgymilrmizopysgnn445jonnq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70104,
+  "output": 23279,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 22040
+ },
+ "cost_reported": null,
+ "latency_ms": 654560,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 123, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"getGroupIdsWithViewPermission collects authz resource IDs instead of group IDs and never evaluates per-group permissions\", \"body\": \"In getGroupIdsWithViewPermission (lines 121-125) the findByType callback calls hasPermission(groupResource.getId(), ...) and adds groupResource.getId() to the granted set. Both are wrong. hasPermission looks resources up by *name* (resourceStore.findByName(server, groupId)), and for the Groups resource type each resource is named with the group's ID (see AdminPermissionsSchema.resolveGroup/getOrCreateResource), so passing the authz resource ID never matches and every check silently falls back to the 'all-groups' resource \u2014 the per-group VIEW_MEMBERS/MANAGE_MEMBERS permissions this method is meant to collect are never actually evaluated. Additionally, the returned set is documented and consumed as group IDs: UsersResource and BruteForceUsersResource put it into the UserModel.GROUPS session attribute and UsersResource.getUsersCount passes it to session.users().getUsersCount(realm, ..., groupIds), all of which compare against real group IDs, so an authz resource ID matches no group. Consequences: (a) an admin with an all-groups view-members/manage-members permission gets a non-empty set containing a bogus ID, so user search returns zero users even though they can view members of every group; (b) an admin with only per-group view-members permissions gets an empty set, so no DB-level group restriction is applied \u2014 users/count returns the count of ALL users instead of only visible ones, and user-search pagination is applied at the database before permission filtering. The method should evaluate the resource it already has (as V1 GroupPermissions does) and collect groupResource.getName(), which holds the group ID.\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 70, \"severity\": \"high\", \"category\": \"security\", \"title\": \"canManage() returns true for view-only permission, allowing group creation\", \"body\": \"GroupPermissionsV2.canManage() returns hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE), i.e. it is satisfied by the 'view' scope on the Groups resource type. canManage()/requireManage() is what guards GroupsResource.addTopLevelGroup (POST /admin/realms/{realm}/groups), so an admin who was granted only view permission on groups can create top-level groups \u2014 a privilege escalation. It is also inconsistent with canManage(GroupModel) in the same class (MANAGE scope only), with UserPermissionsV2.canManage() (MANAGE only), and it inverts the scope hierarchy used everywhere else in this code (MANAGE implies VIEW, not the reverse). The javadoc added to GroupPermissionEvaluator.canManage() documents the same incorrect contract ('permission to VIEW or MANAGE groups'). Only the MANAGE scope should satisfy canManage().\"}, {\"file\": \"services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java\", \"line\": 147, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"No upgrade path for existing admin-permissions clients: missing 'Groups' resource/scopes cause NPE and 500s\", \"body\": \"AdminPermissionsSchema.init() creates the scopes and the per-type 'all resources' resources only when the realm has no admin-permissions client yet (it returns immediately when realm.getAdminPermissionsClient() != null), and nothing in this PR backfills the new 'Groups' resource or the manage-membership/manage-members/view-members scopes for realms that already enabled admin permissions (ADMIN_FINE_GRAINED_AUTHZ_V2) before this change. For such realms every V2 group permission check fails: GroupPermissionsV2.hasPermission (lines 144-147) falls back to AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, \\\"Groups\\\"), which returns null because that resource was never created, and the next line calls policyStore.findByResource(server, null), throwing a NullPointerException \u2014 turning all group admin endpoints into 500s. Likewise AdminPermissionsSchema.getOrCreateResource throws ModelException(\\\"No scopes found.\\\") when a group permission is created, because the new scopes do not exist in the store. A migration/initialization path that adds the new scopes and the 'Groups' type resource to existing admin-permissions clients (plus a null guard before findByResource) is needed.\"}, {\"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/GroupResourceTypeEvaluationTest.java\", \"line\": 103, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Tests never exercise the DB-level group filter or users/count for group-scoped admins\", \"body\": \"The new GroupResourceTypeEvaluationTest never exercises the database-level group filter that UsersResource/BruteForceUsersResource install via the UserModel.GROUPS session attribute populated from auth.groups().getGroupIdsWithViewPermission(). In the tested scenarios (per-group VIEW_MEMBERS / MANAGE_MEMBERS) that set comes back empty, so searchForUserStream runs unfiltered and the assertions pass only because of the in-memory usersEvaluator::canView post-filter \u2014 which is why the resource-ID bug in GroupPermissionsV2.getGroupIdsWithViewPermission slips through. There is also no test of users/count for a group-scoped admin (currently returns the count of all users) and no test of user search for an admin holding an all-groups view-members/manage-members permission (currently returns zero users). Adding tests for filtered counts and for the all-groups member-visibility scenario would catch this regression.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 123,
+   "severity": "high",
+   "category": "bug",
+   "title": "getGroupIdsWithViewPermission collects authz resource IDs instead of group IDs and never evaluates per-group permissions",
+   "body": "In getGroupIdsWithViewPermission (lines 121-125) the findByType callback calls hasPermission(groupResource.getId(), ...) and adds groupResource.getId() to the granted set. Both are wrong. hasPermission looks resources up by *name* (resourceStore.findByName(server, groupId)), and for the Groups resource type each resource is named with the group's ID (see AdminPermissionsSchema.resolveGroup/getOrCreateResource), so passing the authz resource ID never matches and every check silently falls back to the 'all-groups' resource \u2014 the per-group VIEW_MEMBERS/MANAGE_MEMBERS permissions this method is meant to collect are never actually evaluated. Additionally, the returned set is documented and consumed as group IDs: UsersResource and BruteForceUsersResource put it into the UserModel.GROUPS session attribute and UsersResource.getUsersCount passes it to session.users().getUsersCount(realm, ..., groupIds), all of which compare against real group IDs, so an authz resource ID matches no group. Consequences: (a) an admin with an all-groups view-members/manage-members permission gets a non-empty set containing a bogus ID, so user search returns zero users even though they can view members of every group; (b) an admin with only per-group view-members permissions gets an empty set, so no DB-level group restriction is applied \u2014 users/count returns the count of ALL users instead of only visible ones, and user-search pagination is applied at the database before permission filtering. The method should evaluate the resource it already has (as V1 GroupPermissions does) and collect groupResource.getName(), which holds the group ID."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 70,
+   "severity": "high",
+   "category": "security",
+   "title": "canManage() returns true for view-only permission, allowing group creation",
+   "body": "GroupPermissionsV2.canManage() returns hasPermission(null, AdminPermissionsSchema.VIEW, AdminPermissionsSchema.MANAGE), i.e. it is satisfied by the 'view' scope on the Groups resource type. canManage()/requireManage() is what guards GroupsResource.addTopLevelGroup (POST /admin/realms/{realm}/groups), so an admin who was granted only view permission on groups can create top-level groups \u2014 a privilege escalation. It is also inconsistent with canManage(GroupModel) in the same class (MANAGE scope only), with UserPermissionsV2.canManage() (MANAGE only), and it inverts the scope hierarchy used everywhere else in this code (MANAGE implies VIEW, not the reverse). The javadoc added to GroupPermissionEvaluator.canManage() documents the same incorrect contract ('permission to VIEW or MANAGE groups'). Only the MANAGE scope should satisfy canManage()."
+  },
+  {
+   "index": 2,
+   "file": "services/src/main/java/org/keycloak/services/resources/admin/permissions/GroupPermissionsV2.java",
+   "line": 147,
+   "severity": "medium",
+   "category": "bug",
+   "title": "No upgrade path for existing admin-permissions clients: missing 'Groups' resource/scopes cause NPE and 500s",
+   "body": "AdminPermissionsSchema.init() creates the scopes and the per-type 'all resources' resources only when the realm has no admin-permissions client yet (it returns immediately when realm.getAdminPermissionsClient() != null), and nothing in this PR backfills the new 'Groups' resource or the manage-membership/manage-members/view-members scopes for realms that already enabled admin permissions (ADMIN_FINE_GRAINED_AUTHZ_V2) before this change. For such realms every V2 group permission check fails: GroupPermissionsV2.hasPermission (lines 144-147) falls back to AdminPermissionsSchema.SCHEMA.getResourceTypeResource(session, server, \"Groups\"), which returns null because that resource was never created, and the next line calls policyStore.findByResource(server, null), throwing a NullPointerException \u2014 turning all group admin endpoints into 500s. Likewise AdminPermissionsSchema.getOrCreateResource throws ModelException(\"No scopes found.\") when a group permission is created, because the new scopes do not exist in the store. A migration/initialization path that adds the new scopes and the 'Groups' type resource to existing admin-permissions clients (plus a null guard before findByResource) is needed."
+  },
+  {
+   "index": 3,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/authz/fgap/GroupResourceTypeEvaluationTest.java",
+   "line": 103,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Tests never exercise the DB-level group filter or users/count for group-scoped admins",
+   "body": "The new GroupResourceTypeEvaluationTest never exercises the database-level group filter that UsersResource/BruteForceUsersResource install via the UserModel.GROUPS session attribute populated from auth.groups().getGroupIdsWithViewPermission(). In the tested scenarios (per-group VIEW_MEMBERS / MANAGE_MEMBERS) that set comes back empty, so searchForUserStream runs unfiltered and the assertions pass only because of the in-memory usersEvaluator::canView post-filter \u2014 which is why the resource-ID bug in GroupPermissionsV2.getGroupIdsWithViewPermission slips through. There is also no test of users/count for a group-scoped admin (currently returns the count of all users) and no test of user search for an admin holding an all-groups view-members/manage-members permission (currently returns zero users). Adding tests for filtered counts and for the all-groups member-visibility scenario would catch this regression."
+  }
+ ],
+ "finding_count": 4
+}

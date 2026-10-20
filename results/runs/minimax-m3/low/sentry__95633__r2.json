@@ -1,0 +1,126 @@
+{
+ "run_id": "minimax-m3__low__sentry__95633__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:53:22Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30846,
+    "output": 44447,
+    "reasoning": 43535,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.06259788,
+   "latency_ms": 252035,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4084,
+   "raw_usage": {
+    "completion_tokens": 44447,
+    "prompt_tokens": 30974,
+    "total_tokens": 75421,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 43535,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.06259788,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.06259788,
+     "upstream_inference_prompt_cost": 0.00926148,
+     "upstream_inference_completions_cost": 0.0533364
+    }
+   },
+   "started_at": "2026-10-17T20:53:22Z",
+   "first_chunk_ms": 1986,
+   "first_text_ms": 245791,
+   "response_id": "gen-1792270402-U4T2TsecKSsdN3rQRThl",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30846,
+  "output": 44447,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 43535
+ },
+ "cost_reported": 0.06259788,
+ "latency_ms": 252035,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR, I need to carefully analyze the new thread-queue-parallel implementation for correctness, data integrity, and ordering guarantees.\n\n**Analysis of key components:**\n\n1. **`OrderedQueueWorker.run`** has a `try/finally` block where `complete_offset` is called regardless of whether `result_processor` succeeded.\n\n2. **`FixedQueuePool.shutdown`** sets `worker.shutdown = True` *before* calling `queue.shutdown()`, which means workers can exit at the top of their loop before processing remaining queue items.\n\n3. **`FixedQueuePool.get_queue_for_group`** uses Python's built-in `hash()`, which is randomized per-process via PYTHONHASHSEED, breaking consistent hashing across restarts.\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 149,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"Failed messages are silently lost on processing exception\",\n      \"body\": \"In OrderedQueueWorker.run, the `finally` clause unconditionally calls `self.offset_tracker.complete_offset(...)` regardless of whether `result_processor` raised. The exception is caught and logged by the inner `except Exception`, but the offset is still marked complete, then committed to Kafka by the commit loop. The message is then gone and will not be retried on restart. This contradicts the strategy's docstring which promises \\\"Only commits offsets after successful processing\\\" and is a serious data integrity issue (e.g., missed uptime check results, missed monitor check-ins). Either the complete_offset must be conditional on success (e.g., a success flag set in the try), or failed messages must be routed to a DLQ. The existing batched-parallel path uses ThreadPoolExecutor.submit which silently captures exceptions, so it has the same data-loss pattern; this PR replicates and deepens the problem for the new mode.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 202,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"hash() randomization breaks ordering guarantee across restarts\",\n      \"body\": \"`FixedQueuePool.get_queue_for_group` returns `hash(group_key) % self.num_queues`. Python's built-in `hash()` for strings is randomized per process (PYTHONHASHSEED). After any restart or new worker process, the same group_key can map to a different queue, violating the documented \\\"Items for the same group are processed in order\\\" guarantee. Example: if the consumer dies after submitting offset N to queue 5 and is restarted, offset N+1 for the same group may be hashed to queue 7 and processed in parallel/independently from any later retry of offset N, breaking in-order processing. Use a stable, cross-process hash like `int(hashlib.md5(group_key.encode()).hexdigest(), 16)` (or `hashlib.sha256(...)`) instead of `hash()`.\"\n    },\n    {\n      \"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\",\n      \"line\": 233,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"Shutdown ordering can cause workers to exit before draining queues\",\n      \"body\": \"In `FixedQueuePool.shutdown`, `worker.shutdown = True` is set on all workers BEFORE `q.shutdown(immediate=False)` is called on each queue. The worker loop is `while not self.shutdown: try: work_queue.get() ...`, so a worker that just finished processing one item and is returning to the top of the loop will observe `self.shutdown == True` and exit without ever pulling the next item from its queue. Because the workers have already exited by the time `q.shutdown(immediate=False)` runs, the items left in each queue are never drained and are silently discarded (only re-read from Kafka on next start, if not yet committed). The `worker.shutdown = True` step is also redundant: `q.shutdown()` is sufficient to terminate the workers via the `queue.ShutDown` exception. Remove the `worker.shutdown = True` loop (or move it after the join), so that `q.shutdown(immediate=False)` can actually drain pending items.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 149,
+   "severity": "high",
+   "category": "data",
+   "title": "Failed messages are silently lost on processing exception",
+   "body": "In OrderedQueueWorker.run, the `finally` clause unconditionally calls `self.offset_tracker.complete_offset(...)` regardless of whether `result_processor` raised. The exception is caught and logged by the inner `except Exception`, but the offset is still marked complete, then committed to Kafka by the commit loop. The message is then gone and will not be retried on restart. This contradicts the strategy's docstring which promises \"Only commits offsets after successful processing\" and is a serious data integrity issue (e.g., missed uptime check results, missed monitor check-ins). Either the complete_offset must be conditional on success (e.g., a success flag set in the try), or failed messages must be routed to a DLQ. The existing batched-parallel path uses ThreadPoolExecutor.submit which silently captures exceptions, so it has the same data-loss pattern; this PR replicates and deepens the problem for the new mode."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 202,
+   "severity": "high",
+   "category": "data",
+   "title": "hash() randomization breaks ordering guarantee across restarts",
+   "body": "`FixedQueuePool.get_queue_for_group` returns `hash(group_key) % self.num_queues`. Python's built-in `hash()` for strings is randomized per process (PYTHONHASHSEED). After any restart or new worker process, the same group_key can map to a different queue, violating the documented \"Items for the same group are processed in order\" guarantee. Example: if the consumer dies after submitting offset N to queue 5 and is restarted, offset N+1 for the same group may be hashed to queue 7 and processed in parallel/independently from any later retry of offset N, breaking in-order processing. Use a stable, cross-process hash like `int(hashlib.md5(group_key.encode()).hexdigest(), 16)` (or `hashlib.sha256(...)`) instead of `hash()`."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 233,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Shutdown ordering can cause workers to exit before draining queues",
+   "body": "In `FixedQueuePool.shutdown`, `worker.shutdown = True` is set on all workers BEFORE `q.shutdown(immediate=False)` is called on each queue. The worker loop is `while not self.shutdown: try: work_queue.get() ...`, so a worker that just finished processing one item and is returning to the top of the loop will observe `self.shutdown == True` and exit without ever pulling the next item from its queue. Because the workers have already exited by the time `q.shutdown(immediate=False)` runs, the items left in each queue are never drained and are silently discarded (only re-read from Kafka on next start, if not yet committed). The `worker.shutdown = True` step is also redundant: `q.shutdown()` is sufficient to terminate the workers via the `queue.ShutDown` exception. Remove the `worker.shutdown = True` loop (or move it after the join), so that `q.shutdown(immediate=False)` can actually drain pending items."
+  }
+ ],
+ "finding_count": 3
+}

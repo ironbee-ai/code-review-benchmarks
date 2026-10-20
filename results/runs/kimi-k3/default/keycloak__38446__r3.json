@@ -1,0 +1,108 @@
+{
+ "run_id": "kimi-k3__default__keycloak__38446__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "keycloak__38446",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/38446",
+ "repeat": 3,
+ "started_at": "2026-10-18T13:37:27Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 108849,
+  "sha": "9cbbde40d2baa4e9",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 24340,
+    "output": 21696,
+    "reasoning": 20730,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 822710,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 4735,
+   "raw_usage": {
+    "completion_tokens": 21696,
+    "prompt_tokens": 24340,
+    "total_tokens": 46036,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 20730,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T13:37:27Z",
+   "first_chunk_ms": 5876,
+   "first_text_ms": 796487,
+   "response_id": "chatcmpl-ip7xffmlpmxhmp3ub7k2cstv7p7wdpc5u4r7lkofjkntayajhh4q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 24340,
+  "output": 21696,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 20730
+ },
+ "cost_reported": null,
+ "latency_ms": 822710,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java\", \"line\": 86, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Recovery codes stored in user storage are never consumed, replayable forever, and cannot be removed\", \"body\": \"With this PR a recovery-code credential can now live in an external user storage, but the 'single use' semantics of recovery codes are lost on that path. For locally stored codes, RecoveryAuthnCodesCredentialProvider.isValid() marks the used code as consumed so it cannot be replayed and the next login asks for the next unused code. For a federated credential, validation is delegated to the storage's CredentialInputValidator.isValid() (a read-only boolean check, see BackwardsCompatibilityUserStorage.isValid) and nothing ever marks a code as used, so the credential reconstructed from the storage always shows all 12 codes as unused. Consequences: (1) every recovery code of a storage-backed user stays valid indefinitely and can be replayed by anyone who observed it once; (2) the login form always asks for code #1, because RecoveryAuthnCodeInputLoginBean calls getNextRecoveryAuthnCode() on an all-unused credential, so code rotation never happens; (3) the cleanup here at lines 85-88 calls credentialManager().removeStoredCredentialById(id), which only removes credentials from Keycloak's own store \u2014 the CredentialInputUpdater SPI has no remove-by-id operation for external storages \u2014 so even an exhausted federated credential would silently never be deleted (likewise, admin delete/disable of such a credential is a no-op in the sample provider). The new test BackwardsCompatibilityUserStorageTest.enterRecoveryCodes actually bakes in the always-code-#0 behavior rather than detecting it. Before merging, used-code state should be pushed back to the storage (e.g., via CredentialInputUpdater.updateCredential after a successful validation) or the limitation explicitly documented and tested.\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java\", \"line\": 123, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Raw recovery codes are sent to and persisted in user storage as plaintext JSON\", \"body\": \"In CredentialHelper.createRecoveryCodesCredential, when the credential is delegated to a user storage, the raw, unhashed recovery codes are serialized (JsonSerialization.writeValueAsString(generatedCodes) at line 119) and passed to CredentialInputUpdater.updateCredential as the UserCredentialModel challenge response, so the external store persists all 12 valid codes in plaintext JSON. When the same credential is created locally (line 129), only SHA-512 hashes are stored, because RecoveryAuthnCodesCredentialModel.createFromValues hashes each code via RecoveryAuthnCodesUtils.hashRawCode. Consequence: for storage-backed users, anyone with read access to the external store (database, backups, logs) immediately obtains working recovery codes that bypass the second factor entirely \u2014 a weaker protection level than Keycloak's own store provides for the identical data. The sample provider BackwardsCompatibilityUserStorage mirrors this by storing the plaintext JSON and comparing the presented code in cleartext. The hashed credential data (credentialModel.getCredentialData()) could be sent to the storage instead, with validators hashing the presented code via RecoveryAuthnCodesUtils.hashRawCode before comparing, so both storage paths keep only hashes.\"}, {\"file\": \"server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java\", \"line\": 115, \"severity\": \"low\", \"category\": \"data\", \"title\": \"User label and original generation timestamp are dropped when recovery codes go to user storage\", \"body\": \"createRecoveryCodesCredential builds the UserCredentialModel sent to the user storage with only the JSON array of codes; the generatedUserLabel (collected from the setup form and applied to the locally created credential via RecoveryAuthnCodesCredentialModel.createFromValues) and the generatedAt timestamp are never transmitted. The sample storage (BackwardsCompatibilityUserStorage.updateCredential, recovery-codes branch) therefore stores createdDate = write time and userLabel = null. Consequence: the same setup flow produces different credential metadata depending on where the credential lands \u2014 the label the user assigned is silently lost for storage-backed users and createdDate no longer reflects when the codes were generated, which shows up incorrectly in the account console and breaks parity between the two paths. The label and generation time should be included in the payload sent to CredentialInputUpdater.updateCredential.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/RecoveryAuthnCodesFormAuthenticator.java",
+   "line": 86,
+   "severity": "medium",
+   "category": "security",
+   "title": "Recovery codes stored in user storage are never consumed, replayable forever, and cannot be removed",
+   "body": "With this PR a recovery-code credential can now live in an external user storage, but the 'single use' semantics of recovery codes are lost on that path. For locally stored codes, RecoveryAuthnCodesCredentialProvider.isValid() marks the used code as consumed so it cannot be replayed and the next login asks for the next unused code. For a federated credential, validation is delegated to the storage's CredentialInputValidator.isValid() (a read-only boolean check, see BackwardsCompatibilityUserStorage.isValid) and nothing ever marks a code as used, so the credential reconstructed from the storage always shows all 12 codes as unused. Consequences: (1) every recovery code of a storage-backed user stays valid indefinitely and can be replayed by anyone who observed it once; (2) the login form always asks for code #1, because RecoveryAuthnCodeInputLoginBean calls getNextRecoveryAuthnCode() on an all-unused credential, so code rotation never happens; (3) the cleanup here at lines 85-88 calls credentialManager().removeStoredCredentialById(id), which only removes credentials from Keycloak's own store \u2014 the CredentialInputUpdater SPI has no remove-by-id operation for external storages \u2014 so even an exhausted federated credential would silently never be deleted (likewise, admin delete/disable of such a credential is a no-op in the sample provider). The new test BackwardsCompatibilityUserStorageTest.enterRecoveryCodes actually bakes in the always-code-#0 behavior rather than detecting it. Before merging, used-code state should be pushed back to the storage (e.g., via CredentialInputUpdater.updateCredential after a successful validation) or the limitation explicitly documented and tested."
+  },
+  {
+   "index": 1,
+   "file": "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java",
+   "line": 123,
+   "severity": "medium",
+   "category": "security",
+   "title": "Raw recovery codes are sent to and persisted in user storage as plaintext JSON",
+   "body": "In CredentialHelper.createRecoveryCodesCredential, when the credential is delegated to a user storage, the raw, unhashed recovery codes are serialized (JsonSerialization.writeValueAsString(generatedCodes) at line 119) and passed to CredentialInputUpdater.updateCredential as the UserCredentialModel challenge response, so the external store persists all 12 valid codes in plaintext JSON. When the same credential is created locally (line 129), only SHA-512 hashes are stored, because RecoveryAuthnCodesCredentialModel.createFromValues hashes each code via RecoveryAuthnCodesUtils.hashRawCode. Consequence: for storage-backed users, anyone with read access to the external store (database, backups, logs) immediately obtains working recovery codes that bypass the second factor entirely \u2014 a weaker protection level than Keycloak's own store provides for the identical data. The sample provider BackwardsCompatibilityUserStorage mirrors this by storing the plaintext JSON and comparing the presented code in cleartext. The hashed credential data (credentialModel.getCredentialData()) could be sent to the storage instead, with validators hashing the presented code via RecoveryAuthnCodesUtils.hashRawCode before comparing, so both storage paths keep only hashes."
+  },
+  {
+   "index": 2,
+   "file": "server-spi-private/src/main/java/org/keycloak/utils/CredentialHelper.java",
+   "line": 115,
+   "severity": "low",
+   "category": "data",
+   "title": "User label and original generation timestamp are dropped when recovery codes go to user storage",
+   "body": "createRecoveryCodesCredential builds the UserCredentialModel sent to the user storage with only the JSON array of codes; the generatedUserLabel (collected from the setup form and applied to the locally created credential via RecoveryAuthnCodesCredentialModel.createFromValues) and the generatedAt timestamp are never transmitted. The sample storage (BackwardsCompatibilityUserStorage.updateCredential, recovery-codes branch) therefore stores createdDate = write time and userLabel = null. Consequence: the same setup flow produces different credential metadata depending on where the credential lands \u2014 the label the user assigned is silently lost for storage-backed users and createdDate no longer reflects when the codes were generated, which shows up incorrectly in the account console and breaks parity between the two paths. The label and generation time should be included in the payload sent to CredentialInputUpdater.updateCredential."
+  }
+ ],
+ "finding_count": 3
+}

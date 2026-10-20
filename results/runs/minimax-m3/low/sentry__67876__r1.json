@@ -1,0 +1,142 @@
+{
+ "run_id": "minimax-m3__low__sentry__67876__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "sentry__67876",
+ "golden_url": "https://github.com/getsentry/sentry/pull/67876",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:44:29Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 100237,
+  "sha": "7c38d228f2867683",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 23811,
+    "output": 38016,
+    "reasoning": 36828,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.05277018,
+   "latency_ms": 167528,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5112,
+   "raw_usage": {
+    "completion_tokens": 38016,
+    "prompt_tokens": 23939,
+    "total_tokens": 61955,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 36828,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.05277018,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.05277018,
+     "upstream_inference_prompt_cost": 0.00715098,
+     "upstream_inference_completions_cost": 0.0456192
+    }
+   },
+   "started_at": "2026-10-17T11:44:29Z",
+   "first_chunk_ms": 1924,
+   "first_text_ms": 162108,
+   "response_id": "gen-1792237470-P5vne8d0arbqENAmypUS",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 23811,
+  "output": 38016,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 36828
+ },
+ "cost_reported": 0.05277018,
+ "latency_ms": 167528,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to check the OAuth flow logic, error handling, and the test coverage.\n\nKey areas to investigate:\n1. The `OAuthLoginView` callback handling and exception safety\n2. The `GitHubInstallation` sender check\n3. State binding ordering\n4. Whether the tests actually cover what they claim\n\n```json\n{\n  \"findings\": [\n    {\n      \"file\": \"src/sentry/integrations/github/integration.py\",\n      \"line\": 503,\n      \"severity\": \"critical\",\n      \"category\": \"data\",\n      \"title\": \"KeyError when integration.metadata lacks 'sender' field\",\n      \"body\": \"In GitHubInstallation.dispatch, the user-mismatch check reads `integration.metadata[\\\"sender\\\"][\\\"login\\\"]` directly. The `sender` key is populated only by the GitHub installation webhook handler \u2014 not by build_integration (which only sets sender from state if present) \u2014 so any path where the webhook has not yet been processed, has failed, or otherwise did not set `metadata[\\\"sender\\\"]` will raise KeyError and 500. This is reachable in normal operation: the first user that installs via OAuth creates the Integration before the webhook lands, and any subsequent install on that installation_id will crash. Should be `integration.metadata.get(\\\"sender\\\") or {}).get(\\\"login\\\")` and treat None as a mismatch.\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/github/integration.py\",\n      \"line\": 434,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"get_user_info() exception not handled, can cause 500\",\n      \"body\": \"`get_user_info(payload[\\\"access_token\\\"])` makes an authenticated call to GitHub's /user endpoint. If this call raises (network failure, DNS error, GitHub 5xx, rate-limit response, ApiError, etc.) the view returns 500 to the user instead of the graceful `error()` page shown for all other failure modes. The surrounding OAuth token-exchange path already wraps everything in `try/except Exception`, so for consistency (and to avoid leaking a stack trace on a transient GitHub failure) this should be wrapped the same way and a missing/invalid `login` should also fall back to `error()`.\"\n    },\n    {\n      \"file\": \"tests/sentry/integrations/github/test_integration.py\",\n      \"line\": 379,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"test_installation_not_found no longer exercises the 404 path\",\n      \"body\": \"After the change the test does two GETs: first `setup_path?installation_id=...`, then `setup_path?code=...&state=ddd023d87a913d5226e2a882c4c4cc05`. Because the second GET uses a state value that does not match `pipeline.signature`, the view short-circuits with the state-mismatch branch and returns the generic `Invalid installation request.` error before `build_integration` (which is what actually calls the 404-stubbed `/app/installations/<id>` endpoint) ever runs. The 404 stub is therefore dead code in this test. The assertion was also weakened from `b\\\"The GitHub installation could not be found.\\\"` to the generic error string, so a regression that silently swallows the 404 would not be caught. Either use the correct state so the test reaches build_integration and assert the specific 404 message, or rename the test to reflect what it now covers (state mismatch).\"\n    },\n    {\n      \"file\": \"tests/sentry/integrations/github/test_integration.py\",\n      \"line\": 423,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"Hardcoded webhook signature does not match the modified payload\",\n      \"body\": \"`test_github_user_mismatch` mutates the JSON loaded from `INSTALLATION_EVENT_EXAMPLE` (changes `installation.id` and `sender.login`) before POSTing to `/extensions/github/webhook/`, but reuses the signature `sha1=d184e6717f8bfbcc291ebc8c0756ee446c6c9486` that was computed for the original (unmodified) fixture body. With signature verification enabled the webhook handler will refuse the event and no Integration with `sender.login == \\\"attacker\\\"` will be created, so the subsequent assertion that `GitHubInstallation` correctly rejects the second install does not actually exercise the mismatch branch \u2014 it would behave identically with or without the new check. The signature should be recomputed for the modified body (or the test should bypass signature verification explicitly).\"\n    },\n    {\n      \"file\": \"src/sentry/integrations/github/integration.py\",\n      \"line\": 399,\n      \"severity\": \"low\",\n      \"category\": \"security\",\n      \"title\": \"installation_id bound to pipeline before CSRF state is validated\",\n      \"body\": \"In OAuthLoginView.dispatch the very first action is `pipeline.bind_state(\\\"installation_id\\\", installation_id)`, which executes before the `if request.GET.get(\\\"state\\\") != pipeline.signature` CSRF/state check on the OAuth callback path. So a request that supplies a forged `state` (e.g. forged-state scenario) will still mutate pipeline state in Redis before being rejected. This is low impact because the next legitimate request will re-bind or the error returns immediately, but defensively the state validation should run before any side effects on the pipeline.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 503,
+   "severity": "critical",
+   "category": "data",
+   "title": "KeyError when integration.metadata lacks 'sender' field",
+   "body": "In GitHubInstallation.dispatch, the user-mismatch check reads `integration.metadata[\"sender\"][\"login\"]` directly. The `sender` key is populated only by the GitHub installation webhook handler \u2014 not by build_integration (which only sets sender from state if present) \u2014 so any path where the webhook has not yet been processed, has failed, or otherwise did not set `metadata[\"sender\"]` will raise KeyError and 500. This is reachable in normal operation: the first user that installs via OAuth creates the Integration before the webhook lands, and any subsequent install on that installation_id will crash. Should be `integration.metadata.get(\"sender\") or {}).get(\"login\")` and treat None as a mismatch."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 434,
+   "severity": "high",
+   "category": "bug",
+   "title": "get_user_info() exception not handled, can cause 500",
+   "body": "`get_user_info(payload[\"access_token\"])` makes an authenticated call to GitHub's /user endpoint. If this call raises (network failure, DNS error, GitHub 5xx, rate-limit response, ApiError, etc.) the view returns 500 to the user instead of the graceful `error()` page shown for all other failure modes. The surrounding OAuth token-exchange path already wraps everything in `try/except Exception`, so for consistency (and to avoid leaking a stack trace on a transient GitHub failure) this should be wrapped the same way and a missing/invalid `login` should also fall back to `error()`."
+  },
+  {
+   "index": 2,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 379,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_installation_not_found no longer exercises the 404 path",
+   "body": "After the change the test does two GETs: first `setup_path?installation_id=...`, then `setup_path?code=...&state=ddd023d87a913d5226e2a882c4c4cc05`. Because the second GET uses a state value that does not match `pipeline.signature`, the view short-circuits with the state-mismatch branch and returns the generic `Invalid installation request.` error before `build_integration` (which is what actually calls the 404-stubbed `/app/installations/<id>` endpoint) ever runs. The 404 stub is therefore dead code in this test. The assertion was also weakened from `b\"The GitHub installation could not be found.\"` to the generic error string, so a regression that silently swallows the 404 would not be caught. Either use the correct state so the test reaches build_integration and assert the specific 404 message, or rename the test to reflect what it now covers (state mismatch)."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/integrations/github/test_integration.py",
+   "line": 423,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Hardcoded webhook signature does not match the modified payload",
+   "body": "`test_github_user_mismatch` mutates the JSON loaded from `INSTALLATION_EVENT_EXAMPLE` (changes `installation.id` and `sender.login`) before POSTing to `/extensions/github/webhook/`, but reuses the signature `sha1=d184e6717f8bfbcc291ebc8c0756ee446c6c9486` that was computed for the original (unmodified) fixture body. With signature verification enabled the webhook handler will refuse the event and no Integration with `sender.login == \"attacker\"` will be created, so the subsequent assertion that `GitHubInstallation` correctly rejects the second install does not actually exercise the mismatch branch \u2014 it would behave identically with or without the new check. The signature should be recomputed for the modified body (or the test should bypass signature verification explicitly)."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/integrations/github/integration.py",
+   "line": 399,
+   "severity": "low",
+   "category": "security",
+   "title": "installation_id bound to pipeline before CSRF state is validated",
+   "body": "In OAuthLoginView.dispatch the very first action is `pipeline.bind_state(\"installation_id\", installation_id)`, which executes before the `if request.GET.get(\"state\") != pipeline.signature` CSRF/state check on the OAuth callback path. So a request that supplies a forged `state` (e.g. forged-state scenario) will still mutate pipeline state in Redis before being rejected. This is low impact because the next legitimate request will re-bind or the error returns immediately, but defensively the state validation should run before any side effects on the pipeline."
+  }
+ ],
+ "finding_count": 5
+}

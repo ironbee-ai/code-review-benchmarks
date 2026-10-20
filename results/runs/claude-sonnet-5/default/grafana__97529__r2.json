@@ -1,0 +1,136 @@
+{
+ "run_id": "claude-sonnet-5__default__grafana__97529__r2",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-18T21:00:35Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55076,
+    "output": 13467,
+    "reasoning": 11535,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 236221,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5754,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55076,
+    "output_tokens": 13467,
+    "output_tokens_details": {
+     "thinking_tokens": 11535
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:00:35Z",
+   "first_chunk_ms": 5759,
+   "first_text_ms": 235996,
+   "response_id": "msg_bdrk_jyoxjcdhnpibxij66rpnlybri7lm2yazf7qhseewjwl7gbrzaxyq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55076,
+  "output": 13467,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 11535
+ },
+ "cost_reported": null,
+ "latency_ms": 236221,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Resource server construction now blocks indefinitely with no timeout on index build\", \"body\": \"NewResourceServer() calls `s.Init(ctx)` synchronously before returning, and `ctx` here is derived from `context.WithCancel(context.Background())` with no deadline. If building the search index (or any lifecycle hook) takes a very long time or hangs (e.g. due to a slow/unavailable DB), NewResourceServer will never return, blocking the whole process startup indefinitely with no way to time out or recover. Previously this work happened lazily on the first gRPC call, so a slow index build at least allowed the server/process to start and expose health endpoints; now the entire service construction is gated on this unbounded operation. This directly matches the question raised in the PR description about what could break by making init eager, and should be addressed with a startup timeout/cancellation strategy or by running Init in the background with a readiness gate.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Postgres integration test skipped without root-causing a likely regression from this PR\", \"body\": \"The test `TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer` is now skipped for postgres with the comment 'test not working with postgres in Drone. Works locally.' This test exercises exactly the module-server startup path that this PR changes (ResourceServer now blocks on Init() synchronously at construction instead of lazily). It's very plausible the test now fails/times out because startup takes longer or behaves differently with the new eager initialization, and the fix should be to address the underlying timing/behavior rather than silently skip the only integration test covering this startup path for a specific backend.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Data race on shared `err` variable across concurrent goroutines in search index init\", \"body\": \"Inside `searchSupport.init()`, multiple goroutines spawned via `group.Go(...)` all read and write the single shared `err` variable declared outside the loop (`_, _, err = s.build(...)`) and then `return err`. Because the assignment and the `return` are two separate statements, one goroutine's assignment can be overwritten by another goroutine's assignment before its own `return err` executes, causing errgroup to receive the wrong goroutine's result (potentially losing a real build error, or reporting an unrelated one). This is also a plain data race flagged by `go test -race`. This bug is now far more consequential because `init()` is invoked synchronously during `NewResourceServer`, directly gating process startup \u2014 an incorrect/lost error here can mask a failed index build or incorrectly fail startup.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 189, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Unsynchronized increment of totalBatchesIndexed across goroutines\", \"body\": \"`totalBatchesIndexed++` is incremented inside each `group.Go` closure, i.e. concurrently from multiple goroutines (bounded by `initWorkers`), with no mutex or atomic operation. This is a data race that can produce an incorrect count used in the subsequent `span.AddEvent` call, and will be flagged by Go's race detector. Given this PR's goal of increasing indexing concurrency, this latent race becomes more likely to actually manifest/be hit by the race detector in CI.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing the whole-function lock in BuildIndex allows duplicate concurrent builds for the same key\", \"body\": \"Previously `BuildIndex` held `cacheMu` for its entire duration, which (as a side effect) serialized all builds, including duplicate builds for the same `NamespacedResource` key. Now the lock is only taken when writing the final result into `b.cache` (lines 137-139). If two callers (e.g. two concurrent requests to `getOrCreateIndex`) trigger a build for the same key before either completes, both will independently build a full index (including, for file-backed indexes, opening/writing to the same directory via `bleve.New(dir, mapper)` at line 98), and only the last one to finish 'wins' the cache slot \u2014 the other built index is silently discarded without being closed, leaking memory/file handles, and the two concurrent file-based bleve.New calls on the same directory can also conflict/fail. There is no key-level locking (the existing TODO at the top of getOrCreateIndex acknowledges this), so this PR's removal of the broader lock increases the chance of this duplicate-build race actually occurring under load.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 144, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs() reads the cache map without holding cacheMu, racing with concurrent writers\", \"body\": \"`TotalDocs()` iterates over `b.cache` (line 146) without acquiring `cacheMu` (not even RLock), while `BuildIndex` and other paths write to the same map under `cacheMu.Lock()`. This is an unsynchronized concurrent map access, which can produce a 'concurrent map read and map write' runtime panic if `TotalDocs()` is called (e.g., from metrics scraping or from `searchSupport.init()`'s log line at the end of initialization) while another goroutine is still building/caching an index. The PR's stated goal of enabling more concurrent index building increases the odds of this race being hit in practice.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "high",
+   "category": "bug",
+   "title": "Resource server construction now blocks indefinitely with no timeout on index build",
+   "body": "NewResourceServer() calls `s.Init(ctx)` synchronously before returning, and `ctx` here is derived from `context.WithCancel(context.Background())` with no deadline. If building the search index (or any lifecycle hook) takes a very long time or hangs (e.g. due to a slow/unavailable DB), NewResourceServer will never return, blocking the whole process startup indefinitely with no way to time out or recover. Previously this work happened lazily on the first gRPC call, so a slow index build at least allowed the server/process to start and expose health endpoints; now the entire service construction is gated on this unbounded operation. This directly matches the question raised in the PR description about what could break by making init eager, and should be addressed with a startup timeout/cancellation strategy or by running Init in the background with a readiness gate."
+  },
+  {
+   "index": 1,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Postgres integration test skipped without root-causing a likely regression from this PR",
+   "body": "The test `TestIntegrationWillRunInstrumentationServerWhenTargetHasNoHttpServer` is now skipped for postgres with the comment 'test not working with postgres in Drone. Works locally.' This test exercises exactly the module-server startup path that this PR changes (ResourceServer now blocks on Init() synchronously at construction instead of lazily). It's very plausible the test now fails/times out because startup takes longer or behaves differently with the new eager initialization, and the fix should be to address the underlying timing/behavior rather than silently skip the only integration test covering this startup path for a specific backend."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Data race on shared `err` variable across concurrent goroutines in search index init",
+   "body": "Inside `searchSupport.init()`, multiple goroutines spawned via `group.Go(...)` all read and write the single shared `err` variable declared outside the loop (`_, _, err = s.build(...)`) and then `return err`. Because the assignment and the `return` are two separate statements, one goroutine's assignment can be overwritten by another goroutine's assignment before its own `return err` executes, causing errgroup to receive the wrong goroutine's result (potentially losing a real build error, or reporting an unrelated one). This is also a plain data race flagged by `go test -race`. This bug is now far more consequential because `init()` is invoked synchronously during `NewResourceServer`, directly gating process startup \u2014 an incorrect/lost error here can mask a failed index build or incorrectly fail startup."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Unsynchronized increment of totalBatchesIndexed across goroutines",
+   "body": "`totalBatchesIndexed++` is incremented inside each `group.Go` closure, i.e. concurrently from multiple goroutines (bounded by `initWorkers`), with no mutex or atomic operation. This is a data race that can produce an incorrect count used in the subsequent `span.AddEvent` call, and will be flagged by Go's race detector. Given this PR's goal of increasing indexing concurrency, this latent race becomes more likely to actually manifest/be hit by the race detector in CI."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing the whole-function lock in BuildIndex allows duplicate concurrent builds for the same key",
+   "body": "Previously `BuildIndex` held `cacheMu` for its entire duration, which (as a side effect) serialized all builds, including duplicate builds for the same `NamespacedResource` key. Now the lock is only taken when writing the final result into `b.cache` (lines 137-139). If two callers (e.g. two concurrent requests to `getOrCreateIndex`) trigger a build for the same key before either completes, both will independently build a full index (including, for file-backed indexes, opening/writing to the same directory via `bleve.New(dir, mapper)` at line 98), and only the last one to finish 'wins' the cache slot \u2014 the other built index is silently discarded without being closed, leaking memory/file handles, and the two concurrent file-based bleve.New calls on the same directory can also conflict/fail. There is no key-level locking (the existing TODO at the top of getOrCreateIndex acknowledges this), so this PR's removal of the broader lock increases the chance of this duplicate-build race actually occurring under load."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 144,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs() reads the cache map without holding cacheMu, racing with concurrent writers",
+   "body": "`TotalDocs()` iterates over `b.cache` (line 146) without acquiring `cacheMu` (not even RLock), while `BuildIndex` and other paths write to the same map under `cacheMu.Lock()`. This is an unsynchronized concurrent map access, which can produce a 'concurrent map read and map write' runtime panic if `TotalDocs()` is called (e.g., from metrics scraping or from `searchSupport.init()`'s log line at the end of initialization) while another goroutine is still building/caching an index. The PR's stated goal of enabling more concurrent index building increases the odds of this race being hit in practice."
+  }
+ ],
+ "finding_count": 6
+}

@@ -1,0 +1,162 @@
+{
+ "run_id": "deepseek-v4.1-flash__default__cal.com__8087__r1",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 1,
+ "started_at": "2026-10-18T18:28:33Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 40080,
+    "output": 19989,
+    "reasoning": 18414,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.018005784,
+   "latency_ms": 89518,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 6566,
+   "raw_usage": {
+    "completion_tokens": 19989,
+    "prompt_tokens": 40208,
+    "total_tokens": 60197,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 18414,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.018005784,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.018005784,
+     "upstream_inference_prompt_cost": 0.006012384,
+     "upstream_inference_completions_cost": 0.0119934
+    }
+   },
+   "started_at": "2026-10-18T18:28:33Z",
+   "first_chunk_ms": 1742,
+   "first_text_ms": 83651,
+   "response_id": "gen-1792348113-fVrRm80eKFaS1lMChPBr",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 40080,
+  "output": 19989,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 18414
+ },
+ "cost_reported": 0.018005784,
+ "latency_ms": 89518,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Recurring-cancellation calendar deletes are no longer awaited before Promise.all\", \"body\": \"In the `allRemainingBookings` + `credentialId` branch, calendar deletions are collected by pushing into `apiDeletes` from inside `.forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent) })`. Because the callback is async and now contains an `await` before the first push, the callback yields immediately and `apiDeletes` is still empty when `await Promise.all(prismaPromises.concat(apiDeletes))` runs later in the handler (line 652). The recurring-booking calendar events are therefore never awaited before the request returns, and any rejection from `getCalendar`/`deleteEvent` escapes as an unhandled rejection (which terminates Node by default). The sibling branch just below (lines 476-484) was correctly converted to a `for...of` loop with `await`; this branch needs the same conversion.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"async forEach makes reschedule cancellations fire-and-forget and defeats the try/catch\", \"body\": \"`bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); ... })` is used inside a `try { ... } catch (error) { logger.error(...) }`. `forEach` discards the promises returned by the async callback, so the surrounding try/catch can never observe a failure from `getCalendar`, `calendar.deleteEvent` or `deleteMeeting`, and those failures become unhandled promise rejections (fatal by default in Node >= 15). `Reschedule` also resolves and returns `true` (and sends the reschedule email) before the external calendar/video events are actually deleted; in a serverless handler the process may be frozen at that point, leaving the old event on the organizer's calendar even though the booking is marked CANCELLED. Use `await Promise.all(bookingRefsFiltered.map(...))` or a `for...of` loop inside the try block.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"async forEach makes reschedule cancellations fire-and-forget and defeats the try/catch\", \"body\": \"Same defect as in the vital reschedule file: `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); ... })` returns immediately because `forEach` ignores the promises returned by the async callback. The outer `try/catch` around the loop therefore no longer catches errors from `getCalendar`, `calendar.deleteEvent` or `deleteMeeting`, those errors surface as unhandled rejections, and the function resolves before the calendar/video deletions complete, so the old event may remain on the user's calendar after a reschedule. Replace the `forEach` with `await Promise.all(...map(...))` or a `for...of` loop with `await`.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"requestReschedule deletions are started asynchronously and never awaited\", \"body\": \"The `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); return calendar?.deleteEvent(...) })` block in the `requestReschedule` mutation discards every returned promise. Before this change the callback was synchronous, so the `deleteEvent`/`deleteMeeting` calls were at least initiated synchronously in the handler; now they are deferred until after the surrounding synchronous code runs (i.e. potentially after `sendRequestRescheduleEmail` and after the mutation returns), and no failure from `getCalendar`, `deleteEvent` or `deleteMeeting` is observed or logged (unhandled rejection, fatal by default in Node). The old calendar/video event for the rescheduled booking can silently survive. Use `await Promise.all(bookingRefsFiltered.map(...))` or a `for...of` loop with `await`.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 52, \"severity\": \"high\", \"category\": \"security\", \"title\": \"`!calendar` early return skips cleanIntegrationKeys and sends raw credentials to the client\", \"body\": \"In `getConnectedCalendars`, when `getCalendar` returns null the function returns `{ integration, credentialId }` with the raw `integration` object. `integration` comes from `getApps(credentials)`, i.e. the app object that carries `credentials` (including the user's OAuth `key`) and `credential` \u2014 see how this same object is used at lines 27-30 of this file. The other two return paths correctly call `cleanIntegrationKeys(integration)` precisely to avoid leaking credentials to the client (there is even a comment \\\"Don't leak credentials to the client\\\"), but this path returns them verbatim, so any credential whose calendar implementation is missing/keyless will ship the user's secrets to the browser via the connectedCalendars endpoint. Pre-existing, but it is inside the function this PR modifies; the return should also be `{ integration: cleanIntegrationKeys(integration), credentialId }`.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"getCalendar is called for non-calendar-variant apps and its promise is dropped\", \"body\": \"In `getCalendarCredentials`, `const calendar = getCalendar(credential);` runs for every credential, but the result is only kept when `app.variant === \\\"calendar\\\"`; for other variants the promise is created and discarded. Now that `getCalendar` is async this is (a) a wasted dynamic `import()` of the app's calendar module for every non-calendar-variant app on every call, and (b) a floating promise whose rejection (e.g. the lazy import failing, or `calendarType.split` on a malformed credential type) becomes an unhandled rejection. Move the `getCalendar` call inside the `app.variant === \\\"calendar\\\"` branch.\"}, {\"file\": \"packages/app-store/index.ts\", \"line\": 2, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Commented-out example points at a non-existent path\", \"body\": \"The template comment `// example: import(\\\"./example\\\"),` references `./example`, but the example app directory in this package is `_example` (the previous comment was `// import * as example from \\\"./_example\\\";`). A developer copying/uncommenting this template will get a module-resolution error. It should read `// example: import(\\\"./_example\\\"),`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Recurring-cancellation calendar deletes are no longer awaited before Promise.all",
+   "body": "In the `allRemainingBookings` + `credentialId` branch, calendar deletions are collected by pushing into `apiDeletes` from inside `.forEach(async (credential) => { const calendar = await getCalendar(credential); ... apiDeletes.push(deletedEvent) })`. Because the callback is async and now contains an `await` before the first push, the callback yields immediately and `apiDeletes` is still empty when `await Promise.all(prismaPromises.concat(apiDeletes))` runs later in the handler (line 652). The recurring-booking calendar events are therefore never awaited before the request returns, and any rejection from `getCalendar`/`deleteEvent` escapes as an unhandled rejection (which terminates Node by default). The sibling branch just below (lines 476-484) was correctly converted to a `for...of` loop with `await`; this branch needs the same conversion."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "async forEach makes reschedule cancellations fire-and-forget and defeats the try/catch",
+   "body": "`bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); ... })` is used inside a `try { ... } catch (error) { logger.error(...) }`. `forEach` discards the promises returned by the async callback, so the surrounding try/catch can never observe a failure from `getCalendar`, `calendar.deleteEvent` or `deleteMeeting`, and those failures become unhandled promise rejections (fatal by default in Node >= 15). `Reschedule` also resolves and returns `true` (and sends the reschedule email) before the external calendar/video events are actually deleted; in a serverless handler the process may be frozen at that point, leaving the old event on the organizer's calendar even though the booking is marked CANCELLED. Use `await Promise.all(bookingRefsFiltered.map(...))` or a `for...of` loop inside the try block."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "async forEach makes reschedule cancellations fire-and-forget and defeats the try/catch",
+   "body": "Same defect as in the vital reschedule file: `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); ... })` returns immediately because `forEach` ignores the promises returned by the async callback. The outer `try/catch` around the loop therefore no longer catches errors from `getCalendar`, `calendar.deleteEvent` or `deleteMeeting`, those errors surface as unhandled rejections, and the function resolves before the calendar/video deletions complete, so the old event may remain on the user's calendar after a reschedule. Replace the `forEach` with `await Promise.all(...map(...))` or a `for...of` loop with `await`."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "requestReschedule deletions are started asynchronously and never awaited",
+   "body": "The `bookingRefsFiltered.forEach(async (bookingRef) => { const calendar = await getCalendar(...); return calendar?.deleteEvent(...) })` block in the `requestReschedule` mutation discards every returned promise. Before this change the callback was synchronous, so the `deleteEvent`/`deleteMeeting` calls were at least initiated synchronously in the handler; now they are deferred until after the surrounding synchronous code runs (i.e. potentially after `sendRequestRescheduleEmail` and after the mutation returns), and no failure from `getCalendar`, `deleteEvent` or `deleteMeeting` is observed or logged (unhandled rejection, fatal by default in Node). The old calendar/video event for the rescheduled booking can silently survive. Use `await Promise.all(bookingRefsFiltered.map(...))` or a `for...of` loop with `await`."
+  },
+  {
+   "index": 4,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 52,
+   "severity": "high",
+   "category": "security",
+   "title": "`!calendar` early return skips cleanIntegrationKeys and sends raw credentials to the client",
+   "body": "In `getConnectedCalendars`, when `getCalendar` returns null the function returns `{ integration, credentialId }` with the raw `integration` object. `integration` comes from `getApps(credentials)`, i.e. the app object that carries `credentials` (including the user's OAuth `key`) and `credential` \u2014 see how this same object is used at lines 27-30 of this file. The other two return paths correctly call `cleanIntegrationKeys(integration)` precisely to avoid leaking credentials to the client (there is even a comment \"Don't leak credentials to the client\"), but this path returns them verbatim, so any credential whose calendar implementation is missing/keyless will ship the user's secrets to the browser via the connectedCalendars endpoint. Pre-existing, but it is inside the function this PR modifies; the return should also be `{ integration: cleanIntegrationKeys(integration), credentialId }`."
+  },
+  {
+   "index": 5,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "getCalendar is called for non-calendar-variant apps and its promise is dropped",
+   "body": "In `getCalendarCredentials`, `const calendar = getCalendar(credential);` runs for every credential, but the result is only kept when `app.variant === \"calendar\"`; for other variants the promise is created and discarded. Now that `getCalendar` is async this is (a) a wasted dynamic `import()` of the app's calendar module for every non-calendar-variant app on every call, and (b) a floating promise whose rejection (e.g. the lazy import failing, or `calendarType.split` on a malformed credential type) becomes an unhandled rejection. Move the `getCalendar` call inside the `app.variant === \"calendar\"` branch."
+  },
+  {
+   "index": 6,
+   "file": "packages/app-store/index.ts",
+   "line": 2,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Commented-out example points at a non-existent path",
+   "body": "The template comment `// example: import(\"./example\"),` references `./example`, but the example app directory in this package is `_example` (the previous comment was `// import * as example from \"./_example\";`). A developer copying/uncommenting this template will get a module-resolution error. It should read `// example: import(\"./_example\"),`."
+  }
+ ],
+ "finding_count": 7
+}

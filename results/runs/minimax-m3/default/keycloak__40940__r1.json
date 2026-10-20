@@ -1,0 +1,129 @@
+{
+ "run_id": "minimax-m3__default__keycloak__40940__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "keycloak__40940",
+ "golden_url": "https://github.com/keycloak/keycloak/pull/40940",
+ "repeat": 1,
+ "started_at": "2026-10-17T12:05:18Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 82356,
+  "sha": "007ec25c2c1d7c47",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19171,
+    "output": 10016,
+    "reasoning": 8969,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01777818,
+   "latency_ms": 56231,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4592,
+   "raw_usage": {
+    "completion_tokens": 10016,
+    "prompt_tokens": 19299,
+    "total_tokens": 29315,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 8969,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01777818,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01777818,
+     "upstream_inference_prompt_cost": 0.00575898,
+     "upstream_inference_completions_cost": 0.0120192
+    }
+   },
+   "started_at": "2026-10-17T12:05:18Z",
+   "first_chunk_ms": 1911,
+   "first_text_ms": 51075,
+   "response_id": "gen-1792238718-vMFhyXvtIUDqmmLmQC4l",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19171,
+  "output": 10016,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 8969
+ },
+ "cost_reported": 0.01777818,
+ "latency_ms": 56231,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR which fixes NPE in concurrent group access:\n\n1. The fix in `getSubGroupsCount()` is reasonable but incomplete - other methods in the same file have the same vulnerability.\n2. The new test has a thread coordination bug that makes it unreliable.\n3. Let me check the test thread race condition carefully.\n\nThe test starts a background reader thread but never joins it. The main thread sets `deletedAll=true` and immediately runs the assertion, while the reader thread may still be mid-iteration of `groups()`. This creates a window where exceptions can be missed or, worse, the thread continues running after the test method returns.\n\n```json\n{\"findings\": [{\"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/group/GroupTest.java\", \"line\": 139, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Reader thread is never joined before the assertion\", \"body\": \"In createMultiDeleteMultiReadMulti(), the reader thread is started with `new Thread(...).start()` but never joined. After the main thread calls `deletedAll.set(true)`, the reader thread may still be in the middle of a `managedRealm.admin().groups().groups(...)` call. Any exception thrown by that in-flight call is added to `caughtExceptions` AFTER `assertThat(caughtExceptions, Matchers.empty())` runs, so the test will pass even when the fix is missing or broken. Conversely, after the test method returns the reader thread can keep running and access the admin client / realm during teardown. The thread should be retained as a variable and `Thread.join()` should be called (e.g. after setting `deletedAll.set(true)`) before the assertion. Additionally, the thread should be marked as a daemon or otherwise prevented from outliving the test.\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java\", \"line\": 256, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Other GroupAdapter methods still NPE when the cached group has been deleted\", \"body\": \"The patch only null-guards `getSubGroupsCount()`, but three `getSubGroupsStream` overloads (lines 254-257, 260-263, 266-269) still call `modelSupplier.get()` directly. In the exact same concurrent-deletion scenario that the patch targets (`cacheSession.getGroupDelegate().getGroupById(realm, cached.getId())` returning null), these methods will dereference the null and throw NPE, leaving the reported bug only partially fixed. Either apply the same null-handling pattern (and ideally also handle the symmetric case via `getDelegateForUpdate()` like `getRoleMappingsStream`/`getSubGroupsStream` do when a referenced role/subGroup is missing) or at least guard all three `modelSupplier.get()` call sites consistently.\"}, {\"file\": \"model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java\", \"line\": 275, \"severity\": \"medium\", \"category\": \"doc_defect\", \"title\": \"Returning null from getSubGroupsCount() is inconsistent with the rest of the class\", \"body\": \"All other paths in GroupAdapter that discover the underlying entity is gone (see `getRoleMappingsStream` at lines 206-210 and `getSubGroupsStream` at lines 242-245) react by calling `getDelegateForUpdate()`, which throws `IllegalStateException(\\\"Not found in database\\\")`. `getSubGroupsCount()` now silently returns null instead, which is silently inconsistent with those paths and changes the contract of an existing interface method (`Long` is nullable, but no other caller handles a null count gracefully). Pick one behavior and apply it consistently across the class, otherwise concurrent code paths can produce different exception/null behavior depending on which method is invoked.\"}, {\"file\": \"tests/base/src/test/java/org/keycloak/tests/admin/group/GroupTest.java\", \"line\": 121, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Test does not actually exercise the getSubGroupsCount() NPE path it claims to fix\", \"body\": \"The new `createMultiDeleteMultiReadMulti()` test only calls `managedRealm.admin().groups().groups(null, 0, Integer.MAX_VALUE, true)` with `briefRepresentation=true`. Brief group representations do not include subgroups or a subgroup count, so they do not invoke `GroupAdapter.getSubGroupsCount()` at all. As a result the test would pass even if the `getSubGroupsCount()` null-guard were reverted, so it does not actually regress-test the fix in this PR. A direct, targeted regression test (e.g. create a group, look it up so a `GroupAdapter` is cached, delete the underlying row, then call `getSubGroupsCount()` and assert it does not throw NPE) is needed to meaningfully cover the bug.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/group/GroupTest.java",
+   "line": 139,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Reader thread is never joined before the assertion",
+   "body": "In createMultiDeleteMultiReadMulti(), the reader thread is started with `new Thread(...).start()` but never joined. After the main thread calls `deletedAll.set(true)`, the reader thread may still be in the middle of a `managedRealm.admin().groups().groups(...)` call. Any exception thrown by that in-flight call is added to `caughtExceptions` AFTER `assertThat(caughtExceptions, Matchers.empty())` runs, so the test will pass even when the fix is missing or broken. Conversely, after the test method returns the reader thread can keep running and access the admin client / realm during teardown. The thread should be retained as a variable and `Thread.join()` should be called (e.g. after setting `deletedAll.set(true)`) before the assertion. Additionally, the thread should be marked as a daemon or otherwise prevented from outliving the test."
+  },
+  {
+   "index": 1,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java",
+   "line": 256,
+   "severity": "high",
+   "category": "bug",
+   "title": "Other GroupAdapter methods still NPE when the cached group has been deleted",
+   "body": "The patch only null-guards `getSubGroupsCount()`, but three `getSubGroupsStream` overloads (lines 254-257, 260-263, 266-269) still call `modelSupplier.get()` directly. In the exact same concurrent-deletion scenario that the patch targets (`cacheSession.getGroupDelegate().getGroupById(realm, cached.getId())` returning null), these methods will dereference the null and throw NPE, leaving the reported bug only partially fixed. Either apply the same null-handling pattern (and ideally also handle the symmetric case via `getDelegateForUpdate()` like `getRoleMappingsStream`/`getSubGroupsStream` do when a referenced role/subGroup is missing) or at least guard all three `modelSupplier.get()` call sites consistently."
+  },
+  {
+   "index": 2,
+   "file": "model/infinispan/src/main/java/org/keycloak/models/cache/infinispan/GroupAdapter.java",
+   "line": 275,
+   "severity": "medium",
+   "category": "doc_defect",
+   "title": "Returning null from getSubGroupsCount() is inconsistent with the rest of the class",
+   "body": "All other paths in GroupAdapter that discover the underlying entity is gone (see `getRoleMappingsStream` at lines 206-210 and `getSubGroupsStream` at lines 242-245) react by calling `getDelegateForUpdate()`, which throws `IllegalStateException(\"Not found in database\")`. `getSubGroupsCount()` now silently returns null instead, which is silently inconsistent with those paths and changes the contract of an existing interface method (`Long` is nullable, but no other caller handles a null count gracefully). Pick one behavior and apply it consistently across the class, otherwise concurrent code paths can produce different exception/null behavior depending on which method is invoked."
+  },
+  {
+   "index": 3,
+   "file": "tests/base/src/test/java/org/keycloak/tests/admin/group/GroupTest.java",
+   "line": 121,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Test does not actually exercise the getSubGroupsCount() NPE path it claims to fix",
+   "body": "The new `createMultiDeleteMultiReadMulti()` test only calls `managedRealm.admin().groups().groups(null, 0, Integer.MAX_VALUE, true)` with `briefRepresentation=true`. Brief group representations do not include subgroups or a subgroup count, so they do not invoke `GroupAdapter.getSubGroupsCount()` at all. As a result the test would pass even if the `getSubGroupsCount()` null-guard were reverted, so it does not actually regress-test the fix in this PR. A direct, targeted regression test (e.g. create a group, look it up so a `GroupAdapter` is cached, delete the underlying row, then call `getSubGroupsCount()` and assert it does not throw NPE) is needed to meaningfully cover the bug."
+  }
+ ],
+ "finding_count": 4
+}

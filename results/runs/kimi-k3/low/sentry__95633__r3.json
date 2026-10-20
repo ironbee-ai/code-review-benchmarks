@@ -1,0 +1,130 @@
+{
+ "run_id": "kimi-k3__low__sentry__95633__r3",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning_effort": "low"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:52:11Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 30264,
+    "output": 2312,
+    "reasoning": 1169,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 84360,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5199,
+   "raw_usage": {
+    "completion_tokens": 2312,
+    "prompt_tokens": 30264,
+    "total_tokens": 32576,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 1169,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-18T11:52:11Z",
+   "first_chunk_ms": 19443,
+   "first_text_ms": 58140,
+   "response_id": "chatcmpl-vskblymbed4yrw3iq7u7l4wf3z3ytnx5ahmlbclzs2hr4f6hxiiq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 30264,
+  "output": 2312,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 1169
+ },
+ "cost_reported": null,
+ "latency_ms": 84360,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 133, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"FixedQueuePool is created once on the factory and shared across partition assignments, breaking rebalances\", \"body\": \"In `ResultsStrategyFactory.__init__`, the `FixedQueuePool` (with its worker threads) is created once when the factory is instantiated, and `create_with_partitions` hands that same pool to every new `SimpleQueueProcessingStrategy`. Arroyo calls `create_with_partitions` on every assignment/rebalance and `close()`/`join()` on the old strategy when partitions are revoked. `SimpleQueueProcessingStrategy.close()` calls `self.queue_pool.shutdown()`, which sets `shutdown=True` on every worker and shuts down every queue. After the first revoke, the shared pool is permanently dead: the next `create_with_partitions` will build a strategy around queues that raise `queue.ShutDown` on `put` and workers that have exited, so all messages either fail in submit (and get their offsets silently completed, dropping them) or are never processed. Additionally, each rebalance spawns a new commit thread while the pool is shared. The pool should be created per `create_with_partitions` call (or recreated after shutdown).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Queues are unbounded, so there is no backpressure despite the documented guarantee\", \"body\": \"`FixedQueuePool` creates `queue.Queue()` with no `maxsize`, so `work_queue.put(work_item)` in `submit` never blocks. The class docstring for `SimpleQueueProcessingStrategy` claims 'Natural backpressure when queues fill up', but messages will be read from Kafka and buffered in memory without limit; `poll()` only emits a gauge and never signals the processor to pause. If processing is slower than ingestion (exactly the slow-item scenario this PR targets), the consumer's memory grows unboundedly until OOM, and Kafka's max.poll.interval can be exceeded since submits always succeed instantly. Give the queues a bounded maxsize so `put` blocks and applies real backpressure.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 148, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Offsets are marked complete even when processing fails, committing failed messages with no DLQ\", \"body\": \"In `OrderedQueueWorker.run`, the `finally` block calls `self.offset_tracker.complete_offset(...)` regardless of whether `result_processor` raised. That means a message whose processing throws is treated as successfully processed and its offset becomes committable, so the failure is permanently skipped (the uptime consumer has no DLQ configured). This directly contradicts the strategy's documented guarantee 'Only commits offsets after successful processing'. The same happens in `SimpleQueueProcessingStrategy.submit`'s exception handler, which adds and immediately completes the offset on any decode/submit error. Failed items should either be retried, routed to a DLQ, or at minimum not marked complete.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1893, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling is flaky and contradicts the implementation\", \"body\": \"The test asserts that after one message fails processing, `len(committed_offsets) == 0 or test_partition not in committed_offsets`. But the implementation completes the offset in a `finally` block even on failure, so both offsets 100 and 101 become committable and the background commit loop (1s interval) will commit offset 102. Whether the assertion passes depends purely on whether the commit thread fires within the ~2.2s polling window, making the test racy; and when it does pass, it is only because the commit thread hasn't run yet, not because failures actually prevent commits. The test should either assert the actual behavior (failed offsets are committed) or the implementation should be fixed and the test made deterministic by controlling the commit loop.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 44, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"OffsetTracker state for revoked partitions is never cleaned up\", \"body\": \"`OffsetTracker` keeps `all_offsets`, `outstanding`, `last_committed`, and `partition_locks` entries for every partition forever, and the pool/tracker live as long as the factory (across rebalances). After a partition is revoked, its entries remain; worse, if the same partition is later re-assigned with the consumer continuing from a different offset, the stale `last_committed` for that partition is reused by `get_committable_offsets`, which can cause the new strategy's commit function to skip committing legitimately processed offsets (start = last_committed + 1 may be ahead of the new assignment's offsets, and `highest_committable` initialized to the old `last_committed` is never returned if lower, but a stale higher value would incorrectly suppress commits). There is no hook on partition revocation to reset per-partition state.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 133,
+   "severity": "high",
+   "category": "bug",
+   "title": "FixedQueuePool is created once on the factory and shared across partition assignments, breaking rebalances",
+   "body": "In `ResultsStrategyFactory.__init__`, the `FixedQueuePool` (with its worker threads) is created once when the factory is instantiated, and `create_with_partitions` hands that same pool to every new `SimpleQueueProcessingStrategy`. Arroyo calls `create_with_partitions` on every assignment/rebalance and `close()`/`join()` on the old strategy when partitions are revoked. `SimpleQueueProcessingStrategy.close()` calls `self.queue_pool.shutdown()`, which sets `shutdown=True` on every worker and shuts down every queue. After the first revoke, the shared pool is permanently dead: the next `create_with_partitions` will build a strategy around queues that raise `queue.ShutDown` on `put` and workers that have exited, so all messages either fail in submit (and get their offsets silently completed, dropping them) or are never processed. Additionally, each rebalance spawns a new commit thread while the pool is shared. The pool should be created per `create_with_partitions` call (or recreated after shutdown)."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Queues are unbounded, so there is no backpressure despite the documented guarantee",
+   "body": "`FixedQueuePool` creates `queue.Queue()` with no `maxsize`, so `work_queue.put(work_item)` in `submit` never blocks. The class docstring for `SimpleQueueProcessingStrategy` claims 'Natural backpressure when queues fill up', but messages will be read from Kafka and buffered in memory without limit; `poll()` only emits a gauge and never signals the processor to pause. If processing is slower than ingestion (exactly the slow-item scenario this PR targets), the consumer's memory grows unboundedly until OOM, and Kafka's max.poll.interval can be exceeded since submits always succeed instantly. Give the queues a bounded maxsize so `put` blocks and applies real backpressure."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 148,
+   "severity": "medium",
+   "category": "data",
+   "title": "Offsets are marked complete even when processing fails, committing failed messages with no DLQ",
+   "body": "In `OrderedQueueWorker.run`, the `finally` block calls `self.offset_tracker.complete_offset(...)` regardless of whether `result_processor` raised. That means a message whose processing throws is treated as successfully processed and its offset becomes committable, so the failure is permanently skipped (the uptime consumer has no DLQ configured). This directly contradicts the strategy's documented guarantee 'Only commits offsets after successful processing'. The same happens in `SimpleQueueProcessingStrategy.submit`'s exception handler, which adds and immediately completes the offset on any decode/submit error. Failed items should either be retried, routed to a DLQ, or at minimum not marked complete."
+  },
+  {
+   "index": 3,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1893,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling is flaky and contradicts the implementation",
+   "body": "The test asserts that after one message fails processing, `len(committed_offsets) == 0 or test_partition not in committed_offsets`. But the implementation completes the offset in a `finally` block even on failure, so both offsets 100 and 101 become committable and the background commit loop (1s interval) will commit offset 102. Whether the assertion passes depends purely on whether the commit thread fires within the ~2.2s polling window, making the test racy; and when it does pass, it is only because the commit thread hasn't run yet, not because failures actually prevent commits. The test should either assert the actual behavior (failed offsets are committed) or the implementation should be fixed and the test made deterministic by controlling the commit loop."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 44,
+   "severity": "low",
+   "category": "bug",
+   "title": "OffsetTracker state for revoked partitions is never cleaned up",
+   "body": "`OffsetTracker` keeps `all_offsets`, `outstanding`, `last_committed`, and `partition_locks` entries for every partition forever, and the pool/tracker live as long as the factory (across rebalances). After a partition is revoked, its entries remain; worse, if the same partition is later re-assigned with the consumer continuing from a different offset, the stale `last_committed` for that partition is reused by `get_committable_offsets`, which can cause the new strategy's commit function to skip committing legitimately processed offsets (start = last_committed + 1 may be ahead of the new assignment's offsets, and `highest_committable` initialized to the old `last_committed` is never returned if lower, but a stale higher value would incorrectly suppress commits). There is no hook on partition revocation to reset per-partition state."
+  }
+ ],
+ "finding_count": 5
+}

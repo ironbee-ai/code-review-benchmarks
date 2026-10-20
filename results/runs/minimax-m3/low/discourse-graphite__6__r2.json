@@ -1,0 +1,124 @@
+{
+ "run_id": "minimax-m3__low__discourse-graphite__6__r2",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__6",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/6",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:34:24Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 53848,
+  "sha": "1ad6b83ce3bad964",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 14537,
+    "output": 9452,
+    "reasoning": 8680,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01571118,
+   "latency_ms": 76490,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 3301,
+   "raw_usage": {
+    "completion_tokens": 9452,
+    "prompt_tokens": 14665,
+    "total_tokens": 24117,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 8680,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01571118,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01571118,
+     "upstream_inference_prompt_cost": 0.00436878,
+     "upstream_inference_completions_cost": 0.0113424
+    }
+   },
+   "started_at": "2026-10-17T20:34:24Z",
+   "first_chunk_ms": 1091,
+   "first_text_ms": 69015,
+   "response_id": "gen-1792269264-0Dp96BqmcelpyPjMmmmY",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 14537,
+  "output": 9452,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 8680
+ },
+ "cost_reported": 0.01571118,
+ "latency_ms": 76490,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully:\n\n1. The serializer adds `website_name` and a corresponding `include_website_name` method without the trailing `?`. Every other `include_*` predicate in this file (`include_email?`, `include_stats?`, `include_suspend_reason?`, etc.) uses the question mark convention that ActiveModel::Serializer relies on. Without it, the predicate isn't consulted, so `website_name` is always serialized when the attribute is defined rather than being gated on `website.present?`.\n\n2. The new `website_name` method has three logical branches (exact match, same-suffix with equal part count > 2, parent domain) but the spec only covers two of them \u2014 the \"www.example.com == forum.example.com\" branch (elsif) is completely untested.\n\n3. The `URI(website.to_s)` expression is rebuilt three times within `website_name`; if `website` ever returned different values between calls (e.g., a future refactor), this would silently yield inconsistent results.\n\n```json\n{\"findings\": [{\"file\": \"app/serializers/user_serializer.rb\", \"line\": 153, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"include_website_name predicate missing '?' suffix\", \"body\": \"The new predicate `def include_website_name` is defined without the trailing question mark, breaking the ActiveModel::Serializer convention used by every other include_* method in this file (include_email?, include_stats?, include_suspend_reason?, include_card_image_badge?, etc.). ActiveModel::Serializer looks specifically for `include_<attr>?` to gate attribute serialization. As a result the predicate is never invoked and `website_name` is always included in the serialized JSON whenever the attribute is defined, regardless of the intended `website.present?` check. This also defeats any future attempt to gate website_name exposure (e.g. for TL0 users via untrusted_attributes, since the predicate won't fire).\"}, {\"file\": \"spec/serializers/user_serializer_spec.rb\", \"line\": 76, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Missing test for the 'same suffix, equal part count > 2' branch\", \"body\": \"The new `website_name` implementation has three branches (exact match, `www.example.com == forum.example.com` style same-suffix with equal part count > 2, and parent-domain suffix). The spec only exercises the first and third (`Discourse.stubs(:current_hostname).returns('example.com')` and `...('forums.example.com')`); the elsif branch with two 3-part hosts sharing a suffix (e.g. `www.example.com` vs `forum.example.com`, both returning the full path) has no test, so a regression there would not be caught.\"}, {\"file\": \"app/serializers/user_serializer.rb\", \"line\": 138, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"URI(website.to_s) parsed three times per call\", \"body\": \"`website_name` calls `URI(website.to_s)` three times to extract `.host` and `.path`. Since `website` is a method that reads `object.user_profile.website`, the value is stable across calls within one invocation, but parsing the URL three times is wasteful and makes the logic fragile: any future change that makes `website` non-deterministic (e.g., conditional computation) would cause `.host` and `.path` to be taken from different URLs. Hoisting `uri = URI(website.to_s)` (inside the existing `rescue`) into a local would fix both concerns.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/serializers/user_serializer.rb",
+   "line": 153,
+   "severity": "medium",
+   "category": "bug",
+   "title": "include_website_name predicate missing '?' suffix",
+   "body": "The new predicate `def include_website_name` is defined without the trailing question mark, breaking the ActiveModel::Serializer convention used by every other include_* method in this file (include_email?, include_stats?, include_suspend_reason?, include_card_image_badge?, etc.). ActiveModel::Serializer looks specifically for `include_<attr>?` to gate attribute serialization. As a result the predicate is never invoked and `website_name` is always included in the serialized JSON whenever the attribute is defined, regardless of the intended `website.present?` check. This also defeats any future attempt to gate website_name exposure (e.g. for TL0 users via untrusted_attributes, since the predicate won't fire)."
+  },
+  {
+   "index": 1,
+   "file": "spec/serializers/user_serializer_spec.rb",
+   "line": 76,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Missing test for the 'same suffix, equal part count > 2' branch",
+   "body": "The new `website_name` implementation has three branches (exact match, `www.example.com == forum.example.com` style same-suffix with equal part count > 2, and parent-domain suffix). The spec only exercises the first and third (`Discourse.stubs(:current_hostname).returns('example.com')` and `...('forums.example.com')`); the elsif branch with two 3-part hosts sharing a suffix (e.g. `www.example.com` vs `forum.example.com`, both returning the full path) has no test, so a regression there would not be caught."
+  },
+  {
+   "index": 2,
+   "file": "app/serializers/user_serializer.rb",
+   "line": 138,
+   "severity": "low",
+   "category": "perf",
+   "title": "URI(website.to_s) parsed three times per call",
+   "body": "`website_name` calls `URI(website.to_s)` three times to extract `.host` and `.path`. Since `website` is a method that reads `object.user_profile.website`, the value is stable across calls within one invocation, but parsing the URL three times is wasteful and makes the logic fragile: any future change that makes `website` non-deterministic (e.g., conditional computation) would cause `.host` and `.path` to be taken from different URLs. Hoisting `uri = URI(website.to_s)` (inside the existing `rescue`) into a local would fix both concerns."
+  }
+ ],
+ "finding_count": 3
+}

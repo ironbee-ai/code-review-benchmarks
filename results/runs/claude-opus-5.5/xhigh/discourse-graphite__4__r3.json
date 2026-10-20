@@ -1,0 +1,222 @@
+{
+ "run_id": "claude-opus-5.5__xhigh__discourse-graphite__4__r3",
+ "model_id": "claude-opus-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-opus-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__4",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/4",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:49:36Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 196560,
+  "sha": "134647f45cf88f8a",
+  "patch_only": [
+   "Gemfile_rails4.lock",
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 84083,
+    "output": 21058,
+    "reasoning": 16726,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 205200,
+   "finish_reason": "end_turn",
+   "served_model": "claude-opus-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 11396,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 84083,
+    "output_tokens": 21058,
+    "output_tokens_details": {
+     "thinking_tokens": 16726
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:49:36Z",
+   "first_chunk_ms": 7591,
+   "first_text_ms": 168057,
+   "response_id": "msg_bdrk_jujbbhigg6tysezz77mxceci72f5n22qamljmhgbpmeljrg37k4a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 84083,
+  "output": 21058,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 16726
+ },
+ "cost_reported": null,
+ "latency_ms": 205200,
+ "served_model": "claude-opus-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/topic_embed.rb\", \"line\": 13, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Embed URL interpolated unescaped into raw-HTML post: stored XSS reachable anonymously\", \"body\": \"`import` builds `<a href='#{url}'>#{url}</a>` with no HTML escaping. The result is stored as a `raw_html` post, which is never sanitized and is rendered directly in the forum and the embed view.\\n\\n`url` can come from the anonymous `embed_url` param via EmbedController \u2192 RetrieveTopic \u2192 TopicRetriever. The only check there is that `URI(url).host == embeddable_host`, and Ruby's RFC2396 URI parser accepts `'`, `(`, `)` and `=` in path and query.\\n\\nExample: `http://blog.example/real-post?x='onmouseover='alert(1)'` parses with the correct host. Most blogs return 200 for unknown query params. Nokogiri then re-serializes the broken markup into a real `onmouseover` attribute.\\n\\nResult: an unauthenticated visitor with a spoofed Referer can plant script in a forum topic. Escape `url` (e.g. `ERB::Util.html_escape`) before interpolating it, and sanitize imported HTML.\"}, {\"file\": \"app/models/post.rb\", \"line\": 133, \"severity\": \"high\", \"category\": \"security\", \"title\": \"raw_html cook_method permanently bypasses sanitization, including for later user edits\", \"body\": \"`Post#cook` returns `raw` verbatim whenever `cook_method == raw_html`. The flag is persisted on the post, and `before_save` re-cooks on every update.\\n\\nAny later edit through the normal edit UI/API therefore stores arbitrary unsanitized HTML, `<script>` included, in `cooked`. That applies to the post owner (the `embed_by_username` account, which need not be staff) and to any staff editor. This is a stored-XSS primitive for whoever controls that account.\\n\\nFeed and Readability content (which keeps `href`/`src` and therefore `javascript:` URLs) is likewise never sanitized. Raw HTML should still go through a sanitizer/whitelist, and normal edits should not inherit the bypass.\"}, {\"file\": \"app/controllers/embed_controller.rb\", \"line\": 15, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Anonymous requests can enqueue unlimited jobs and create unlimited topics\", \"body\": \"Every request to `/embed/best` for an unknown `embed_url` enqueues a `RetrieveTopic` job, and `loading.html.erb` reloads every 30s, so each viewer enqueues another job each time. The only gate is the Referer header, which non-browser clients can trivially set.\\n\\nThe throttle in TopicRetriever is keyed on the exact URL string. An attacker can vary the query string (`?a=1`, `?a=2`, \u2026) on any real page of the embeddable host. Each variant triggers a synchronous full `PollFeed` run plus an HTTP fetch, and if the host returns 200, a brand new topic.\\n\\nResult: unlimited anonymous topic spam, Sidekiq flooding, and request amplification against the blog. Legitimate tracking params (utm_*) also produce duplicate topics. Consider normalizing URLs, throttling per client/host, and not enqueuing on every request.\"}, {\"file\": \"app/jobs/scheduled/poll_feed.rb\", \"line\": 35, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"`i.content.scrub` crashes on standard RSS feeds and on Ruby < 2.1\", \"body\": \"SimpleRSS only populates `content` for feeds that have a `<content>` element (Atom). Standard RSS 2.0 items carry their body in `<description>` or `<content:encoded>` (`content_encoded`), so `i.content` is nil and `nil.scrub` raises NoMethodError, aborting the whole poll.\\n\\nThe setting text advertises \\\"RSS/ATOM feed\\\", so RSS feeds would simply never import.\\n\\nSeparately, `String#scrub` only exists in Ruby 2.1+. Under Ruby 1.9.3/2.0 this raises for every item, including Atom feeds.\"}, {\"file\": \"app/jobs/scheduled/poll_feed.rb\", \"line\": 31, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"One failing feed item aborts the entire import loop, every hour\", \"body\": \"`rss.items.each` has no per-item error handling, so the first exception stops all remaining items on every run. Likely triggers include:\\n- a nil `content`;\\n- a deleted embed post;\\n- an `embed_url` longer than the 255-char varchar column;\\n- a unique-index race;\\n- `RateLimiter::LimitExceeded` when `embed_by_username` is not staff.\\n\\nOn the last point: topic creation is still rate-limited (e.g. `rate_limit_create_topic` of 5s) despite `skip_validations`, so a non-staff import user will typically fail on the second new item.\\n\\nBecause the same items come first on every hourly run, the feed can be permanently stuck. Rescue and log per item, and bypass or disable rate limiting for the import user, as the Disqus task does.\"}, {\"file\": \"app/models/topic_embed.rb\", \"line\": 32, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Deleted embedded post causes NoMethodError on update path\", \"body\": \"When a moderator deletes an imported topic or post, the `TopicEmbed` row remains, but `embed.post` returns nil because Trashable's default scope hides deleted posts.\\n\\nThe next import of that URL with changed content calls `PostRevisor.new(nil).revise!`, which raises NoMethodError. In `PollFeed` this also aborts processing of all subsequent items.\\n\\nIn addition, `EmbedController` keeps finding the stale `topic_id` and `TopicView` raises NotFound, so the embed shows an error forever instead of recreating or hiding the discussion. Handle a missing post/topic (skip it, or remove/recreate the embed).\"}, {\"file\": \"app/models/topic_embed.rb\", \"line\": 25, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Check-then-create race on embed_url; side effects fire for rolled-back topics\", \"body\": \"`import` looks up `TopicEmbed.where(embed_url: url).first` and creates if absent, with no lock. Two runs for the same URL can both see nothing:\\n- the scheduled PollFeed racing a RetrieveTopic, which itself runs PollFeed synchronously;\\n- two un-throttled staff retrievals.\\n\\nIn that case the second `TopicEmbed.create!` hits the unique index and raises, rolling back the outer `Topic.transaction`.\\n\\nHowever, PostCreator runs `enqueue_jobs`, `MessageBus.publish` and `TopicTrackingState.publish_new` before that outer transaction commits. Clients are notified of, and Sidekiq jobs target, a topic and post that never existed.\\n\\nAlso, `ActiveRecord::Rollback` raised inside PostCreator's nested `Post.transaction` is swallowed when nested like this. For example, a host-spam rejection then surfaces only as a later NOT NULL violation on `post_id`.\"}, {\"file\": \"app/jobs/scheduled/poll_feed.rb\", \"line\": 29, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Kernel#open on admin-configured URL allows shell command execution\", \"body\": \"`open(SiteSetting.feed_polling_url)` uses Kernel#open. If the value is not recognized as a URI by open-uri, it falls back to Kernel#open, and a value starting with `|` is executed as a shell command.\\n\\nThat turns a site setting editable from the admin UI into arbitrary command execution on the server. It also allows reading local files by path.\\n\\nValidate that the setting is an http(s) URL and use `URI.parse(url).open` (or an HTTP client) instead of bare `open`.\"}, {\"file\": \"lib/tasks/disqus.thor\", \"line\": 148, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"Disqus import regressions: --category removed, original dates lost, fragile network dependency\", \"body\": \"This change makes three regressions in the Disqus import task:\\n- The `--category` option is removed, so existing usage that passed `-c` now fails or silently ignores it.\\n- Topics no longer get `created_at` from the Disqus thread, so imported topics are dated at import time.\\n- Every thread now requires an HTTP fetch of `t[:link]` via `import_remote`. Any fetch error (404, timeout, DNS) raises and aborts the whole import with no per-thread recovery.\\n\\nAlso, links that are not `https?://` cause `import` to return nil after the fetch, so those threads and their comments are skipped silently.\"}, {\"file\": \"app/models/topic_embed.rb\", \"line\": 64, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"absolutize_urls mangles protocol-relative URLs\", \"body\": \"The check `href.start_with?('/')` also matches protocol-relative URLs such as `//cdn.example.com/img.png`. `sub(/^\\\\/+/, '')` then strips both slashes, producing `http://blog.host/cdn.example.com/img.png`, which breaks every protocol-relative image and link in imported content. The same applies to `src` on line 70.\\n\\nThe port check on line 59 also compares against both 80 and 443 regardless of scheme, so `http://host:443` or `https://host:80` lose their port. Use `URI.join(url, href)` instead.\"}, {\"file\": \"app/views/layouts/embed.html.erb\", \"line\": 11, \"severity\": \"low\", \"category\": \"security\", \"title\": \"Referer interpolated into a JavaScript string with HTML escaping only\", \"body\": \"`'<%= request.referer %>'` places a client-supplied header inside a JS string literal using ERB's HTML escaping. That is the wrong context: backslashes and other JS metacharacters are not escaped, and HTML entities are not decoded inside `<script>`.\\n\\nA crafted referer can at minimum break the script. Use `escape_javascript`, or better, pass only the origin of the validated embeddable host rather than the raw header.\"}, {\"file\": \"app/assets/javascripts/embed.js\", \"line\": 17, \"severity\": \"low\", \"category\": \"security\", \"title\": \"postMessage origin check uses substring match\", \"body\": \"`discourseUrl.indexOf(e.origin) === -1` accepts any origin that is a substring of `discourseUrl`. If the forum is `http://forum.example.com.au/`, the owner of `forum.example.com` passes the check and can send `discourse-resize` messages.\\n\\nThe impact is limited to resizing the iframe, but the check should compare exact origins, e.g. against an origin parsed from `discourseUrl`.\"}, {\"file\": \"lib/topic_retriever.rb\", \"line\": 27, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"Non-atomic SETNX + EXPIRE can permanently throttle a URL\", \"body\": \"`setnx` followed by a separate `expire` is not atomic. If the process dies or Redis errors between the two calls, the key never expires, and that `embed_url` is never retrieved again for non-staff visitors; the iframe keeps showing the loading page. Use `SET key 1 NX EX 60` in a single command.\"}, {\"file\": \"spec/jobs/poll_feed_spec.rb\", \"line\": 18, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Precondition specs pass vacuously\", \"body\": \"The \\\"requires feed_polling_url\\\" and \\\"requires embed_by_username\\\" examples do not stub `feed_polling_enabled?` to true. That setting defaults to false, so `poll_feed` is never called regardless of the URL or username check, and these tests would still pass if those conditions were removed.\\n\\nSimilarly, `embed_controller_spec`'s \\\"is 404 without an embed_url\\\" fails on the missing embeddable host (403) rather than the missing param. There are also no tests for `retrieved_recently?`, `PollFeed#poll_feed`, or the HTML-escaping of imported content.\"}, {\"file\": \"app/views/embed/best.html.erb\", \"line\": 6, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"`<%- end if %>` typo only works by parser accident\", \"body\": \"`end if` is a modifier-if with no condition on the same line. Ruby takes the next generated statement (the `@output_buffer.safe_append=` of the following template text) as the condition. It happens to evaluate truthy, so the template renders, but it depends on how the template compiler emits code and is fragile. It should be `<%- end %>`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/topic_embed.rb",
+   "line": 13,
+   "severity": "high",
+   "category": "security",
+   "title": "Embed URL interpolated unescaped into raw-HTML post: stored XSS reachable anonymously",
+   "body": "`import` builds `<a href='#{url}'>#{url}</a>` with no HTML escaping. The result is stored as a `raw_html` post, which is never sanitized and is rendered directly in the forum and the embed view.\n\n`url` can come from the anonymous `embed_url` param via EmbedController \u2192 RetrieveTopic \u2192 TopicRetriever. The only check there is that `URI(url).host == embeddable_host`, and Ruby's RFC2396 URI parser accepts `'`, `(`, `)` and `=` in path and query.\n\nExample: `http://blog.example/real-post?x='onmouseover='alert(1)'` parses with the correct host. Most blogs return 200 for unknown query params. Nokogiri then re-serializes the broken markup into a real `onmouseover` attribute.\n\nResult: an unauthenticated visitor with a spoofed Referer can plant script in a forum topic. Escape `url` (e.g. `ERB::Util.html_escape`) before interpolating it, and sanitize imported HTML."
+  },
+  {
+   "index": 1,
+   "file": "app/models/post.rb",
+   "line": 133,
+   "severity": "high",
+   "category": "security",
+   "title": "raw_html cook_method permanently bypasses sanitization, including for later user edits",
+   "body": "`Post#cook` returns `raw` verbatim whenever `cook_method == raw_html`. The flag is persisted on the post, and `before_save` re-cooks on every update.\n\nAny later edit through the normal edit UI/API therefore stores arbitrary unsanitized HTML, `<script>` included, in `cooked`. That applies to the post owner (the `embed_by_username` account, which need not be staff) and to any staff editor. This is a stored-XSS primitive for whoever controls that account.\n\nFeed and Readability content (which keeps `href`/`src` and therefore `javascript:` URLs) is likewise never sanitized. Raw HTML should still go through a sanitizer/whitelist, and normal edits should not inherit the bypass."
+  },
+  {
+   "index": 2,
+   "file": "app/controllers/embed_controller.rb",
+   "line": 15,
+   "severity": "medium",
+   "category": "security",
+   "title": "Anonymous requests can enqueue unlimited jobs and create unlimited topics",
+   "body": "Every request to `/embed/best` for an unknown `embed_url` enqueues a `RetrieveTopic` job, and `loading.html.erb` reloads every 30s, so each viewer enqueues another job each time. The only gate is the Referer header, which non-browser clients can trivially set.\n\nThe throttle in TopicRetriever is keyed on the exact URL string. An attacker can vary the query string (`?a=1`, `?a=2`, \u2026) on any real page of the embeddable host. Each variant triggers a synchronous full `PollFeed` run plus an HTTP fetch, and if the host returns 200, a brand new topic.\n\nResult: unlimited anonymous topic spam, Sidekiq flooding, and request amplification against the blog. Legitimate tracking params (utm_*) also produce duplicate topics. Consider normalizing URLs, throttling per client/host, and not enqueuing on every request."
+  },
+  {
+   "index": 3,
+   "file": "app/jobs/scheduled/poll_feed.rb",
+   "line": 35,
+   "severity": "medium",
+   "category": "bug",
+   "title": "`i.content.scrub` crashes on standard RSS feeds and on Ruby < 2.1",
+   "body": "SimpleRSS only populates `content` for feeds that have a `<content>` element (Atom). Standard RSS 2.0 items carry their body in `<description>` or `<content:encoded>` (`content_encoded`), so `i.content` is nil and `nil.scrub` raises NoMethodError, aborting the whole poll.\n\nThe setting text advertises \"RSS/ATOM feed\", so RSS feeds would simply never import.\n\nSeparately, `String#scrub` only exists in Ruby 2.1+. Under Ruby 1.9.3/2.0 this raises for every item, including Atom feeds."
+  },
+  {
+   "index": 4,
+   "file": "app/jobs/scheduled/poll_feed.rb",
+   "line": 31,
+   "severity": "medium",
+   "category": "bug",
+   "title": "One failing feed item aborts the entire import loop, every hour",
+   "body": "`rss.items.each` has no per-item error handling, so the first exception stops all remaining items on every run. Likely triggers include:\n- a nil `content`;\n- a deleted embed post;\n- an `embed_url` longer than the 255-char varchar column;\n- a unique-index race;\n- `RateLimiter::LimitExceeded` when `embed_by_username` is not staff.\n\nOn the last point: topic creation is still rate-limited (e.g. `rate_limit_create_topic` of 5s) despite `skip_validations`, so a non-staff import user will typically fail on the second new item.\n\nBecause the same items come first on every hourly run, the feed can be permanently stuck. Rescue and log per item, and bypass or disable rate limiting for the import user, as the Disqus task does."
+  },
+  {
+   "index": 5,
+   "file": "app/models/topic_embed.rb",
+   "line": 32,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Deleted embedded post causes NoMethodError on update path",
+   "body": "When a moderator deletes an imported topic or post, the `TopicEmbed` row remains, but `embed.post` returns nil because Trashable's default scope hides deleted posts.\n\nThe next import of that URL with changed content calls `PostRevisor.new(nil).revise!`, which raises NoMethodError. In `PollFeed` this also aborts processing of all subsequent items.\n\nIn addition, `EmbedController` keeps finding the stale `topic_id` and `TopicView` raises NotFound, so the embed shows an error forever instead of recreating or hiding the discussion. Handle a missing post/topic (skip it, or remove/recreate the embed)."
+  },
+  {
+   "index": 6,
+   "file": "app/models/topic_embed.rb",
+   "line": 25,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Check-then-create race on embed_url; side effects fire for rolled-back topics",
+   "body": "`import` looks up `TopicEmbed.where(embed_url: url).first` and creates if absent, with no lock. Two runs for the same URL can both see nothing:\n- the scheduled PollFeed racing a RetrieveTopic, which itself runs PollFeed synchronously;\n- two un-throttled staff retrievals.\n\nIn that case the second `TopicEmbed.create!` hits the unique index and raises, rolling back the outer `Topic.transaction`.\n\nHowever, PostCreator runs `enqueue_jobs`, `MessageBus.publish` and `TopicTrackingState.publish_new` before that outer transaction commits. Clients are notified of, and Sidekiq jobs target, a topic and post that never existed.\n\nAlso, `ActiveRecord::Rollback` raised inside PostCreator's nested `Post.transaction` is swallowed when nested like this. For example, a host-spam rejection then surfaces only as a later NOT NULL violation on `post_id`."
+  },
+  {
+   "index": 7,
+   "file": "app/jobs/scheduled/poll_feed.rb",
+   "line": 29,
+   "severity": "medium",
+   "category": "security",
+   "title": "Kernel#open on admin-configured URL allows shell command execution",
+   "body": "`open(SiteSetting.feed_polling_url)` uses Kernel#open. If the value is not recognized as a URI by open-uri, it falls back to Kernel#open, and a value starting with `|` is executed as a shell command.\n\nThat turns a site setting editable from the admin UI into arbitrary command execution on the server. It also allows reading local files by path.\n\nValidate that the setting is an http(s) URL and use `URI.parse(url).open` (or an HTTP client) instead of bare `open`."
+  },
+  {
+   "index": 8,
+   "file": "lib/tasks/disqus.thor",
+   "line": 148,
+   "severity": "medium",
+   "category": "api",
+   "title": "Disqus import regressions: --category removed, original dates lost, fragile network dependency",
+   "body": "This change makes three regressions in the Disqus import task:\n- The `--category` option is removed, so existing usage that passed `-c` now fails or silently ignores it.\n- Topics no longer get `created_at` from the Disqus thread, so imported topics are dated at import time.\n- Every thread now requires an HTTP fetch of `t[:link]` via `import_remote`. Any fetch error (404, timeout, DNS) raises and aborts the whole import with no per-thread recovery.\n\nAlso, links that are not `https?://` cause `import` to return nil after the fetch, so those threads and their comments are skipped silently."
+  },
+  {
+   "index": 9,
+   "file": "app/models/topic_embed.rb",
+   "line": 64,
+   "severity": "low",
+   "category": "bug",
+   "title": "absolutize_urls mangles protocol-relative URLs",
+   "body": "The check `href.start_with?('/')` also matches protocol-relative URLs such as `//cdn.example.com/img.png`. `sub(/^\\/+/, '')` then strips both slashes, producing `http://blog.host/cdn.example.com/img.png`, which breaks every protocol-relative image and link in imported content. The same applies to `src` on line 70.\n\nThe port check on line 59 also compares against both 80 and 443 regardless of scheme, so `http://host:443` or `https://host:80` lose their port. Use `URI.join(url, href)` instead."
+  },
+  {
+   "index": 10,
+   "file": "app/views/layouts/embed.html.erb",
+   "line": 11,
+   "severity": "low",
+   "category": "security",
+   "title": "Referer interpolated into a JavaScript string with HTML escaping only",
+   "body": "`'<%= request.referer %>'` places a client-supplied header inside a JS string literal using ERB's HTML escaping. That is the wrong context: backslashes and other JS metacharacters are not escaped, and HTML entities are not decoded inside `<script>`.\n\nA crafted referer can at minimum break the script. Use `escape_javascript`, or better, pass only the origin of the validated embeddable host rather than the raw header."
+  },
+  {
+   "index": 11,
+   "file": "app/assets/javascripts/embed.js",
+   "line": 17,
+   "severity": "low",
+   "category": "security",
+   "title": "postMessage origin check uses substring match",
+   "body": "`discourseUrl.indexOf(e.origin) === -1` accepts any origin that is a substring of `discourseUrl`. If the forum is `http://forum.example.com.au/`, the owner of `forum.example.com` passes the check and can send `discourse-resize` messages.\n\nThe impact is limited to resizing the iframe, but the check should compare exact origins, e.g. against an origin parsed from `discourseUrl`."
+  },
+  {
+   "index": 12,
+   "file": "lib/topic_retriever.rb",
+   "line": 27,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "Non-atomic SETNX + EXPIRE can permanently throttle a URL",
+   "body": "`setnx` followed by a separate `expire` is not atomic. If the process dies or Redis errors between the two calls, the key never expires, and that `embed_url` is never retrieved again for non-staff visitors; the iframe keeps showing the loading page. Use `SET key 1 NX EX 60` in a single command."
+  },
+  {
+   "index": 13,
+   "file": "spec/jobs/poll_feed_spec.rb",
+   "line": 18,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Precondition specs pass vacuously",
+   "body": "The \"requires feed_polling_url\" and \"requires embed_by_username\" examples do not stub `feed_polling_enabled?` to true. That setting defaults to false, so `poll_feed` is never called regardless of the URL or username check, and these tests would still pass if those conditions were removed.\n\nSimilarly, `embed_controller_spec`'s \"is 404 without an embed_url\" fails on the missing embeddable host (403) rather than the missing param. There are also no tests for `retrieved_recently?`, `PollFeed#poll_feed`, or the HTML-escaping of imported content."
+  },
+  {
+   "index": 14,
+   "file": "app/views/embed/best.html.erb",
+   "line": 6,
+   "severity": "low",
+   "category": "bug",
+   "title": "`<%- end if %>` typo only works by parser accident",
+   "body": "`end if` is a modifier-if with no condition on the same line. Ruby takes the next generated statement (the `@output_buffer.safe_append=` of the following template text) as the condition. It happens to evaluate truthy, so the template renders, but it depends on how the template compiler emits code and is fragile. It should be `<%- end %>`."
+  }
+ ],
+ "finding_count": 15
+}

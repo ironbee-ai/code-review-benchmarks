@@ -1,0 +1,179 @@
+{
+ "run_id": "mistral-large-4__low__grafana__80329__r3",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__80329",
+ "golden_url": "https://github.com/grafana/grafana/pull/80329",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:49:19Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 65677,
+  "sha": "8d83e49cfc512854",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 20195,
+    "output": 2888,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01976852,
+   "latency_ms": 30475,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 12881,
+   "raw_usage": {
+    "completion_tokens": 2888,
+    "prompt_tokens": 20195,
+    "total_tokens": 23083,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.01976852,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01976852,
+     "upstream_inference_prompt_cost": 0.0137326,
+     "upstream_inference_completions_cost": 0.00603592
+    }
+   },
+   "started_at": "2026-10-18T11:49:19Z",
+   "first_chunk_ms": 2231,
+   "first_text_ms": 2231,
+   "response_id": "gen-1792324160-c1fwLeOLh9uUGTZGgKJD",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 20195,
+  "output": 2888,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.01976852,
+ "latency_ms": 30475,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\",\n      \"line\": 534,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"Cleanup logs at Error level on every successful batch, flooding logs\",\n      \"body\": \"In CleanAnnotations (and the MaxCount branch at line 554, and CleanOrphanedAnnotationTags at line 576), the code calls r.log.Error(\\\"Annotations to clean by time\\\", ...) unconditionally after fetchIDs succeeds, passing \\\"err\\\", err which is always nil at that point. This logs every batch of a routine background cleanup job at Error level, including the full list of IDs and the SQL condition. On any instance with annotations configured for cleanup, this will emit an Error-level log line per batch per cleanup cycle (every minute, per the cleanup.go ticker change), which will flood logs, trigger alerting on error-rate dashboards, and obscure real errors. These should be Debug-level logs (matching the style used elsewhere in cleanup.go, e.g. logger.Debug(\\\"Deleted excess annotations\\\", ...)), and the always-nil \\\"err\\\" key should be removed.\"\n    },\n    {\n      \"file\": \"pkg/services/cleanup/cleanup.go\",\n      \"line\": 77,\n      \"severity\": \"high\",\n      \"category\": \"perf\",\n      \"title\": \"Cleanup job ticker changed from 10 minutes to 1 minute without justification\",\n      \"body\": \"The diff changes `ticker := time.NewTicker(time.Minute * 10)` to `time.Minute * 1` in CleanUpService.Run. This is unrelated to the stated deadlock fix and increases the frequency of ALL cleanup jobs (temp files, snapshots, dashboard versions, images, annotations, invites, short URLs, query history) by 10x. Each cycle now runs every minute with a 9-minute timeout, meaning jobs can overlap with themselves if a cycle takes longer than a minute, and it multiplies database load from every cleanup job. The PR description says nothing about changing the schedule. If this was intentional it needs to be called out and justified in the PR description; otherwise it should be reverted to 10 minutes.\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\",\n      \"line\": 608,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"SQLite large-batch path interpolates IDs into SQL and keys off configured batch size rather than actual ID count\",\n      \"body\": \"In deleteByIDs, when the database is SQLite and cfg.AnnotationCleanupJobBatchSize > 999, the IDs are string-interpolated directly into the DELETE statement. Two problems: (1) the guard checks the configured batch size, not len(ids) \u2014 the actual number of IDs in this batch. If the batch size is configured above 999 but a particular batch returns fewer IDs (e.g. the final partial batch, or a batch where concurrent deletes already removed rows), the parameterized path would have been safe and correct, but more importantly the inverse is also possible: the condition is on configuration, so any code path that passes more IDs than the configured batch size (there is none today, but the function's contract is about len(ids)) would exceed SQLite's variable limit and fail. The check should be `len(ids) > sqliteParameterLimit`. (2) The interpolated values come from fetchIDs which selects id from the database, so they are int64s and not injectable in practice \u2014 but building SQL by string concatenation of values is fragile and the fmt.Sprint(ids[0]) / loop pattern is O(n\u00b2) due to repeated string concatenation in a loop (each fmt.Sprintf allocates a new string of growing size). For a 32767-element batch this is ~500MB of intermediate allocations. A strings.Builder or strconv.AppendInt into a []byte would be linear. The test at cleanup_test.go line 98 exercises this path with 40000 IDs, so the quadratic behavior is real and measurable.\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\",\n      \"line\": 529,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"MaxAge cleanup condition embeds cutoffDate via %v into SQL and relies on annotationType string without validation\",\n      \"body\": \"The condition strings are built with fmt.Sprintf(`%s AND created < %v ORDER BY id DESC %s`, annotationType, cutoffDate, ...) and passed to fetchIDs, which concatenates them into `SELECT id FROM annotation WHERE %s`. annotationType is a caller-supplied string (alertAnnotationType, dashboardAnnotationType, apiAnnotationType constants today, but the function is exported on the repository and takes an arbitrary string). There is no allowlist, so any future caller passing user-influenced input would have a SQL injection vector. Additionally, cutoffDate is interpolated with %v rather than passed as a bound parameter \u2014 it is an int64 computed from timeNow() so it is not injectable, but it bypasses the parameterization that the rest of the codebase uses and would break if the value were ever a string. Both annotationType and cutoffDate should be validated/parameterized: annotationType should be checked against a known set (or mapped to a column predicate server-side), and the cutoff should be a `?` placeholder with the value in args.\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\",\n      \"line\": 571,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"CleanOrphanedAnnotationTags fetches annotation_tag.id, but annotation_tag has no id column \u2014 cleanup of orphaned tags is broken\",\n      \"body\": \"CleanOrphanedAnnotationTags builds the condition `NOT EXISTS (SELECT 1 FROM annotation a WHERE annotation_id = a.id) ...` and calls fetchIDs(ctx, \\\"annotation_tag\\\", cond). fetchIDs unconditionally generates `SELECT id FROM annotation_tag WHERE ...`. The annotation_tag table (see the annotationTag struct at line 663-666 and the tag-creation code) is a join table with columns annotation_id and tag_id only \u2014 it has no `id` column. The original code deleted via `DELETE FROM annotation_tag WHERE id IN (SELECT id FROM (SELECT id FROM annotation_tag ...))`, which had the same problem, but the old code's outer DELETE referenced `id` too, so this may have been silently broken before as well; regardless, the new code makes the SELECT fail outright with \\\"no such column: id\\\" on every run, meaning CleanOrphanedAnnotationTags always returns an error and orphaned tags are never cleaned. The correct approach is to select the composite key (annotation_id, tag_id) pairs, or delete with a WHERE NOT EXISTS clause directly (which does not need the fetch-then-delete split for correctness, only to avoid the MySQL deadlock pattern \u2014 and a plain `DELETE FROM annotation_tag WHERE NOT EXISTS (...)` with LIMIT is the deadlock-prone form, so selecting the pair keys and deleting by them is the right fix). fetchIDs and deleteByIDs need to support composite keys, or this job needs its own query/delete pair keyed on (annotation_id, tag_id).\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\",\n      \"line\": 597,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"fetchIDs-then-deleteByIDs is not atomic: annotations deleted between SELECT and DELETE leave orphaned annotation_tag rows, and RowsAffected-based loop termination can spin\",\n      \"body\": \"The new cleanup splits the old single-statement DELETE into a SELECT of IDs followed by a separate DELETE. These run in separate sessions (separate WithDbSession calls), so there is no transaction or lock continuity. Consequences: (1) If an annotation is deleted by another path (e.g. the Delete API, or a concurrent cleanup worker) between fetchIDs and deleteByIDs, the DELETE affects 0 rows for that ID \u2014 fine \u2014 but the annotation_tag rows for it are handled by a different mechanism (CleanOrphanedAnnotationTags), which per the separate finding is broken, so tags leak. (2) More subtly, untilDoneOrCancelled terminates when a batch returns affected == 0. If fetchIDs returns N IDs but deleteByIDs reports 0 rows affected (all concurrently deleted), the loop terminates even though fetchIDs would still return those same IDs on the next call if the rows still existed \u2014 this is actually correct behavior. But the reverse hazard: if deleteByIDs partially fails (some IDs deleted, then error), the error propagates and the loop stops, which is correct. The real issue is that the annotation rows and their annotation_tag rows are deleted by two different jobs (CleanAnnotations deletes annotation rows; CleanOrphanedAnnotationTags deletes tag rows), with no coordination, so between the two jobs running, the database contains annotations with tags whose annotation row is gone. Any reader joining annotation_tag to annotation (e.g. GetTags at line 439-458, which INNER JOINs annotation) will simply not see them, which is benign, but the window is unbounded because the two jobs run at different times in the cleanup cycle. The PR description acknowledges under-deletion on concurrent inserts but does not address the tag-orphan window; given CleanOrphanedAnnotationTags is broken (no id column), the orphans are permanent. At minimum, CleanAnnotations should delete the annotation_tag rows for the IDs it deletes in the same batch loop.\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/cleanup_test.go\",\n      \"line\": 116,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"Table-driven tests share one database and hard-code sequential IDs, so tests are order-dependent and will collide\",\n      \"body\": \"TestIntegrationAnnotationCleanUp calls db.InitTestDB(t) once outside the subtests, then each subtest calls createTestAnnotations(t, fakeSQL, ...) which assigns IDs explicitly as int64(i+1) starting from 1. The t.Cleanup deletes all rows after each subtest, but explicit ID assignment combined with shared state means: (1) if the annotation table's auto-increment/identity counter is not reset by DELETE FROM, the next subtest's explicit IDs (1..N) may collide with the sequence's next value on databases where explicit insert of an ID below the sequence value is allowed but later auto-inserts collide \u2014 on Postgres, inserting explicit IDs does not advance the sequence, so a later auto-insert (e.g. from a different test running in the same package against the same test DB, or if cleanup ordering changes) will fail with a duplicate key. (2) The tests cannot be run with t.Parallel() and are fragile against any other test in the package that inserts annotations. The explicit ID assignment was added to support the new fetch-then-delete logic (deterministic IDs), but it should either use a per-subtest ID offset, or reset the sequence in cleanup, or use unique high ID ranges per subtest.\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/cleanup_test.go\",\n      \"line\": 98,\n      \"severity\": \"low\",\n      \"category\": \"test_gap\",\n      \"title\": \"SQLite large-batch test creates 40003 annotations, making the test suite slow without a short-mode guard for the heavy case\",\n      \"body\": \"The test case \\\"should not fail if batch size is larger than SQLITE_MAX_VARIABLE_NUMBER for SQLite >= 3.32.0\\\" inserts 40003 annotations plus 80006 annotation_tag rows via InsertMulti in batches of 500 (160+ SQL statements), then runs the cleanup which fetches and deletes 40000 IDs. This is by far the most expensive test in the file and runs on every non-short test run on every database backend (the test does not check the DB type \u2014 it runs the SQLite-specific code path only when the test DB is SQLite, but the 40003-row setup runs regardless of backend). On MySQL/Postgres CI this adds significant time for a test that only exercises the SQLite interpolation branch. The setup should be skipped (t.Skip) when the test database is not SQLite, since the code path under test (deleteByIDs SQLite branch) only executes on SQLite.\"\n    },\n    {\n      \"file\": \"pkg/services/annotations/annotationsimpl/xorm_store.go\",\n      \"line\": 584,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"fetchIDs builds SQL before validating the condition, constructing a misleading error path\",\n      \"body\": \"fetchIDs does `sql := fmt.Sprintf(`SELECT id FROM %s`, table)` first, then checks `if condition == \\\"\\\"` and returns an error. The SQL string is built and then discarded when the condition is empty. This is harmless functionally but the ordering is backwards \u2014 the guard should come first \u2014 and more importantly the guard only checks for an empty string, not for a condition that is syntactically dangerous. Since the condition is concatenated raw into the WHERE clause (see the injection finding), the empty-string check is the only validation. The function should validate its inputs before building SQL, and the condition parameter should be documented as raw SQL that must never contain user input.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 534,
+   "severity": "high",
+   "category": "bug",
+   "title": "Cleanup logs at Error level on every successful batch, flooding logs",
+   "body": "In CleanAnnotations (and the MaxCount branch at line 554, and CleanOrphanedAnnotationTags at line 576), the code calls r.log.Error(\"Annotations to clean by time\", ...) unconditionally after fetchIDs succeeds, passing \"err\", err which is always nil at that point. This logs every batch of a routine background cleanup job at Error level, including the full list of IDs and the SQL condition. On any instance with annotations configured for cleanup, this will emit an Error-level log line per batch per cleanup cycle (every minute, per the cleanup.go ticker change), which will flood logs, trigger alerting on error-rate dashboards, and obscure real errors. These should be Debug-level logs (matching the style used elsewhere in cleanup.go, e.g. logger.Debug(\"Deleted excess annotations\", ...)), and the always-nil \"err\" key should be removed."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/cleanup/cleanup.go",
+   "line": 77,
+   "severity": "high",
+   "category": "perf",
+   "title": "Cleanup job ticker changed from 10 minutes to 1 minute without justification",
+   "body": "The diff changes `ticker := time.NewTicker(time.Minute * 10)` to `time.Minute * 1` in CleanUpService.Run. This is unrelated to the stated deadlock fix and increases the frequency of ALL cleanup jobs (temp files, snapshots, dashboard versions, images, annotations, invites, short URLs, query history) by 10x. Each cycle now runs every minute with a 9-minute timeout, meaning jobs can overlap with themselves if a cycle takes longer than a minute, and it multiplies database load from every cleanup job. The PR description says nothing about changing the schedule. If this was intentional it needs to be called out and justified in the PR description; otherwise it should be reverted to 10 minutes."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 608,
+   "severity": "medium",
+   "category": "data",
+   "title": "SQLite large-batch path interpolates IDs into SQL and keys off configured batch size rather than actual ID count",
+   "body": "In deleteByIDs, when the database is SQLite and cfg.AnnotationCleanupJobBatchSize > 999, the IDs are string-interpolated directly into the DELETE statement. Two problems: (1) the guard checks the configured batch size, not len(ids) \u2014 the actual number of IDs in this batch. If the batch size is configured above 999 but a particular batch returns fewer IDs (e.g. the final partial batch, or a batch where concurrent deletes already removed rows), the parameterized path would have been safe and correct, but more importantly the inverse is also possible: the condition is on configuration, so any code path that passes more IDs than the configured batch size (there is none today, but the function's contract is about len(ids)) would exceed SQLite's variable limit and fail. The check should be `len(ids) > sqliteParameterLimit`. (2) The interpolated values come from fetchIDs which selects id from the database, so they are int64s and not injectable in practice \u2014 but building SQL by string concatenation of values is fragile and the fmt.Sprint(ids[0]) / loop pattern is O(n\u00b2) due to repeated string concatenation in a loop (each fmt.Sprintf allocates a new string of growing size). For a 32767-element batch this is ~500MB of intermediate allocations. A strings.Builder or strconv.AppendInt into a []byte would be linear. The test at cleanup_test.go line 98 exercises this path with 40000 IDs, so the quadratic behavior is real and measurable."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 529,
+   "severity": "medium",
+   "category": "data",
+   "title": "MaxAge cleanup condition embeds cutoffDate via %v into SQL and relies on annotationType string without validation",
+   "body": "The condition strings are built with fmt.Sprintf(`%s AND created < %v ORDER BY id DESC %s`, annotationType, cutoffDate, ...) and passed to fetchIDs, which concatenates them into `SELECT id FROM annotation WHERE %s`. annotationType is a caller-supplied string (alertAnnotationType, dashboardAnnotationType, apiAnnotationType constants today, but the function is exported on the repository and takes an arbitrary string). There is no allowlist, so any future caller passing user-influenced input would have a SQL injection vector. Additionally, cutoffDate is interpolated with %v rather than passed as a bound parameter \u2014 it is an int64 computed from timeNow() so it is not injectable, but it bypasses the parameterization that the rest of the codebase uses and would break if the value were ever a string. Both annotationType and cutoffDate should be validated/parameterized: annotationType should be checked against a known set (or mapped to a column predicate server-side), and the cutoff should be a `?` placeholder with the value in args."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 571,
+   "severity": "medium",
+   "category": "bug",
+   "title": "CleanOrphanedAnnotationTags fetches annotation_tag.id, but annotation_tag has no id column \u2014 cleanup of orphaned tags is broken",
+   "body": "CleanOrphanedAnnotationTags builds the condition `NOT EXISTS (SELECT 1 FROM annotation a WHERE annotation_id = a.id) ...` and calls fetchIDs(ctx, \"annotation_tag\", cond). fetchIDs unconditionally generates `SELECT id FROM annotation_tag WHERE ...`. The annotation_tag table (see the annotationTag struct at line 663-666 and the tag-creation code) is a join table with columns annotation_id and tag_id only \u2014 it has no `id` column. The original code deleted via `DELETE FROM annotation_tag WHERE id IN (SELECT id FROM (SELECT id FROM annotation_tag ...))`, which had the same problem, but the old code's outer DELETE referenced `id` too, so this may have been silently broken before as well; regardless, the new code makes the SELECT fail outright with \"no such column: id\" on every run, meaning CleanOrphanedAnnotationTags always returns an error and orphaned tags are never cleaned. The correct approach is to select the composite key (annotation_id, tag_id) pairs, or delete with a WHERE NOT EXISTS clause directly (which does not need the fetch-then-delete split for correctness, only to avoid the MySQL deadlock pattern \u2014 and a plain `DELETE FROM annotation_tag WHERE NOT EXISTS (...)` with LIMIT is the deadlock-prone form, so selecting the pair keys and deleting by them is the right fix). fetchIDs and deleteByIDs need to support composite keys, or this job needs its own query/delete pair keyed on (annotation_id, tag_id)."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 597,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "fetchIDs-then-deleteByIDs is not atomic: annotations deleted between SELECT and DELETE leave orphaned annotation_tag rows, and RowsAffected-based loop termination can spin",
+   "body": "The new cleanup splits the old single-statement DELETE into a SELECT of IDs followed by a separate DELETE. These run in separate sessions (separate WithDbSession calls), so there is no transaction or lock continuity. Consequences: (1) If an annotation is deleted by another path (e.g. the Delete API, or a concurrent cleanup worker) between fetchIDs and deleteByIDs, the DELETE affects 0 rows for that ID \u2014 fine \u2014 but the annotation_tag rows for it are handled by a different mechanism (CleanOrphanedAnnotationTags), which per the separate finding is broken, so tags leak. (2) More subtly, untilDoneOrCancelled terminates when a batch returns affected == 0. If fetchIDs returns N IDs but deleteByIDs reports 0 rows affected (all concurrently deleted), the loop terminates even though fetchIDs would still return those same IDs on the next call if the rows still existed \u2014 this is actually correct behavior. But the reverse hazard: if deleteByIDs partially fails (some IDs deleted, then error), the error propagates and the loop stops, which is correct. The real issue is that the annotation rows and their annotation_tag rows are deleted by two different jobs (CleanAnnotations deletes annotation rows; CleanOrphanedAnnotationTags deletes tag rows), with no coordination, so between the two jobs running, the database contains annotations with tags whose annotation row is gone. Any reader joining annotation_tag to annotation (e.g. GetTags at line 439-458, which INNER JOINs annotation) will simply not see them, which is benign, but the window is unbounded because the two jobs run at different times in the cleanup cycle. The PR description acknowledges under-deletion on concurrent inserts but does not address the tag-orphan window; given CleanOrphanedAnnotationTags is broken (no id column), the orphans are permanent. At minimum, CleanAnnotations should delete the annotation_tag rows for the IDs it deletes in the same batch loop."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/annotations/annotationsimpl/cleanup_test.go",
+   "line": 116,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Table-driven tests share one database and hard-code sequential IDs, so tests are order-dependent and will collide",
+   "body": "TestIntegrationAnnotationCleanUp calls db.InitTestDB(t) once outside the subtests, then each subtest calls createTestAnnotations(t, fakeSQL, ...) which assigns IDs explicitly as int64(i+1) starting from 1. The t.Cleanup deletes all rows after each subtest, but explicit ID assignment combined with shared state means: (1) if the annotation table's auto-increment/identity counter is not reset by DELETE FROM, the next subtest's explicit IDs (1..N) may collide with the sequence's next value on databases where explicit insert of an ID below the sequence value is allowed but later auto-inserts collide \u2014 on Postgres, inserting explicit IDs does not advance the sequence, so a later auto-insert (e.g. from a different test running in the same package against the same test DB, or if cleanup ordering changes) will fail with a duplicate key. (2) The tests cannot be run with t.Parallel() and are fragile against any other test in the package that inserts annotations. The explicit ID assignment was added to support the new fetch-then-delete logic (deterministic IDs), but it should either use a per-subtest ID offset, or reset the sequence in cleanup, or use unique high ID ranges per subtest."
+  },
+  {
+   "index": 7,
+   "file": "pkg/services/annotations/annotationsimpl/cleanup_test.go",
+   "line": 98,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "SQLite large-batch test creates 40003 annotations, making the test suite slow without a short-mode guard for the heavy case",
+   "body": "The test case \"should not fail if batch size is larger than SQLITE_MAX_VARIABLE_NUMBER for SQLite >= 3.32.0\" inserts 40003 annotations plus 80006 annotation_tag rows via InsertMulti in batches of 500 (160+ SQL statements), then runs the cleanup which fetches and deletes 40000 IDs. This is by far the most expensive test in the file and runs on every non-short test run on every database backend (the test does not check the DB type \u2014 it runs the SQLite-specific code path only when the test DB is SQLite, but the 40003-row setup runs regardless of backend). On MySQL/Postgres CI this adds significant time for a test that only exercises the SQLite interpolation branch. The setup should be skipped (t.Skip) when the test database is not SQLite, since the code path under test (deleteByIDs SQLite branch) only executes on SQLite."
+  },
+  {
+   "index": 8,
+   "file": "pkg/services/annotations/annotationsimpl/xorm_store.go",
+   "line": 584,
+   "severity": "low",
+   "category": "bug",
+   "title": "fetchIDs builds SQL before validating the condition, constructing a misleading error path",
+   "body": "fetchIDs does `sql := fmt.Sprintf(`SELECT id FROM %s`, table)` first, then checks `if condition == \"\"` and returns an error. The SQL string is built and then discarded when the condition is empty. This is harmless functionally but the ordering is backwards \u2014 the guard should come first \u2014 and more importantly the guard only checks for an empty string, not for a condition that is syntactically dangerous. Since the condition is concatenated raw into the WHERE clause (see the injection finding), the empty-string check is the only validation. The function should validate its inputs before building SQL, and the condition parameter should be documented as raw SQL that must never contain user input."
+  }
+ ],
+ "finding_count": 9
+}

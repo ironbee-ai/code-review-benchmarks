@@ -1,0 +1,124 @@
+{
+ "run_id": "minimax-m3__xhigh__keycloak-greptile__1__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "keycloak-greptile__1",
+ "golden_url": "https://github.com/ai-code-review-evaluation/keycloak-greptile/pull/1",
+ "repeat": 3,
+ "started_at": "2026-10-18T12:47:28Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 146325,
+  "sha": "30fcfd5722e5e8a2",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 32782,
+    "output": 31555,
+    "reasoning": 30607,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.04770828,
+   "latency_ms": 135987,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 4197,
+   "raw_usage": {
+    "completion_tokens": 31555,
+    "prompt_tokens": 32910,
+    "total_tokens": 64465,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 30607,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.04770828,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.04770828,
+     "upstream_inference_prompt_cost": 0.00984228,
+     "upstream_inference_completions_cost": 0.037866
+    }
+   },
+   "started_at": "2026-10-18T12:47:28Z",
+   "first_chunk_ms": 2037,
+   "first_text_ms": 132712,
+   "response_id": "gen-1792327648-0Ri67l5ARPl0LeGfgboh",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 32782,
+  "output": 31555,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 30607
+ },
+ "cost_reported": 0.04770828,
+ "latency_ms": 135987,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "Looking at this PR carefully, I need to verify the changes compile and behave correctly.\n\n**Critical issue:** In `UsernameForm.java` line 47, `isConditionalPasskeysEnabled()` is called with no arguments, but the only method defined is `isConditionalPasskeysEnabled(UserModel user)` in the parent `UsernamePasswordForm`. This is a compile error.\n\n**Behavior change:** In `UsernamePasswordForm.authenticate()`, the `webauthnAuth.fillContextForm(context)` call was moved from inside the `else` block (initial login, user is null) to outside the block, gated on `isConditionalPasskeysEnabled(context.getUser())` which requires `user != null`. This means the webauthn form data is no longer filled on the initial login page, breaking conditional UI passkey login for users who haven't yet authenticated. The existing test `passwordLoginWithNonDiscoverableKey` in `PasskeysUsernamePasswordFormTest` asserts the webauthn form must be present on the initial login page, which will fail with the new code unless something else fills the form.\n\n**Test code smell:** The try/catch with `fail()` pattern in `reauthenticationOfUserWithoutPasskey` is awkward for asserting element absence \u2014 `assertThrows(NoSuchElementException.class, ...)` is clearer and already used elsewhere in the same package.\n\n```json\n{\"findings\": [{\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java\", \"line\": 47, \"severity\": \"critical\", \"category\": \"bug\", \"title\": \"Compile error: isConditionalPasskeysEnabled() called with no args\", \"body\": \"The method isConditionalPasskeysEnabled() is invoked with no arguments, but the only definition in the parent class UsernamePasswordForm is `protected boolean isConditionalPasskeysEnabled(UserModel user)` which requires a UserModel parameter. There is no no-arg overload anywhere in the class hierarchy. This will prevent the project from compiling. Likely intended to be `isConditionalPasskeysEnabled(context.getUser())`, or a separate no-arg overload was forgotten.\"}, {\"file\": \"services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java\", \"line\": 115, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"WebAuthn form no longer filled on initial login (conditional UI regression)\", \"body\": \"Before this change the call `webauthnAuth.fillContextForm(context)` lived inside the `else` branch where `context.getUser() == null`, i.e. it ran on the initial login page so conditional UI passkeys worked for users without a session. The new code hoists it out and gates it on `isConditionalPasskeysEnabled(context.getUser())`, which requires `user != null`. As a result the WebAuthn challenge, RP ID, allowed authenticators, and ENABLE_WEBAUTHN_CONDITIONAL_UI attribute are never set on the initial login form, so navigator.credentials.get() cannot auto-discover passkeys. The existing test `PasskeysUsernamePasswordFormTest.passwordLoginWithNonDiscoverableKey` still asserts `driver.findElement(By.xpath(\\\"//form[@id='webauth']\\\"))` is present immediately after `oauth.openLoginForm()` (before any submission), which this change makes impossible. The fill must also happen in the `user == null` branch (or in both branches).\"}, {\"file\": \"testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java\", \"line\": 291, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Awkward try-fail pattern to assert element absence\", \"body\": \"In `reauthenticationOfUserWithoutPasskey`, the test uses `try { assertThat(driver.findElement(...), nullValue()); fail(...); } catch (Exception nsee) {}` to assert that the webauthn button is not rendered. `WebDriver.findElement` throws `NoSuchElementException` when the element is missing and never returns null, so `assertThat(element, nullValue())` would always fail with an AssertionError if the element exists, making the subsequent `fail()` unreachable. The cleaner pattern already used elsewhere in this package (`PasskeysUsernameFormTest` line 202) is `Assert.assertThrows(NoSuchElementException.class, () -> driver.findElement(...))`. The same anti-pattern is repeated at line 312.\"}]}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernameForm.java",
+   "line": 47,
+   "severity": "critical",
+   "category": "bug",
+   "title": "Compile error: isConditionalPasskeysEnabled() called with no args",
+   "body": "The method isConditionalPasskeysEnabled() is invoked with no arguments, but the only definition in the parent class UsernamePasswordForm is `protected boolean isConditionalPasskeysEnabled(UserModel user)` which requires a UserModel parameter. There is no no-arg overload anywhere in the class hierarchy. This will prevent the project from compiling. Likely intended to be `isConditionalPasskeysEnabled(context.getUser())`, or a separate no-arg overload was forgotten."
+  },
+  {
+   "index": 1,
+   "file": "services/src/main/java/org/keycloak/authentication/authenticators/browser/UsernamePasswordForm.java",
+   "line": 115,
+   "severity": "high",
+   "category": "bug",
+   "title": "WebAuthn form no longer filled on initial login (conditional UI regression)",
+   "body": "Before this change the call `webauthnAuth.fillContextForm(context)` lived inside the `else` branch where `context.getUser() == null`, i.e. it ran on the initial login page so conditional UI passkeys worked for users without a session. The new code hoists it out and gates it on `isConditionalPasskeysEnabled(context.getUser())`, which requires `user != null`. As a result the WebAuthn challenge, RP ID, allowed authenticators, and ENABLE_WEBAUTHN_CONDITIONAL_UI attribute are never set on the initial login form, so navigator.credentials.get() cannot auto-discover passkeys. The existing test `PasskeysUsernamePasswordFormTest.passwordLoginWithNonDiscoverableKey` still asserts `driver.findElement(By.xpath(\"//form[@id='webauth']\"))` is present immediately after `oauth.openLoginForm()` (before any submission), which this change makes impossible. The fill must also happen in the `user == null` branch (or in both branches)."
+  },
+  {
+   "index": 2,
+   "file": "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/webauthn/passwordless/PasskeysUsernamePasswordFormTest.java",
+   "line": 291,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Awkward try-fail pattern to assert element absence",
+   "body": "In `reauthenticationOfUserWithoutPasskey`, the test uses `try { assertThat(driver.findElement(...), nullValue()); fail(...); } catch (Exception nsee) {}` to assert that the webauthn button is not rendered. `WebDriver.findElement` throws `NoSuchElementException` when the element is missing and never returns null, so `assertThat(element, nullValue())` would always fail with an AssertionError if the element exists, making the subsequent `fail()` unreachable. The cleaner pattern already used elsewhere in this package (`PasskeysUsernameFormTest` line 202) is `Assert.assertThrows(NoSuchElementException.class, () -> driver.findElement(...))`. The same anti-pattern is repeated at line 312."
+  }
+ ],
+ "finding_count": 3
+}

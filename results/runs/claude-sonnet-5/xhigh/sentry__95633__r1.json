@@ -1,0 +1,140 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__sentry__95633__r1",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 1,
+ "started_at": "2026-10-18T23:13:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 40473,
+    "reasoning": 37997,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 394867,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6922,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 40473,
+    "output_tokens_details": {
+     "thinking_tokens": 37997
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T23:13:04Z",
+   "first_chunk_ms": 2205,
+   "first_text_ms": 372685,
+   "response_id": "msg_bdrk_4ig7h4fxvlbagda5ap2une546ht3v42hok47pf4kfpbqam3vjjta",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 40473,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 37997
+ },
+ "cost_reported": null,
+ "latency_ms": 394867,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"critical\", \"category\": \"concurrency\", \"title\": \"close()/terminate() permanently destroy the factory-level shared FixedQueuePool, breaking subsequent Kafka rebalances\", \"body\": \"`FixedQueuePool` is created once in `ResultsStrategyFactory.__init__` (result_consumer.py lines 131-137) and is meant to live for the lifetime of the factory, the same way `self.multiprocessing_pool` and `self.parallel_executor` do (those are only torn down in `ResultsStrategyFactory.shutdown()`, never by a per-assignment strategy). However, `SimpleQueueProcessingStrategy.close()` (line 338) and `.terminate()` (line 342) call `self.queue_pool.shutdown()` directly, which permanently calls `Queue.shutdown()` on every internal queue and stops every worker thread in the shared pool. Arroyo calls `close()`/`join()` on the currently active strategy and then calls `create_with_partitions()` again on the *same factory instance* on every partition rebalance (not just final consumer shutdown). After the very first rebalance, the shared `queue_pool` is dead: its queues are shut down and its worker threads have exited, but `create_thread_queue_parallel_worker()` in result_consumer.py (lines 244-259) just reuses `self.queue_pool` without recreating it. Any subsequent `submit()` call on the new strategy will raise `queue.ShutDown` from `work_queue.put()`, which is caught by the generic `except Exception` in `SimpleQueueProcessingStrategy.submit()`; that handler then marks the offset as added+completed as if it were processed, even though the message was never passed to `result_processor`. This causes silent data loss for every message after the first rebalance while still advancing committed offsets, defeating the purpose of the feature and corrupting data integrity guarantees.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 132, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Use of queue.ShutDown / Queue.shutdown() requires Python 3.13+\", \"body\": \"This module relies on `queue.ShutDown` (lines 132, 142) and `queue.Queue.shutdown()` (line 238, called from FixedQueuePool.shutdown at lines 231-243), both of which were only added to the standard library in Python 3.13. If Sentry's runtime is on an earlier Python version (3.11/3.12, which has been the case historically for this codebase), referencing `queue.ShutDown` or calling `.shutdown()` on a `queue.Queue` instance will raise `AttributeError` at runtime, crashing the consumer during normal strategy shutdown/rebalance/termination paths (i.e. the thread-queue-parallel mode would be completely non-functional, not just degraded).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Internal queues have no maxsize, so the advertised \\\"natural backpressure\\\" does not exist\", \"body\": \"`SimpleQueueProcessingStrategy`'s docstring (around line 253) claims the strategy provides \\\"Natural backpressure when queues fill up\\\", but each per-group queue is constructed as `queue.Queue()` with no `maxsize` (line 185), which defaults to an unbounded queue. `put()` therefore never blocks, so there is no backpressure mechanism at all: if one hashed queue backs up (exactly the scenario this PR is meant to mitigate), the consumer will keep reading from Kafka and enqueueing work indefinitely, growing memory without bound instead of slowing down. This contradicts the documented guarantee and creates an OOM risk under the very failure mode the PR targets.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 345, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"join(timeout) ignores the timeout argument and duplicates close() shutdown logic\", \"body\": \"`SimpleQueueProcessingStrategy.join(self, timeout=None)` (line 345) simply calls `self.close()`, discarding the caller-provided `timeout`. Arroyo's `ProcessingStrategy.join(timeout)` contract is expected to block up to the given timeout waiting for outstanding work to flush before shutdown completes; here the actual draining/joining logic in `FixedQueuePool.shutdown()` (lines 231-243) hardcodes a fixed 5.0 second timeout for both queue draining and worker-thread joins, regardless of what timeout the stream processor configured for graceful shutdown (e.g. `join_timeout` passed through `get_stream_processor`). This can cause premature strategy teardown if more time was actually available, and if `close()` is invoked followed by `join()` (both call the same shutdown path), the second invocation triggers `queue_pool.shutdown()` again on already-shutdown queues, causing extra \\\"Error shutting down queue\\\" exception logs on every normal shutdown.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1922, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"test_thread_queue_parallel_error_handling assertion is racy and contradicts the test's stated intent\", \"body\": \"The test's docstring states it verifies \\\"errors in processing don't block offset commits for other messages,\\\" implying the successfully-processed message's offset should still get committed. However the final assertion is `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`, which actually asserts that NO commit happened. Since `OrderedQueueWorker.run()` completes (and thus makes committable) an offset in its `finally` block regardless of whether `result_processor` raised, both offsets (100 and 101) should become contiguous and committable once both items are processed, and the asynchronous commit loop (`_commit_loop`, firing every 1 second) will eventually commit offset 102. The test's wait loop (max ~0.2-2.2s) races against that 1-second commit cycle: on a fast run the assertion passes merely because the periodic commit hasn't fired yet, not because the intended behavior holds, and on a slower CI run (where the loop takes closer to its 2s budget) the commit may already have happened, making the test flaky/liable to fail intermittently. The assertion does not reliably validate the described behavior either way.\"}, {\"file\": \"src/sentry/consumers/__init__.py\", \"line\": 121, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"CLI help text for --mode not updated to describe the new thread-queue-parallel mode\", \"body\": \"The `--mode` option's choices were extended to include `thread-queue-parallel` (line 121), but the help string still reads \\\"The mode to process results in. Parallel uses multithreading.\\\" (line 123), which does not mention or explain the new mode's semantics (fixed queue pool with per-group ordering guarantees). Operators using `--help` to choose a processing mode have no way to understand what thread-queue-parallel does or how it differs from parallel/batched-parallel.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "critical",
+   "category": "concurrency",
+   "title": "close()/terminate() permanently destroy the factory-level shared FixedQueuePool, breaking subsequent Kafka rebalances",
+   "body": "`FixedQueuePool` is created once in `ResultsStrategyFactory.__init__` (result_consumer.py lines 131-137) and is meant to live for the lifetime of the factory, the same way `self.multiprocessing_pool` and `self.parallel_executor` do (those are only torn down in `ResultsStrategyFactory.shutdown()`, never by a per-assignment strategy). However, `SimpleQueueProcessingStrategy.close()` (line 338) and `.terminate()` (line 342) call `self.queue_pool.shutdown()` directly, which permanently calls `Queue.shutdown()` on every internal queue and stops every worker thread in the shared pool. Arroyo calls `close()`/`join()` on the currently active strategy and then calls `create_with_partitions()` again on the *same factory instance* on every partition rebalance (not just final consumer shutdown). After the very first rebalance, the shared `queue_pool` is dead: its queues are shut down and its worker threads have exited, but `create_thread_queue_parallel_worker()` in result_consumer.py (lines 244-259) just reuses `self.queue_pool` without recreating it. Any subsequent `submit()` call on the new strategy will raise `queue.ShutDown` from `work_queue.put()`, which is caught by the generic `except Exception` in `SimpleQueueProcessingStrategy.submit()`; that handler then marks the offset as added+completed as if it were processed, even though the message was never passed to `result_processor`. This causes silent data loss for every message after the first rebalance while still advancing committed offsets, defeating the purpose of the feature and corrupting data integrity guarantees."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 132,
+   "severity": "high",
+   "category": "bug",
+   "title": "Use of queue.ShutDown / Queue.shutdown() requires Python 3.13+",
+   "body": "This module relies on `queue.ShutDown` (lines 132, 142) and `queue.Queue.shutdown()` (line 238, called from FixedQueuePool.shutdown at lines 231-243), both of which were only added to the standard library in Python 3.13. If Sentry's runtime is on an earlier Python version (3.11/3.12, which has been the case historically for this codebase), referencing `queue.ShutDown` or calling `.shutdown()` on a `queue.Queue` instance will raise `AttributeError` at runtime, crashing the consumer during normal strategy shutdown/rebalance/termination paths (i.e. the thread-queue-parallel mode would be completely non-functional, not just degraded)."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Internal queues have no maxsize, so the advertised \"natural backpressure\" does not exist",
+   "body": "`SimpleQueueProcessingStrategy`'s docstring (around line 253) claims the strategy provides \"Natural backpressure when queues fill up\", but each per-group queue is constructed as `queue.Queue()` with no `maxsize` (line 185), which defaults to an unbounded queue. `put()` therefore never blocks, so there is no backpressure mechanism at all: if one hashed queue backs up (exactly the scenario this PR is meant to mitigate), the consumer will keep reading from Kafka and enqueueing work indefinitely, growing memory without bound instead of slowing down. This contradicts the documented guarantee and creates an OOM risk under the very failure mode the PR targets."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 345,
+   "severity": "medium",
+   "category": "api",
+   "title": "join(timeout) ignores the timeout argument and duplicates close() shutdown logic",
+   "body": "`SimpleQueueProcessingStrategy.join(self, timeout=None)` (line 345) simply calls `self.close()`, discarding the caller-provided `timeout`. Arroyo's `ProcessingStrategy.join(timeout)` contract is expected to block up to the given timeout waiting for outstanding work to flush before shutdown completes; here the actual draining/joining logic in `FixedQueuePool.shutdown()` (lines 231-243) hardcodes a fixed 5.0 second timeout for both queue draining and worker-thread joins, regardless of what timeout the stream processor configured for graceful shutdown (e.g. `join_timeout` passed through `get_stream_processor`). This can cause premature strategy teardown if more time was actually available, and if `close()` is invoked followed by `join()` (both call the same shutdown path), the second invocation triggers `queue_pool.shutdown()` again on already-shutdown queues, causing extra \"Error shutting down queue\" exception logs on every normal shutdown."
+  },
+  {
+   "index": 4,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1922,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "test_thread_queue_parallel_error_handling assertion is racy and contradicts the test's stated intent",
+   "body": "The test's docstring states it verifies \"errors in processing don't block offset commits for other messages,\" implying the successfully-processed message's offset should still get committed. However the final assertion is `assert len(committed_offsets) == 0 or test_partition not in committed_offsets`, which actually asserts that NO commit happened. Since `OrderedQueueWorker.run()` completes (and thus makes committable) an offset in its `finally` block regardless of whether `result_processor` raised, both offsets (100 and 101) should become contiguous and committable once both items are processed, and the asynchronous commit loop (`_commit_loop`, firing every 1 second) will eventually commit offset 102. The test's wait loop (max ~0.2-2.2s) races against that 1-second commit cycle: on a fast run the assertion passes merely because the periodic commit hasn't fired yet, not because the intended behavior holds, and on a slower CI run (where the loop takes closer to its 2s budget) the commit may already have happened, making the test flaky/liable to fail intermittently. The assertion does not reliably validate the described behavior either way."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/consumers/__init__.py",
+   "line": 121,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "CLI help text for --mode not updated to describe the new thread-queue-parallel mode",
+   "body": "The `--mode` option's choices were extended to include `thread-queue-parallel` (line 121), but the help string still reads \"The mode to process results in. Parallel uses multithreading.\" (line 123), which does not mention or explain the new mode's semantics (fixed queue pool with per-group ordering guarantees). Operators using `--help` to choose a processing mode have no way to understand what thread-queue-parallel does or how it differs from parallel/batched-parallel."
+  }
+ ],
+ "finding_count": 6
+}

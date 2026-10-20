@@ -1,0 +1,226 @@
+{
+ "run_id": "mistral-large-4__low__cal.com__8087__r2",
+ "model_id": "mistral-large-4",
+ "family": "mistral",
+ "route": "openrouter",
+ "provider_model": "mistralai/mistral-large-4-0",
+ "provider_pin": {
+  "order": [
+   "mistral",
+   "mistral/eu"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "none"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:31:46Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 39119,
+    "output": 4329,
+    "reasoning": 0,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.03564853,
+   "latency_ms": 113268,
+   "finish_reason": "stop",
+   "served_model": "mistralai/mistral-large-4-0",
+   "provider_served": "Mistral",
+   "http_attempts": 1,
+   "text_chars": 19254,
+   "raw_usage": {
+    "completion_tokens": 4329,
+    "prompt_tokens": 39119,
+    "total_tokens": 43448,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 0,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.03564853,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.03564853,
+     "upstream_inference_prompt_cost": 0.02660092,
+     "upstream_inference_completions_cost": 0.00904761
+    }
+   },
+   "started_at": "2026-10-17T20:31:46Z",
+   "first_chunk_ms": 4085,
+   "first_text_ms": 4085,
+   "response_id": "gen-1792269106-B39LSr3vinTn8uq7qkpD",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 39119,
+  "output": 4329,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 0
+ },
+ "cost_reported": 0.03564853,
+ "latency_ms": 113268,
+ "served_model": "mistralai/mistral-large-4-0",
+ "provider_served": "Mistral",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"packages/core/CalendarManager.ts\",\n      \"line\": 23,\n      \"severity\": \"high\",\n      \"category\": \"bug\",\n      \"title\": \"getCalendarCredentials is not async but now stores Promises from getCalendar\",\n      \"body\": \"getCalendar() was changed to be async (returns Promise<Calendar | null>), but getCalendarCredentials (line 23) is still a synchronous function that calls `const calendar = getCalendar(credential)` at line 28 without awaiting it. The resulting `calendar` value is a Promise, not a Calendar instance. This Promise is stored in the returned objects and later consumed by getConnectedCalendars, which does `const calendar = await item.calendar` (line 48) \u2014 that part works \u2014 but any other consumer of getCalendarCredentials that expects a Calendar instance (e.g. calling calendar.listCalendars() or checking truthiness directly) will break, because a Promise is always truthy and has no Calendar methods. The function signature and all call sites must be audited; at minimum getCalendarCredentials should become async and await getCalendar, or the Promise should be stored deliberately and documented. As written, the type contract is silently violated (a Promise<Calendar|null> is stored where Calendar|null is expected), which TypeScript may not catch depending on the inferred return type, and can cause runtime 'calendar.listCalendars is not a function' errors or, worse, null-calendars being treated as valid (a Promise is truthy, so the `if (!calendar)` guard at line 51 never triggers for a null-returning getCalendar).\"\n    },\n    {\n      \"file\": \"packages/app-store/vital/lib/reschedule.ts\",\n      \"line\": 125,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"forEach with async callback does not await calendar/video deletions; errors are swallowed and deletions may not complete\",\n      \"body\": \"The code uses `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })`. Array.prototype.forEach does not await async callbacks, so the surrounding try/catch (lines 124-139) can never catch errors thrown inside the callback \u2014 any rejection becomes an unhandled promise rejection. More importantly, the function proceeds to send the reschedule email (line 143) and return true without waiting for the calendar events and video meetings to actually be deleted. If the process handles the request and responds before the deletions finish (or crashes), external calendar events and video meetings remain live while the booking is already marked CANCELLED in the database (the prisma.booking.update at line 67 ran earlier), leaving orphaned events on attendees' calendars. The correct pattern is `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))` so deletions complete (or fail loudly) before the function returns.\"\n    },\n    {\n      \"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\",\n      \"line\": 125,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"forEach with async callback does not await calendar/video deletions; errors are swallowed and deletions may not complete\",\n      \"body\": \"Identical issue to vital/lib/reschedule.ts: `bookingRefsFiltered.forEach(async (bookingRef) => { ... })` at line 125 does not await the async work. The try/catch around it (lines 124-139) cannot catch async errors (unhandled rejections), and the function sends the reschedule email (line 143) and returns true before calendar/video deletions complete. The booking is already marked CANCELLED in the DB (line 67), so if the process exits or the deletions fail silently, external calendar events and video meetings are orphaned. Replace with `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))`.\"\n    },\n    {\n      \"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\",\n      \"line\": 553,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"requestReschedule mutation fires async deletions via forEach without awaiting them\",\n      \"body\": \"In the requestReschedule mutation, `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })` (line 553) does not await the async callbacks. The mutation then immediately sends the reschedule email (line 570) and webhooks (line 618) and returns, without waiting for the old calendar events and video meetings to be deleted. The booking has already been marked CANCELLED (line 475-485). Consequences: (1) deletion errors are unhandled promise rejections, not surfaced to the user or logged through the normal path; (2) the API responds before external resources are cleaned up, so a crash or early process exit leaves orphaned events on Google/Office calendars and live video meetings for a booking the user believes is cancelled; (3) webhooks fire with BOOKING_CANCELLED before the external cancellation actually happened, so downstream systems see an inconsistent state. Use `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))`.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\",\n      \"line\": 460,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Recurring-booking cancellation path uses forEach(async ...) so calendar deletions are not awaited before the response\",\n      \"body\": \"In the recurring-event branch (bookingToDelete.eventType?.recurringEvent && allRemainingBookings), the code does `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { const calendar = await getCalendar(credential); for (const updBooking of updatedBookings) { ... await calendar?.deleteEvent(...) ... } })` (lines 458-470). forEach does not await async callbacks, so none of the per-booking calendar deletions are awaited. The handler later does `await Promise.all(prismaPromises.concat(apiDeletes))` (line 652), but the promises pushed inside the forEach callback (line 467, `apiDeletes.push(deletedEvent)`) may not have been pushed yet when Promise.all runs \u2014 a classic race: the pushes happen asynchronously after the forEach returns, so apiDeletes can be empty or partially populated at await time. Result: the API returns 'Booking successfully cancelled' and sends cancellation emails (line 654) while recurring calendar events are still being deleted (or never deleted if the process exits), leaving orphaned events on external calendars for bookings already marked CANCELLED in the DB (updateMany at line 360). Convert to `await Promise.all(credentials.filter(...).map(async (credential) => { ... }))` and collect the deletion promises properly.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\",\n      \"line\": 505,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"Legacy video-credential fallback path uses forEach to push deleteMeeting promises without awaiting getCalendar-style async work\",\n      \"body\": \"In the legacy branch (no credentialId on the video reference), `bookingToDelete.user.credentials.filter((credential) => credential.type.endsWith(\\\"_video\\\")).forEach((credential) => { ... apiDeletes.push(deleteMeeting(credential, uidToDelete)); })` (lines 505-511). deleteMeeting is now async (it awaits getVideoAdapters which awaits dynamic imports), but it is called synchronously here and its returned promise is pushed \u2014 that part is fine for Promise.all at line 652. However, this forEach is purely synchronous push, which is OK, but note the surrounding pattern is inconsistent with the calendar branch which was converted to a for...of loop with await. More importantly, if deleteMeeting rejects (e.g. the dynamic import of the video app fails), the rejection is only handled by Promise.all at line 652 \u2014 which is acceptable \u2014 but there is no per-credential error isolation, so one failing video credential rejects the whole Promise.all and skips attendee/bookingReference deletes? No \u2014 prismaPromises are also in the same Promise.all, so a video deletion failure would cause the entire cancellation to throw after the booking was already marked CANCELLED, leaving attendees and booking references undeleted while emails are never sent. Consider Promise.allSettled or individual catches for apiDeletes so a single integration failure doesn't abort the DB cleanup. (The calendar branches have the same exposure.)\"\n    },\n    {\n      \"file\": \"packages/app-store/index.ts\",\n      \"line\": 1,\n      \"severity\": \"high\",\n      \"category\": \"api\",\n      \"title\": \"appStore values are now dynamic-import Promises; every consumer must await them, and the module shape changed from static namespace objects to Promise<module>\",\n      \"body\": \"The appStore object changed from statically imported module namespaces (`import * as applecalendar from \\\"./applecalendar\\\"`) to dynamic import promises (`applecalendar: import(\\\"./applecalendar\\\")`). This is a breaking contract change: `appStore[key]` now evaluates to `Promise<typeof import(\\\"./applecalendar\\\")>` instead of the module namespace. The PR updates the known call sites (getCalendar.ts, videoClient.ts, handleCancelBooking.ts, deletePayment.ts, handlePayment.ts, bookings.tsx), but any other file in the monorepo that imports appStore and accesses a key synchronously (e.g. `appStore.stripepayment.lib.PaymentService`, or iterating `Object.values(appStore)` to enumerate apps, or code in packages/app-store/utils.ts, webhooks, or the app installation flows) will now receive a Promise and break at runtime with 'lib is undefined' or similar. Additionally, `await appStore[key]` where key is undefined (e.g. `paymentAppCredential?.app?.dirName` being undefined) evaluates to `await undefined` which is undefined \u2014 that path is guarded by the subsequent `!(paymentApp && ...)` check, so it is safe, but the type cast `as keyof typeof appStore` no longer guarantees a module shape. A repo-wide audit of all `appStore[` accesses and all `import appStore from \\\"@calcom/app-store\\\"` sites is required; any missed site is a latent runtime crash. Also note that dynamic import() in a server bundle may interact with bundler code-splitting differently than static imports, potentially increasing cold-start latency on first use of each app.\"\n    },\n    {\n      \"file\": \"packages/app-store/_utils/getCalendar.ts\",\n      \"line\": 15,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Awaiting appStore[key] with an unknown/invalid key yields undefined, but the guard checks the awaited module \u2014 however a rejected dynamic import is unhandled\",\n      \"body\": \"Line 15: `const calendarApp = await appStore[calendarType.split(\\\"_\\\").join(\\\"\\\") as keyof typeof appStore];`. If calendarType maps to a key not present in appStore (e.g. a credential type like \\\"somecustom_calendar\\\" that has no corresponding app directory, or a typo), `appStore[...]` is undefined and `await undefined` resolves to undefined \u2014 the guard at line 16 handles that. But if the key exists and the dynamic import() rejects (e.g. the app's index.ts throws at module-evaluation time, a missing dependency, or a build error in that app package), the rejection propagates out of getCalendar. Callers like CalendarManager.createEvent (line 233) do `const calendar = await getCalendar(credential);` with no try/catch around it \u2014 createEvent itself has a .catch on calendar.createEvent but not on getCalendar \u2014 so a failing app import would throw out of createEvent/updateEvent/deleteEvent and abort the whole booking flow. Previously, with static imports, a broken app module would fail at server startup (fail-fast); now it fails per-request at runtime. Consider wrapping the await in try/catch and returning null (with a log) so one broken app doesn't take down booking creation for all integrations.\"\n    },\n    {\n      \"file\": \"packages/core/videoClient.ts\",\n      \"line\": 26,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"getVideoAdapters: a rejected dynamic import for one credential aborts adapter creation for all credentials and is unhandled\",\n      \"body\": \"In getVideoAdapters (lines 21-36), `const app = await appStore[appName as keyof typeof appStore];` is inside a for...of loop with no try/catch. If the dynamic import rejects for any credential (broken app package, missing module), the entire getVideoAdapters call rejects. Callers: createMeeting (line 52) calls `await getVideoAdapters([credential])` outside its try/catch (the try starts at line 70), so a rejection propagates out of createMeeting \u2014 EventManager.createVideoEvent returns that promise, and EventManager.create awaits it at line 109 with no catch, so booking creation fails entirely. deleteMeeting (line 144) and updateMeeting (line 111) similarly propagate. Previously, static imports meant a broken app failed at build/startup; now a single bad app credential can fail every booking that touches video. Wrap the per-credential import in try/catch, log, and continue (skip that adapter), matching the previous behavior where a missing 'VideoApiAdapter' in app.lib was simply skipped (line 28 guard).\"\n    },\n    {\n      \"file\": \"packages/core/CalendarManager.ts\",\n      \"line\": 142,\n      \"severity\": \"medium\",\n      \"category\": \"perf\",\n      \"title\": \"getCachedResults awaits all calendar imports serially per call via Promise.all over getCalendar, but getCalendarCredentials path still has the un-awaited Promise issue; also index-based credential matching is fragile\",\n      \"body\": \"Line 142: `const calendars = await Promise.all(calendarCredentials.map((credential) => getCalendar(credential)));` \u2014 this is correct for awaiting. However, the subsequent `calendars.map(async (c, i) => { ... const { type, appId } = calendarCredentials[i]; ... })` relies on index alignment between the filtered `calendarCredentials` array and the `calendars` array. Since Promise.all preserves order, this is fine. The real issue is that getCalendar now performs a dynamic import() per credential per call; dynamic imports are cached by the module system after first load, so this is cheap after warmup, but on a cold server the first getCachedResults call for N calendar credentials will trigger N concurrent chunk loads. This is acceptable, but note that getCalendarCredentials (line 23-36) still has the un-awaited Promise bug (see separate finding), meaning the two code paths are now inconsistent: one stores Promises, one stores resolved instances. Consumers must know which they have.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\",\n      \"line\": 589,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Error message logs the awaited module object instead of the app type string\",\n      \"body\": \"Line 591: `console.warn(`payment App service of type ${paymentApp} is not implemented`);` \u2014 `paymentApp` is now the awaited module namespace object (or undefined), not a string. Previously it was also the module object (the old code had the same bug: `appStore[...]` returned a module namespace), so this is a pre-existing defect, but the PR touches this line's context. The message will print something like 'payment App service of type [object Module] is not implemented' or 'undefined', which is useless for debugging. It should log `paymentAppCredential?.app?.dirName` (the intended app identifier) instead. Same pattern exists in packages/lib/payment/deletePayment.ts line 18 and packages/lib/payment/handlePayment.ts line 28 and packages/trpc/server/routers/viewer/bookings.tsx line 969 \u2014 all log `${paymentApp}` which is a module object.\"\n    },\n    {\n      \"file\": \"packages/app-store/index.ts\",\n      \"line\": 2,\n      \"severity\": \"low\",\n      \"category\": \"doc_defect\",\n      \"title\": \"Comment 'example: import(\\\"./example\\\")' references a non-existent example app and is misleading\",\n      \"body\": \"Line 2: `// example: import(\\\"./example\\\"),` \u2014 the commented-out example references `./example` which does not exist in the app-store directory (the actual example app is `_example`). The comment is meant to show the pattern for adding a new app, but as written it would mislead a developer into uncommenting a broken import. It should reference `./_example` or be removed. Minor, but it's the only documentation of how to add an app to this store.\"\n    },\n    {\n      \"file\": \"packages/core/EventManager.ts\",\n      \"line\": 488,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"getCalendar(calendarCredential) may return null and calendar?.deleteEvent is called with a possibly-null credential result; also the await is inside a block that previously relied on synchronous behavior\",\n      \"body\": \"Line 483-489: `const calendarCredential = await prisma.credential.findUnique({...}); const calendar = await getCalendar(calendarCredential); await calendar?.deleteEvent(oldCalendarEvent.uid, event, oldCalendarEvent.externalCalendarId);`. getCalendar returns null if credential is null or has no key \u2014 the optional chaining handles that. But note that `calendar?.deleteEvent(...)` returns a Promise that is awaited \u2014 fine. However, this whole block is inside the `if (newBookingId)` merge path of updateAllCalendarEvents, which is wrapped in a try/catch that returns a synthetic failure result. If the dynamic import inside getCalendar rejects (broken app), the catch at line 516 handles it and returns a failure EventResult \u2014 acceptable. The main concern is consistency: this is one of the few places that correctly awaits, showing the pattern the other files should follow. No change needed here, but it confirms the forEach/forEach-async bugs elsewhere are deviations from the intended pattern.\"\n    },\n    {\n      \"file\": \"packages/features/bookings/lib/handleNewBooking.ts\",\n      \"line\": 888,\n      \"severity\": \"medium\",\n      \"category\": \"concurrency\",\n      \"title\": \"Reschedule cleanup in handleNewBooking pushes deleteEvent promises into integrationsToDelete but the surrounding loop may not await getCalendar before pushing\",\n      \"body\": \"The diff shows `const calendar = await getCalendar(credential);` inside what appears to be a for...of or forEach loop around line 885-890. The snippet shows `integrationsToDelete.push(calendar?.deleteEvent(reference.uid, originalBookingEvt, reference.externalCalendarId))`. If this is inside a `forEach` (as the vital/wipemycalother reschedule files do), the await inside a non-async forEach callback would be a syntax error \u2014 so it must be a for...of or an async forEach. Given the diff context (`integrationsToDelete.push(deleteMeeting(credential, reference.uid));` on the line before, also without await on deleteMeeting which is fine since it returns a promise), the structure appears to be a for...of loop. However, the file was only shown as 'diff only' \u2014 the full context of whether integrationsToDelete promises are awaited before the new booking is confirmed is not visible. If they are awaited via Promise.all later, this is fine; if not, the same orphaned-event race as the other files applies. Flagging for verification: ensure `await Promise.all(integrationsToDelete)` occurs before the handler returns success, otherwise old calendar/video events from the original booking may outlive the rescheduled booking.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 23,
+   "severity": "high",
+   "category": "bug",
+   "title": "getCalendarCredentials is not async but now stores Promises from getCalendar",
+   "body": "getCalendar() was changed to be async (returns Promise<Calendar | null>), but getCalendarCredentials (line 23) is still a synchronous function that calls `const calendar = getCalendar(credential)` at line 28 without awaiting it. The resulting `calendar` value is a Promise, not a Calendar instance. This Promise is stored in the returned objects and later consumed by getConnectedCalendars, which does `const calendar = await item.calendar` (line 48) \u2014 that part works \u2014 but any other consumer of getCalendarCredentials that expects a Calendar instance (e.g. calling calendar.listCalendars() or checking truthiness directly) will break, because a Promise is always truthy and has no Calendar methods. The function signature and all call sites must be audited; at minimum getCalendarCredentials should become async and await getCalendar, or the Promise should be stored deliberately and documented. As written, the type contract is silently violated (a Promise<Calendar|null> is stored where Calendar|null is expected), which TypeScript may not catch depending on the inferred return type, and can cause runtime 'calendar.listCalendars is not a function' errors or, worse, null-calendars being treated as valid (a Promise is truthy, so the `if (!calendar)` guard at line 51 never triggers for a null-returning getCalendar)."
+  },
+  {
+   "index": 1,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "forEach with async callback does not await calendar/video deletions; errors are swallowed and deletions may not complete",
+   "body": "The code uses `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })`. Array.prototype.forEach does not await async callbacks, so the surrounding try/catch (lines 124-139) can never catch errors thrown inside the callback \u2014 any rejection becomes an unhandled promise rejection. More importantly, the function proceeds to send the reschedule email (line 143) and return true without waiting for the calendar events and video meetings to actually be deleted. If the process handles the request and responds before the deletions finish (or crashes), external calendar events and video meetings remain live while the booking is already marked CANCELLED in the database (the prisma.booking.update at line 67 ran earlier), leaving orphaned events on attendees' calendars. The correct pattern is `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))` so deletions complete (or fail loudly) before the function returns."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "forEach with async callback does not await calendar/video deletions; errors are swallowed and deletions may not complete",
+   "body": "Identical issue to vital/lib/reschedule.ts: `bookingRefsFiltered.forEach(async (bookingRef) => { ... })` at line 125 does not await the async work. The try/catch around it (lines 124-139) cannot catch async errors (unhandled rejections), and the function sends the reschedule email (line 143) and returns true before calendar/video deletions complete. The booking is already marked CANCELLED in the DB (line 67), so if the process exits or the deletions fail silently, external calendar events and video meetings are orphaned. Replace with `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))`."
+  },
+  {
+   "index": 3,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "requestReschedule mutation fires async deletions via forEach without awaiting them",
+   "body": "In the requestReschedule mutation, `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...) ... })` (line 553) does not await the async callbacks. The mutation then immediately sends the reschedule email (line 570) and webhooks (line 618) and returns, without waiting for the old calendar events and video meetings to be deleted. The booking has already been marked CANCELLED (line 475-485). Consequences: (1) deletion errors are unhandled promise rejections, not surfaced to the user or logged through the normal path; (2) the API responds before external resources are cleaned up, so a crash or early process exit leaves orphaned events on Google/Office calendars and live video meetings for a booking the user believes is cancelled; (3) webhooks fire with BOOKING_CANCELLED before the external cancellation actually happened, so downstream systems see an inconsistent state. Use `await Promise.all(bookingRefsFiltered.map(async (bookingRef) => { ... }))`."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Recurring-booking cancellation path uses forEach(async ...) so calendar deletions are not awaited before the response",
+   "body": "In the recurring-event branch (bookingToDelete.eventType?.recurringEvent && allRemainingBookings), the code does `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { const calendar = await getCalendar(credential); for (const updBooking of updatedBookings) { ... await calendar?.deleteEvent(...) ... } })` (lines 458-470). forEach does not await async callbacks, so none of the per-booking calendar deletions are awaited. The handler later does `await Promise.all(prismaPromises.concat(apiDeletes))` (line 652), but the promises pushed inside the forEach callback (line 467, `apiDeletes.push(deletedEvent)`) may not have been pushed yet when Promise.all runs \u2014 a classic race: the pushes happen asynchronously after the forEach returns, so apiDeletes can be empty or partially populated at await time. Result: the API returns 'Booking successfully cancelled' and sends cancellation emails (line 654) while recurring calendar events are still being deleted (or never deleted if the process exits), leaving orphaned events on external calendars for bookings already marked CANCELLED in the DB (updateMany at line 360). Convert to `await Promise.all(credentials.filter(...).map(async (credential) => { ... }))` and collect the deletion promises properly."
+  },
+  {
+   "index": 5,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 505,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Legacy video-credential fallback path uses forEach to push deleteMeeting promises without awaiting getCalendar-style async work",
+   "body": "In the legacy branch (no credentialId on the video reference), `bookingToDelete.user.credentials.filter((credential) => credential.type.endsWith(\"_video\")).forEach((credential) => { ... apiDeletes.push(deleteMeeting(credential, uidToDelete)); })` (lines 505-511). deleteMeeting is now async (it awaits getVideoAdapters which awaits dynamic imports), but it is called synchronously here and its returned promise is pushed \u2014 that part is fine for Promise.all at line 652. However, this forEach is purely synchronous push, which is OK, but note the surrounding pattern is inconsistent with the calendar branch which was converted to a for...of loop with await. More importantly, if deleteMeeting rejects (e.g. the dynamic import of the video app fails), the rejection is only handled by Promise.all at line 652 \u2014 which is acceptable \u2014 but there is no per-credential error isolation, so one failing video credential rejects the whole Promise.all and skips attendee/bookingReference deletes? No \u2014 prismaPromises are also in the same Promise.all, so a video deletion failure would cause the entire cancellation to throw after the booking was already marked CANCELLED, leaving attendees and booking references undeleted while emails are never sent. Consider Promise.allSettled or individual catches for apiDeletes so a single integration failure doesn't abort the DB cleanup. (The calendar branches have the same exposure.)"
+  },
+  {
+   "index": 6,
+   "file": "packages/app-store/index.ts",
+   "line": 1,
+   "severity": "high",
+   "category": "api",
+   "title": "appStore values are now dynamic-import Promises; every consumer must await them, and the module shape changed from static namespace objects to Promise<module>",
+   "body": "The appStore object changed from statically imported module namespaces (`import * as applecalendar from \"./applecalendar\"`) to dynamic import promises (`applecalendar: import(\"./applecalendar\")`). This is a breaking contract change: `appStore[key]` now evaluates to `Promise<typeof import(\"./applecalendar\")>` instead of the module namespace. The PR updates the known call sites (getCalendar.ts, videoClient.ts, handleCancelBooking.ts, deletePayment.ts, handlePayment.ts, bookings.tsx), but any other file in the monorepo that imports appStore and accesses a key synchronously (e.g. `appStore.stripepayment.lib.PaymentService`, or iterating `Object.values(appStore)` to enumerate apps, or code in packages/app-store/utils.ts, webhooks, or the app installation flows) will now receive a Promise and break at runtime with 'lib is undefined' or similar. Additionally, `await appStore[key]` where key is undefined (e.g. `paymentAppCredential?.app?.dirName` being undefined) evaluates to `await undefined` which is undefined \u2014 that path is guarded by the subsequent `!(paymentApp && ...)` check, so it is safe, but the type cast `as keyof typeof appStore` no longer guarantees a module shape. A repo-wide audit of all `appStore[` accesses and all `import appStore from \"@calcom/app-store\"` sites is required; any missed site is a latent runtime crash. Also note that dynamic import() in a server bundle may interact with bundler code-splitting differently than static imports, potentially increasing cold-start latency on first use of each app."
+  },
+  {
+   "index": 7,
+   "file": "packages/app-store/_utils/getCalendar.ts",
+   "line": 15,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Awaiting appStore[key] with an unknown/invalid key yields undefined, but the guard checks the awaited module \u2014 however a rejected dynamic import is unhandled",
+   "body": "Line 15: `const calendarApp = await appStore[calendarType.split(\"_\").join(\"\") as keyof typeof appStore];`. If calendarType maps to a key not present in appStore (e.g. a credential type like \"somecustom_calendar\" that has no corresponding app directory, or a typo), `appStore[...]` is undefined and `await undefined` resolves to undefined \u2014 the guard at line 16 handles that. But if the key exists and the dynamic import() rejects (e.g. the app's index.ts throws at module-evaluation time, a missing dependency, or a build error in that app package), the rejection propagates out of getCalendar. Callers like CalendarManager.createEvent (line 233) do `const calendar = await getCalendar(credential);` with no try/catch around it \u2014 createEvent itself has a .catch on calendar.createEvent but not on getCalendar \u2014 so a failing app import would throw out of createEvent/updateEvent/deleteEvent and abort the whole booking flow. Previously, with static imports, a broken app module would fail at server startup (fail-fast); now it fails per-request at runtime. Consider wrapping the await in try/catch and returning null (with a log) so one broken app doesn't take down booking creation for all integrations."
+  },
+  {
+   "index": 8,
+   "file": "packages/core/videoClient.ts",
+   "line": 26,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getVideoAdapters: a rejected dynamic import for one credential aborts adapter creation for all credentials and is unhandled",
+   "body": "In getVideoAdapters (lines 21-36), `const app = await appStore[appName as keyof typeof appStore];` is inside a for...of loop with no try/catch. If the dynamic import rejects for any credential (broken app package, missing module), the entire getVideoAdapters call rejects. Callers: createMeeting (line 52) calls `await getVideoAdapters([credential])` outside its try/catch (the try starts at line 70), so a rejection propagates out of createMeeting \u2014 EventManager.createVideoEvent returns that promise, and EventManager.create awaits it at line 109 with no catch, so booking creation fails entirely. deleteMeeting (line 144) and updateMeeting (line 111) similarly propagate. Previously, static imports meant a broken app failed at build/startup; now a single bad app credential can fail every booking that touches video. Wrap the per-credential import in try/catch, log, and continue (skip that adapter), matching the previous behavior where a missing 'VideoApiAdapter' in app.lib was simply skipped (line 28 guard)."
+  },
+  {
+   "index": 9,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 142,
+   "severity": "medium",
+   "category": "perf",
+   "title": "getCachedResults awaits all calendar imports serially per call via Promise.all over getCalendar, but getCalendarCredentials path still has the un-awaited Promise issue; also index-based credential matching is fragile",
+   "body": "Line 142: `const calendars = await Promise.all(calendarCredentials.map((credential) => getCalendar(credential)));` \u2014 this is correct for awaiting. However, the subsequent `calendars.map(async (c, i) => { ... const { type, appId } = calendarCredentials[i]; ... })` relies on index alignment between the filtered `calendarCredentials` array and the `calendars` array. Since Promise.all preserves order, this is fine. The real issue is that getCalendar now performs a dynamic import() per credential per call; dynamic imports are cached by the module system after first load, so this is cheap after warmup, but on a cold server the first getCachedResults call for N calendar credentials will trigger N concurrent chunk loads. This is acceptable, but note that getCalendarCredentials (line 23-36) still has the un-awaited Promise bug (see separate finding), meaning the two code paths are now inconsistent: one stores Promises, one stores resolved instances. Consumers must know which they have."
+  },
+  {
+   "index": 10,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 589,
+   "severity": "low",
+   "category": "bug",
+   "title": "Error message logs the awaited module object instead of the app type string",
+   "body": "Line 591: `console.warn(`payment App service of type ${paymentApp} is not implemented`);` \u2014 `paymentApp` is now the awaited module namespace object (or undefined), not a string. Previously it was also the module object (the old code had the same bug: `appStore[...]` returned a module namespace), so this is a pre-existing defect, but the PR touches this line's context. The message will print something like 'payment App service of type [object Module] is not implemented' or 'undefined', which is useless for debugging. It should log `paymentAppCredential?.app?.dirName` (the intended app identifier) instead. Same pattern exists in packages/lib/payment/deletePayment.ts line 18 and packages/lib/payment/handlePayment.ts line 28 and packages/trpc/server/routers/viewer/bookings.tsx line 969 \u2014 all log `${paymentApp}` which is a module object."
+  },
+  {
+   "index": 11,
+   "file": "packages/app-store/index.ts",
+   "line": 2,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Comment 'example: import(\"./example\")' references a non-existent example app and is misleading",
+   "body": "Line 2: `// example: import(\"./example\"),` \u2014 the commented-out example references `./example` which does not exist in the app-store directory (the actual example app is `_example`). The comment is meant to show the pattern for adding a new app, but as written it would mislead a developer into uncommenting a broken import. It should reference `./_example` or be removed. Minor, but it's the only documentation of how to add an app to this store."
+  },
+  {
+   "index": 12,
+   "file": "packages/core/EventManager.ts",
+   "line": 488,
+   "severity": "medium",
+   "category": "bug",
+   "title": "getCalendar(calendarCredential) may return null and calendar?.deleteEvent is called with a possibly-null credential result; also the await is inside a block that previously relied on synchronous behavior",
+   "body": "Line 483-489: `const calendarCredential = await prisma.credential.findUnique({...}); const calendar = await getCalendar(calendarCredential); await calendar?.deleteEvent(oldCalendarEvent.uid, event, oldCalendarEvent.externalCalendarId);`. getCalendar returns null if credential is null or has no key \u2014 the optional chaining handles that. But note that `calendar?.deleteEvent(...)` returns a Promise that is awaited \u2014 fine. However, this whole block is inside the `if (newBookingId)` merge path of updateAllCalendarEvents, which is wrapped in a try/catch that returns a synthetic failure result. If the dynamic import inside getCalendar rejects (broken app), the catch at line 516 handles it and returns a failure EventResult \u2014 acceptable. The main concern is consistency: this is one of the few places that correctly awaits, showing the pattern the other files should follow. No change needed here, but it confirms the forEach/forEach-async bugs elsewhere are deviations from the intended pattern."
+  },
+  {
+   "index": 13,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 888,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Reschedule cleanup in handleNewBooking pushes deleteEvent promises into integrationsToDelete but the surrounding loop may not await getCalendar before pushing",
+   "body": "The diff shows `const calendar = await getCalendar(credential);` inside what appears to be a for...of or forEach loop around line 885-890. The snippet shows `integrationsToDelete.push(calendar?.deleteEvent(reference.uid, originalBookingEvt, reference.externalCalendarId))`. If this is inside a `forEach` (as the vital/wipemycalother reschedule files do), the await inside a non-async forEach callback would be a syntax error \u2014 so it must be a for...of or an async forEach. Given the diff context (`integrationsToDelete.push(deleteMeeting(credential, reference.uid));` on the line before, also without await on deleteMeeting which is fine since it returns a promise), the structure appears to be a for...of loop. However, the file was only shown as 'diff only' \u2014 the full context of whether integrationsToDelete promises are awaited before the new booking is confirmed is not visible. If they are awaited via Promise.all later, this is fine; if not, the same orphaned-event race as the other files applies. Flagging for verification: ensure `await Promise.all(integrationsToDelete)` occurs before the handler returns success, otherwise old calendar/video events from the original booking may outlive the rescheduled booking."
+  }
+ ],
+ "finding_count": 14
+}

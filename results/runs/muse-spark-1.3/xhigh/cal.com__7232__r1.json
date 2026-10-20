@@ -1,0 +1,146 @@
+{
+ "run_id": "muse-spark-1.3__xhigh__cal.com__7232__r1",
+ "model_id": "muse-spark-1.3",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-spark-1.3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 1,
+ "started_at": "2026-10-18T19:15:57Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284655,
+  "sha": "2c7638996883044c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 70038,
+    "output": 12665,
+    "reasoning": 11556,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.14137375,
+   "latency_ms": 77096,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-spark-1.3",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 4187,
+   "raw_usage": {
+    "completion_tokens": 12665,
+    "prompt_tokens": 70038,
+    "total_tokens": 82703,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 11556,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.14137375,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.14137375,
+     "upstream_inference_prompt_cost": 0.0875475,
+     "upstream_inference_completions_cost": 0.05382625
+    }
+   },
+   "started_at": "2026-10-18T19:15:57Z",
+   "first_chunk_ms": 8089,
+   "first_text_ms": 74777,
+   "response_id": "gen-1792350957-MixmVWklteSCXNMJhEm6",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 70038,
+  "output": 12665,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 11556
+ },
+ "cost_reported": 0.14137375,
+ "latency_ms": 77096,
+ "served_model": "meta/muse-spark-1.3",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 213, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Immediate email cancel leaves WorkflowReminder row behind\", \"body\": \"In deleteScheduledEmailReminder when immediateDelete is true the function POSTs batch_id cancel to SendGrid and then returns without deleting or updating the WorkflowReminder row. Callers like reschedule in handleNewBooking and workflow/step delete expect the reminder to be gone, and the SMS path deleteScheduledSMSReminder does delete the row. Consequence is stale rows with scheduled:true remaining linked to the old booking, DB leak, and repeated cancel attempts on an already-cancelled batch_id. The branch must also delete the row.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 488, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Fire-and-forget cancelled-flag update can be lost\", \"body\": \"handleCancelBooking marks email reminders via deleteScheduledEmailReminder which performs an async prisma.workflowReminder.update to set cancelled:true, but calls it inside forEach without await and without adding it to the awaited prismaPromises. The handler can return before the update commits and errors are unobserved. If the update is lost, cancelled stays null, the scheduleEmailReminders cron never selects it, and the SendGrid email is still sent, which is the bug this PR claims to fix. The same unawaited pattern is repeated in handleNewBooking, bookings.tsx and workflows.tsx and must be awaited via Promise.all.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 56, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Single SendGrid failure aborts all cancellations and deletes\", \"body\": \"The cron builds prisma delete clients while awaiting each SendGrid cancel sequentially inside one try block. If any client.request throws, control jumps to catch and skips the Promise.all of deletes, so already-queued deletes never execute and remaining reminders are never attempted. One bad batch_id blocks cancellation of all later reminders, causing emails that should have been cancelled to still be sent. Each iteration needs its own try/catch and deletes must still run.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 44, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Cancel query not restricted to scheduled emails\", \"body\": \"remindersToCancel selects any row with cancelled:true due within an hour, with no filter on method, scheduled, or referenceId. SMS reminders store Twilio SIDs, not SendGrid batch_ids, and unscheduled email reminders have null referenceId. Posting such a value as batch_id to /v3/user/scheduled_sends fails and aborts the whole batch. The query must filter to method EMAIL, scheduled:true, and referenceId not null.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 80, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Unscheduled scan can resurrect cancelled reminders\", \"body\": \"unscheduledReminders selects EMAIL reminders with scheduled:false due within 72 hours but does not exclude cancelled:true and does not check booking status. Any leftover cancelled row, for example due to the unawaited update racing the cron or an edited workflow leaving a cancelled row alongside a new row, will be sent to SendGrid and marked scheduled:true, sending a reminder for a cancelled or rescheduled booking. The query must exclude cancelled:true and non-accepted bookings and re-check before send.\"}, {\"file\": \"packages/prisma/migrations/20230217230604_add_cancelled_to_workflow_reminder/migration.sql\", \"line\": 2, \"severity\": \"low\", \"category\": \"data\", \"title\": \"Nullable cancelled column creates three-state logic\", \"body\": \"The migration adds cancelled as nullable BOOLEAN with no default, so all existing rows become NULL and new rows can be NULL. Code checks cancelled:true for cancellation and treats everything else as active, so filters for false miss NULLs and semantics depend on null versus false. The column should be NOT NULL DEFAULT FALSE with backfill of existing rows.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "high",
+   "category": "bug",
+   "title": "Immediate email cancel leaves WorkflowReminder row behind",
+   "body": "In deleteScheduledEmailReminder when immediateDelete is true the function POSTs batch_id cancel to SendGrid and then returns without deleting or updating the WorkflowReminder row. Callers like reschedule in handleNewBooking and workflow/step delete expect the reminder to be gone, and the SMS path deleteScheduledSMSReminder does delete the row. Consequence is stale rows with scheduled:true remaining linked to the old booking, DB leak, and repeated cancel attempts on an already-cancelled batch_id. The branch must also delete the row."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 488,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Fire-and-forget cancelled-flag update can be lost",
+   "body": "handleCancelBooking marks email reminders via deleteScheduledEmailReminder which performs an async prisma.workflowReminder.update to set cancelled:true, but calls it inside forEach without await and without adding it to the awaited prismaPromises. The handler can return before the update commits and errors are unobserved. If the update is lost, cancelled stays null, the scheduleEmailReminders cron never selects it, and the SendGrid email is still sent, which is the bug this PR claims to fix. The same unawaited pattern is repeated in handleNewBooking, bookings.tsx and workflows.tsx and must be awaited via Promise.all."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 56,
+   "severity": "high",
+   "category": "bug",
+   "title": "Single SendGrid failure aborts all cancellations and deletes",
+   "body": "The cron builds prisma delete clients while awaiting each SendGrid cancel sequentially inside one try block. If any client.request throws, control jumps to catch and skips the Promise.all of deletes, so already-queued deletes never execute and remaining reminders are never attempted. One bad batch_id blocks cancellation of all later reminders, causing emails that should have been cancelled to still be sent. Each iteration needs its own try/catch and deletes must still run."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 44,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Cancel query not restricted to scheduled emails",
+   "body": "remindersToCancel selects any row with cancelled:true due within an hour, with no filter on method, scheduled, or referenceId. SMS reminders store Twilio SIDs, not SendGrid batch_ids, and unscheduled email reminders have null referenceId. Posting such a value as batch_id to /v3/user/scheduled_sends fails and aborts the whole batch. The query must filter to method EMAIL, scheduled:true, and referenceId not null."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 80,
+   "severity": "high",
+   "category": "bug",
+   "title": "Unscheduled scan can resurrect cancelled reminders",
+   "body": "unscheduledReminders selects EMAIL reminders with scheduled:false due within 72 hours but does not exclude cancelled:true and does not check booking status. Any leftover cancelled row, for example due to the unawaited update racing the cron or an edited workflow leaving a cancelled row alongside a new row, will be sent to SendGrid and marked scheduled:true, sending a reminder for a cancelled or rescheduled booking. The query must exclude cancelled:true and non-accepted bookings and re-check before send."
+  },
+  {
+   "index": 5,
+   "file": "packages/prisma/migrations/20230217230604_add_cancelled_to_workflow_reminder/migration.sql",
+   "line": 2,
+   "severity": "low",
+   "category": "data",
+   "title": "Nullable cancelled column creates three-state logic",
+   "body": "The migration adds cancelled as nullable BOOLEAN with no default, so all existing rows become NULL and new rows can be NULL. Code checks cancelled:true for cancellation and treats everything else as active, so filters for false miss NULLs and semantics depend on null versus false. The column should be NOT NULL DEFAULT FALSE with backfill of existing rows."
+  }
+ ],
+ "finding_count": 6
+}

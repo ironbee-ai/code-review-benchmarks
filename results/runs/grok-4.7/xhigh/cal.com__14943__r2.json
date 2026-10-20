@@ -1,0 +1,160 @@
+{
+ "run_id": "grok-4.7__xhigh__cal.com__14943__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__14943",
+ "golden_url": "https://github.com/calcom/cal.com/pull/14943",
+ "repeat": 2,
+ "started_at": "2026-10-17T22:20:44Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68622,
+  "sha": "d6ff394dc31eeb2c",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19197,
+    "output": 39341,
+    "reasoning": 37883,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.275016,
+   "latency_ms": 637627,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 6531,
+   "raw_usage": {
+    "completion_tokens": 39341,
+    "prompt_tokens": 20349,
+    "total_tokens": 59690,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 37883,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.275016,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.275016,
+     "upstream_inference_prompt_cost": 0.03897,
+     "upstream_inference_completions_cost": 0.236046
+    }
+   },
+   "started_at": "2026-10-17T22:20:44Z",
+   "first_chunk_ms": 1803,
+   "first_text_ms": 623283,
+   "response_id": "gen-1792275644-RdRwiV5wzXESRGQEORha",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19197,
+  "output": 39341,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 37883
+ },
+ "cost_reported": 0.275016,
+ "latency_ms": 637627,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 39, \"severity\": \"high\", \"category\": \"data\", \"title\": \"retryCount cleanup is not limited to unscheduled SMS\", \"body\": \"The new deleteMany branch matches every WorkflowReminder with retryCount > 1 and does not filter on method, scheduled, or cancelled. This table also holds EMAIL and WHATSAPP reminders, and a scheduled SMS stores the Twilio SID in referenceId so a booking cancellation can stop the message. Failure updates write retryCount from the value read at the start of the run and do not require scheduled = false, so an overlapping run of this cron (no lock, one Twilio call per reminder) can set retryCount to 2 on a row another run already marked scheduled and saved a SID. The next invocation then deletes that row only because retryCount > 1, the SID is gone, and a later cancellation cannot cancel the text. The same predicate will also delete any non-SMS row that exceeds one retry. Restrict this branch to method SMS and scheduled false. The comment above the query still says it only deletes past-due SMS, which is no longer what it does.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 195, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Any two errors permanently drop in-window SMS reminders\", \"body\": \"Every thrown error in the scheduling try, and every falsy scheduleSMS result, increments the same retryCount, and the next cron deletes the row once retryCount > 1. That includes transient failures (Twilio 5xx or rate limits, getBookerBaseUrl, profile lookup), not only permanent ones such as an invalid number. This job loads every unscheduled SMS reminder whose scheduledDate is within 7 days, so two failed ticks during a short outage delete that whole window. Deletion is irreversible and there is no backoff or Twilio error-code check, so those attendees never get the text even after the provider recovers. Count only permanent send failures toward this cap; leave transient errors retryable until the scheduled date.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 158, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Missing phone or empty body never hits the retry limit\", \"body\": \"retryCount is incremented only inside the branch that actually calls scheduleSMS. If sendTo is missing (SMS_ATTENDEE with a null booking.smsReminderNumber, or SMS_NUMBER with an empty step sendTo) or the rendered body is empty, the handler skips the send and leaves retryCount at 0 and scheduled false, as long as nothing earlier threw. Those rows stay in the unscheduled-within-7-days query and are fully reprocessed, including profile and booker-URL lookups, on every cron run until scheduledDate is past \u2014 the unbounded retry this change is meant to stop. Missing numbers are a common permanent failure and never reach Twilio, so they never reach the new delete. Increment retryCount or delete the row when there is nothing to send.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 190, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Catch-path retry update can abort the cron and orphan a sent SMS\", \"body\": \"The new catch updates retryCount and does not handle that update failing. The try also wraps the update that stores the Twilio SID after scheduleSMS returns a message. If that SID update throws, the catch still treats it as a scheduling failure: it increments retryCount and leaves scheduled false and referenceId empty even though Twilio already accepted the message. Later runs schedule more messages for the same reminder, and once retryCount > 1 the row is deleted, so none of those messages can be cancelled. Separately, if the catch update itself throws (Prisma P2025 when a concurrent run already deleted the row), the error escapes the catch, the for-loop stops, and every later reminder in the batch is skipped. Previously this catch only logged. Guard the retry update, and do not count a failure that happens after Twilio has already returned a message as 'not scheduled'.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 184, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"retryCount is a lost update under overlapping crons\", \"body\": \"Both failure paths set retryCount to the in-memory reminder.retryCount + 1 instead of an atomic increment, and the same pattern is in the catch. This route has no lock and does a Twilio request per reminder, so a second invocation can overlap a slow run. Both read the same count, both call scheduleSMS, and both write the same next value, so the stop-after-two-failures cap is not enforced and the attendee can get duplicate texts. A failure write can also raise retryCount above 1 on a row the other run already marked scheduled, which the new deleteMany then removes along with its SID. Use an atomic increment and a conditional update that only matches scheduled false (and the id).\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 31, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"OR retryCount delete cannot use the existing reminder index\", \"body\": \"deleteMany now ORs an unindexed retryCount > 1 predicate with the scheduledDate predicate. WorkflowReminder's index is (method, scheduled, scheduledDate) and was not extended for retryCount in the schema change. An OR against a column with no index typically forces a sequential scan of the whole table on every cron tick, taking row locks for deleted tuples, including email and WhatsApp reminders this job does not own. Split the two cleanups into separate deletes and add an index that matches the retry predicate so this cron does not scan the full reminder table.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleSMSReminders.ts\", \"line\": 29, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"No tests for retry accounting or the delete predicate\", \"body\": \"This change deletes workflow reminders and adds no tests. Coverage needs to lock the intended contract: scheduleSMS returning null increments retryCount; a thrown error increments it; the row is removed only after retryCount exceeds 1 and only for unscheduled SMS; a successful schedule with a stored referenceId is not deleted; a missing phone or empty body does not remain in the cron until the event time. Without that, the unscoped deleteMany and the silent no-send path will not be caught before they drop reminders in production.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 39,
+   "severity": "high",
+   "category": "data",
+   "title": "retryCount cleanup is not limited to unscheduled SMS",
+   "body": "The new deleteMany branch matches every WorkflowReminder with retryCount > 1 and does not filter on method, scheduled, or cancelled. This table also holds EMAIL and WHATSAPP reminders, and a scheduled SMS stores the Twilio SID in referenceId so a booking cancellation can stop the message. Failure updates write retryCount from the value read at the start of the run and do not require scheduled = false, so an overlapping run of this cron (no lock, one Twilio call per reminder) can set retryCount to 2 on a row another run already marked scheduled and saved a SID. The next invocation then deletes that row only because retryCount > 1, the SID is gone, and a later cancellation cannot cancel the text. The same predicate will also delete any non-SMS row that exceeds one retry. Restrict this branch to method SMS and scheduled false. The comment above the query still says it only deletes past-due SMS, which is no longer what it does."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 195,
+   "severity": "high",
+   "category": "bug",
+   "title": "Any two errors permanently drop in-window SMS reminders",
+   "body": "Every thrown error in the scheduling try, and every falsy scheduleSMS result, increments the same retryCount, and the next cron deletes the row once retryCount > 1. That includes transient failures (Twilio 5xx or rate limits, getBookerBaseUrl, profile lookup), not only permanent ones such as an invalid number. This job loads every unscheduled SMS reminder whose scheduledDate is within 7 days, so two failed ticks during a short outage delete that whole window. Deletion is irreversible and there is no backoff or Twilio error-code check, so those attendees never get the text even after the provider recovers. Count only permanent send failures toward this cap; leave transient errors retryable until the scheduled date."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 158,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Missing phone or empty body never hits the retry limit",
+   "body": "retryCount is incremented only inside the branch that actually calls scheduleSMS. If sendTo is missing (SMS_ATTENDEE with a null booking.smsReminderNumber, or SMS_NUMBER with an empty step sendTo) or the rendered body is empty, the handler skips the send and leaves retryCount at 0 and scheduled false, as long as nothing earlier threw. Those rows stay in the unscheduled-within-7-days query and are fully reprocessed, including profile and booker-URL lookups, on every cron run until scheduledDate is past \u2014 the unbounded retry this change is meant to stop. Missing numbers are a common permanent failure and never reach Twilio, so they never reach the new delete. Increment retryCount or delete the row when there is nothing to send."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 190,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Catch-path retry update can abort the cron and orphan a sent SMS",
+   "body": "The new catch updates retryCount and does not handle that update failing. The try also wraps the update that stores the Twilio SID after scheduleSMS returns a message. If that SID update throws, the catch still treats it as a scheduling failure: it increments retryCount and leaves scheduled false and referenceId empty even though Twilio already accepted the message. Later runs schedule more messages for the same reminder, and once retryCount > 1 the row is deleted, so none of those messages can be cancelled. Separately, if the catch update itself throws (Prisma P2025 when a concurrent run already deleted the row), the error escapes the catch, the for-loop stops, and every later reminder in the batch is skipped. Previously this catch only logged. Guard the retry update, and do not count a failure that happens after Twilio has already returned a message as 'not scheduled'."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 184,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "retryCount is a lost update under overlapping crons",
+   "body": "Both failure paths set retryCount to the in-memory reminder.retryCount + 1 instead of an atomic increment, and the same pattern is in the catch. This route has no lock and does a Twilio request per reminder, so a second invocation can overlap a slow run. Both read the same count, both call scheduleSMS, and both write the same next value, so the stop-after-two-failures cap is not enforced and the attendee can get duplicate texts. A failure write can also raise retryCount above 1 on a row the other run already marked scheduled, which the new deleteMany then removes along with its SID. Use an atomic increment and a conditional update that only matches scheduled false (and the id)."
+  },
+  {
+   "index": 5,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 31,
+   "severity": "low",
+   "category": "perf",
+   "title": "OR retryCount delete cannot use the existing reminder index",
+   "body": "deleteMany now ORs an unindexed retryCount > 1 predicate with the scheduledDate predicate. WorkflowReminder's index is (method, scheduled, scheduledDate) and was not extended for retryCount in the schema change. An OR against a column with no index typically forces a sequential scan of the whole table on every cron tick, taking row locks for deleted tuples, including email and WhatsApp reminders this job does not own. Split the two cleanups into separate deletes and add an index that matches the retry predicate so this cron does not scan the full reminder table."
+  },
+  {
+   "index": 6,
+   "file": "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+   "line": 29,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No tests for retry accounting or the delete predicate",
+   "body": "This change deletes workflow reminders and adds no tests. Coverage needs to lock the intended contract: scheduleSMS returning null increments retryCount; a thrown error increments it; the row is removed only after retryCount exceeds 1 and only for unscheduled SMS; a successful schedule with a stored referenceId is not deleted; a missing phone or empty body does not remain in the cron until the event time. Without that, the unscoped deleteMany and the silent no-send path will not be caught before they drop reminders in production."
+  }
+ ],
+ "finding_count": 7
+}

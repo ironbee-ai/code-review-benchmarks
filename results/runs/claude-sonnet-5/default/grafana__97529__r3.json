@@ -1,0 +1,136 @@
+{
+ "run_id": "claude-sonnet-5__default__grafana__97529__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T21:00:46Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55076,
+    "output": 13904,
+    "reasoning": 11858,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 229898,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6015,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55076,
+    "output_tokens": 13904,
+    "output_tokens_details": {
+     "thinking_tokens": 11858
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T21:00:46Z",
+   "first_chunk_ms": 2320,
+   "first_text_ms": 229683,
+   "response_id": "msg_bdrk_it4mkj7vnz76mhnk4zwvyfkjfviwlkhcozv3uski75smfztynk4q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55076,
+  "output": 13904,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 11858
+ },
+ "cost_reported": null,
+ "latency_ms": 229898,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 320, \"severity\": \"high\", \"title\": \"Removing per-call Init() checks breaks shutdown gating\", \"body\": \"Previously every RPC handler (Create, Update, Delete, Read, List, Watch, Search, History, Origin, IsHealthy, PutBlob, GetBlob) called s.Init(ctx) before doing work. Because Init() uses sync.Once, after the server was already initialized this call cheaply returned the cached s.initErr, which Stop() deliberately sets to \\\"service is stopping\\\"/\\\"service is stopped\\\" to make in-flight and new RPCs fail once shutdown begins. This PR removes all of those Init() calls from the handlers (since init now happens once synchronously in NewResourceServer), but Stop() still mutates s.initErr and nothing reads it anymore. As a result, after Stop() is called, handlers (including IsHealthy, used for liveness/readiness) no longer reflect the stopped state and will keep processing requests normally until the underlying resources themselves start failing, defeating the graceful-shutdown mechanism that existed before this change.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 88, \"severity\": \"high\", \"title\": \"Removing the backend-wide lock around BuildIndex allows duplicate/corrupting concurrent builds for the same key\", \"body\": \"Previously bleveBackend.BuildIndex held cacheMu.Lock() for the entire function (including running the builder callback that populates the index), which serialized all builds. This PR removes that lock and only takes cacheMu briefly at the very end to insert into b.cache. getOrCreateIndex() in search.go checks GetIndex() for a cached entry and, if absent, calls build()/BuildIndex() -- there is no synchronization preventing two concurrent callers for the *same* NamespacedResource key from both seeing a cache miss and both calling BuildIndex concurrently. For disk-backed indexes (size > FileThreshold), two goroutines would call bleve.New(dir, mapper) on the same directory concurrently, which can fail or corrupt index data; for memory-backed indexes, the loser's bleve.Index is simply overwritten in the cache map and never closed, leaking resources. The intended optimization (finer-grained locking) should still serialize builds per-key (e.g., per-key mutex/singleflight) rather than removing the serialization entirely.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"title\": \"Synchronous, unbounded Init() in NewResourceServer can block startup indefinitely\", \"body\": \"NewResourceServer now calls s.Init(ctx) synchronously before returning, and the ctx passed in is derived from context.Background() with no deadline. Init() runs s.search.init(ctx), which builds the full search index over every namespace found via GetResourceStats \u2014 the exact operation the PR says 'takes too long' inside a gRPC call's context. Moving this work earlier removes the gRPC-context-cancellation symptom, but now the entire module/server construction blocks for however long indexing takes, with no timeout or cancellation path exposed to the caller. In orchestrated environments this can cause startup/readiness probes to fail or force restarts before initialization completes, and there's no way for an operator to bound or cancel this work.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 186, \"severity\": \"medium\", \"title\": \"Unsynchronized shared variables mutated by concurrent errgroup goroutines\", \"body\": \"In searchSupport.init(), totalBatchesIndexed++ and the outer err variable (declared from `stats, err := s.storage.GetResourceStats(...)`) are both written inside group.Go closures that run concurrently (errgroup limited to s.initWorkers, which can be >1). Both totalBatchesIndexed and err are shared, non-atomic variables written from multiple goroutines without any mutex/atomic, which is a data race (will be flagged by `go test -race`) and can produce an incorrect/non-deterministic final totalBatchesIndexed count used in the trace span attribute, and a lost/overwritten err value. Given this PR's explicit goal of increasing indexing concurrency, this race becomes more likely to actually manifest and should be fixed (e.g., use atomic counters and let errgroup.Wait() be the sole source of the returned error).\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 304, \"severity\": \"medium\", \"title\": \"Swapped order of watcher init and search init can drop events in HA setups\", \"body\": \"Init() previously started the broadcaster watcher (initWatcher) before building the search index; this PR swaps the order so the (potentially long-running) search.init() runs first and initWatcher() runs only after it completes. The main broadcaster's starting resource version is determined at the moment initWatcher() calls WatchWriteEvents, so any WriteEvents produced by other instances during the lengthy index-build window (explicitly a supported HA scenario per StorageBackend's WatchWriteEvents doc: 'For HA setups, this will be more events than the local WriteEvent above!') will not be observed by this instance's broadcaster and will be missed by clients subscribing via Watch() once the server comes up. This should be verified/tested, since it directly affects correctness of the watch stream in multi-replica deployments.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"title\": \"Postgres integration test silently skipped with vague TODO\", \"body\": \"The newly added skip for the `postgres` dbType disables the only integration test that exercises module server startup with the storage server target against Postgres, with just a TODO comment ('test not working with postgres in Drone. Works locally.') and no linked issue or root-cause explanation. Given this PR changes resource-server initialization timing (synchronous init at startup) which this very test is meant to validate, losing Postgres coverage reduces confidence that the new startup behavior works correctly on that backend.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 320,
+   "severity": "high",
+   "category": null,
+   "title": "Removing per-call Init() checks breaks shutdown gating",
+   "body": "Previously every RPC handler (Create, Update, Delete, Read, List, Watch, Search, History, Origin, IsHealthy, PutBlob, GetBlob) called s.Init(ctx) before doing work. Because Init() uses sync.Once, after the server was already initialized this call cheaply returned the cached s.initErr, which Stop() deliberately sets to \"service is stopping\"/\"service is stopped\" to make in-flight and new RPCs fail once shutdown begins. This PR removes all of those Init() calls from the handlers (since init now happens once synchronously in NewResourceServer), but Stop() still mutates s.initErr and nothing reads it anymore. As a result, after Stop() is called, handlers (including IsHealthy, used for liveness/readiness) no longer reflect the stopped state and will keep processing requests normally until the underlying resources themselves start failing, defeating the graceful-shutdown mechanism that existed before this change."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 88,
+   "severity": "high",
+   "category": null,
+   "title": "Removing the backend-wide lock around BuildIndex allows duplicate/corrupting concurrent builds for the same key",
+   "body": "Previously bleveBackend.BuildIndex held cacheMu.Lock() for the entire function (including running the builder callback that populates the index), which serialized all builds. This PR removes that lock and only takes cacheMu briefly at the very end to insert into b.cache. getOrCreateIndex() in search.go checks GetIndex() for a cached entry and, if absent, calls build()/BuildIndex() -- there is no synchronization preventing two concurrent callers for the *same* NamespacedResource key from both seeing a cache miss and both calling BuildIndex concurrently. For disk-backed indexes (size > FileThreshold), two goroutines would call bleve.New(dir, mapper) on the same directory concurrently, which can fail or corrupt index data; for memory-backed indexes, the loser's bleve.Index is simply overwritten in the cache map and never closed, leaking resources. The intended optimization (finer-grained locking) should still serialize builds per-key (e.g., per-key mutex/singleflight) rather than removing the serialization entirely."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": null,
+   "title": "Synchronous, unbounded Init() in NewResourceServer can block startup indefinitely",
+   "body": "NewResourceServer now calls s.Init(ctx) synchronously before returning, and the ctx passed in is derived from context.Background() with no deadline. Init() runs s.search.init(ctx), which builds the full search index over every namespace found via GetResourceStats \u2014 the exact operation the PR says 'takes too long' inside a gRPC call's context. Moving this work earlier removes the gRPC-context-cancellation symptom, but now the entire module/server construction blocks for however long indexing takes, with no timeout or cancellation path exposed to the caller. In orchestrated environments this can cause startup/readiness probes to fail or force restarts before initialization completes, and there's no way for an operator to bound or cancel this work."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 186,
+   "severity": "medium",
+   "category": null,
+   "title": "Unsynchronized shared variables mutated by concurrent errgroup goroutines",
+   "body": "In searchSupport.init(), totalBatchesIndexed++ and the outer err variable (declared from `stats, err := s.storage.GetResourceStats(...)`) are both written inside group.Go closures that run concurrently (errgroup limited to s.initWorkers, which can be >1). Both totalBatchesIndexed and err are shared, non-atomic variables written from multiple goroutines without any mutex/atomic, which is a data race (will be flagged by `go test -race`) and can produce an incorrect/non-deterministic final totalBatchesIndexed count used in the trace span attribute, and a lost/overwritten err value. Given this PR's explicit goal of increasing indexing concurrency, this race becomes more likely to actually manifest and should be fixed (e.g., use atomic counters and let errgroup.Wait() be the sole source of the returned error)."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 304,
+   "severity": "medium",
+   "category": null,
+   "title": "Swapped order of watcher init and search init can drop events in HA setups",
+   "body": "Init() previously started the broadcaster watcher (initWatcher) before building the search index; this PR swaps the order so the (potentially long-running) search.init() runs first and initWatcher() runs only after it completes. The main broadcaster's starting resource version is determined at the moment initWatcher() calls WatchWriteEvents, so any WriteEvents produced by other instances during the lengthy index-build window (explicitly a supported HA scenario per StorageBackend's WatchWriteEvents doc: 'For HA setups, this will be more events than the local WriteEvent above!') will not be observed by this instance's broadcaster and will be missed by clients subscribing via Watch() once the server comes up. This should be verified/tested, since it directly affects correctness of the watch stream in multi-replica deployments."
+  },
+  {
+   "index": 5,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": null,
+   "title": "Postgres integration test silently skipped with vague TODO",
+   "body": "The newly added skip for the `postgres` dbType disables the only integration test that exercises module server startup with the storage server target against Postgres, with just a TODO comment ('test not working with postgres in Drone. Works locally.') and no linked issue or root-cause explanation. Given this PR changes resource-server initialization timing (synchronous init at startup) which this very test is meant to validate, losing Postgres coverage reduces confidence that the new startup behavior works correctly on that backend."
+  }
+ ],
+ "finding_count": 6
+}

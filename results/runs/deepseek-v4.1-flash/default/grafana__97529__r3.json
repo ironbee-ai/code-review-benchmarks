@@ -1,0 +1,142 @@
+{
+ "run_id": "deepseek-v4.1-flash__default__grafana__97529__r3",
+ "model_id": "deepseek-v4.1-flash",
+ "family": "deepseek",
+ "route": "openrouter",
+ "provider_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_pin": {
+  "order": [
+   "deepseek"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "default",
+ "params": {
+  "reasoning": {
+   "effort": "high"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T18:39:54Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 137,
+    "output": 22566,
+    "reasoning": 21423,
+    "cache_read": 34944,
+    "cache_write": 0
+   },
+   "cost_reported": 0.013664982,
+   "latency_ms": 105309,
+   "finish_reason": "stop",
+   "served_model": "deepseek/deepseek-v4.1-flash-1017",
+   "provider_served": "DeepSeek",
+   "http_attempts": 1,
+   "text_chars": 5035,
+   "raw_usage": {
+    "completion_tokens": 22566,
+    "prompt_tokens": 35081,
+    "total_tokens": 57647,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 21423,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 34944,
+     "video_tokens": 0
+    },
+    "cost": 0.013664982,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.013664982,
+     "upstream_inference_prompt_cost": 0.000125382,
+     "upstream_inference_completions_cost": 0.0135396
+    }
+   },
+   "started_at": "2026-10-18T18:39:54Z",
+   "first_chunk_ms": 1294,
+   "first_text_ms": 100373,
+   "response_id": "gen-1792348794-tLanftuRrIfpfyKtZav2",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 137,
+  "output": 22566,
+  "cache_read": 34944,
+  "cache_write": 0,
+  "reasoning": 21423
+ },
+ "cost_reported": 0.013664982,
+ "latency_ms": 105309,
+ "served_model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider_served": "DeepSeek",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Removing the BuildIndex lock allows concurrent duplicate builds of the same key and concurrent opens of the same on-disk index\", \"body\": \"BuildIndex no longer holds cacheMu while it creates/flushes the bleve index; the mutex is now only taken to assign b.cache[key] = idx at the end. Nothing else serializes builds per key: searchSupport.getOrCreateIndex calls GetIndex (returns nil), then both callers independently call s.build -> BuildIndex (this is also reached from handleEvent). Two concurrent callers therefore both create a bleve index, both run the full storage scan, and the later assignment silently overwrites the earlier cache entry, whose index is never closed (leak for mem-only indexes). For keys above FileThreshold both goroutines call bleve.New on the same directory concurrently, which bleve/bolt does not support and can fail or corrupt the on-disk index. The previous global lock serialized these builds; if it is removed, a per-key lock/singleflight is required (the TODO in getOrCreateIndex explicitly notes this is missing).\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on err and totalBatchesIndexed inside the errgroup in searchSupport.init\", \"body\": \"The errgroup closures write to function-scoped shared state: `_, _, err = s.build(...)` assigns the outer `err`, and `totalBatchesIndexed++` mutates a shared counter. With group.SetLimit(s.initWorkers) and WorkerThreads > 1 these closures run concurrently, so this is a data race (will be reported by -race). Consequences: the error returned by a closure can be a value written by another goroutine (wrong error propagation), and the 'namespaced_indexed' span attribute is racy/incorrect. Use a closure-local error (`_, _, buildErr := ...; return buildErr`) and an atomic (or per-goroutine) counter.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 209, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Watch-event consumer dereferences a nil event when the events channel is closed, panicking on shutdown\", \"body\": \"The goroutine started by searchSupport.init does `v := <-events; s.handleEvent(watchctx, v)` without checking the receive ok flag and without ever exiting. When the storage backend is stopped, the SQL backend's poller closes this channel (defer close(stream) in sql/backend.go), the receive yields a nil *WrittenEvent, and handleEvent immediately dereferences evt.Type -> nil-pointer panic that crashes the process; if the channel were not closed the loop would spin. Additionally the goroutine uses context.Background() and has no way to be stopped. Because this PR makes searchSupport.init run unconditionally during construction, this goroutine (and the shutdown panic) is now always started. Check the comma-ok receive and return when the channel is closed.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 203, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Writes committed between index build and watch subscription are dropped permanently by searchSupport.init\", \"body\": \"init builds each index from storage and then calls s.storage.WatchWriteEvents, which for the SQL backend starts polling from the *latest* resource versions at subscription time. The per-index RV returned by s.build (the last RV read during the build) is discarded (`_, _, err = s.build(...)`), so any ADDED/MODIFIED/DELETED committed between the build snapshot and the watcher subscription is never applied to the index. The search index is then permanently stale for those resources (deleted documents keep matching, new documents are missing) until that resource is written again. The window is the whole startup index-build duration, so moving init to startup makes this easy to hit. The watch must start before/at the build RV (or events since that RV must be replayed) instead of from the current latest version.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Skipping the postgres variant of the storage-server integration test removes the only DB-backed coverage of the new startup path\", \"body\": \"This PR makes NewResourceServer run Init (lifecycle init, search index build via GetResourceStats/ListIterator, and WatchWriteEvents) synchronously during construction. That is exactly the path the storage-server-target integration test exercises, and postgres is the only real database variant left after sqlite is already skipped. Adding a skip with a TODO hides whatever failure the change introduces (e.g. unified-storage tables/migrations not being available when the resource server is constructed, or a startup error/hang) and leaves zero postgres coverage for the storage server target. The underlying failure should be fixed, or at minimum tracked by an issue referenced from the TODO, rather than silently skipping.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Removing the BuildIndex lock allows concurrent duplicate builds of the same key and concurrent opens of the same on-disk index",
+   "body": "BuildIndex no longer holds cacheMu while it creates/flushes the bleve index; the mutex is now only taken to assign b.cache[key] = idx at the end. Nothing else serializes builds per key: searchSupport.getOrCreateIndex calls GetIndex (returns nil), then both callers independently call s.build -> BuildIndex (this is also reached from handleEvent). Two concurrent callers therefore both create a bleve index, both run the full storage scan, and the later assignment silently overwrites the earlier cache entry, whose index is never closed (leak for mem-only indexes). For keys above FileThreshold both goroutines call bleve.New on the same directory concurrently, which bleve/bolt does not support and can fail or corrupt the on-disk index. The previous global lock serialized these builds; if it is removed, a per-key lock/singleflight is required (the TODO in getOrCreateIndex explicitly notes this is missing)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on err and totalBatchesIndexed inside the errgroup in searchSupport.init",
+   "body": "The errgroup closures write to function-scoped shared state: `_, _, err = s.build(...)` assigns the outer `err`, and `totalBatchesIndexed++` mutates a shared counter. With group.SetLimit(s.initWorkers) and WorkerThreads > 1 these closures run concurrently, so this is a data race (will be reported by -race). Consequences: the error returned by a closure can be a value written by another goroutine (wrong error propagation), and the 'namespaced_indexed' span attribute is racy/incorrect. Use a closure-local error (`_, _, buildErr := ...; return buildErr`) and an atomic (or per-goroutine) counter."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 209,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Watch-event consumer dereferences a nil event when the events channel is closed, panicking on shutdown",
+   "body": "The goroutine started by searchSupport.init does `v := <-events; s.handleEvent(watchctx, v)` without checking the receive ok flag and without ever exiting. When the storage backend is stopped, the SQL backend's poller closes this channel (defer close(stream) in sql/backend.go), the receive yields a nil *WrittenEvent, and handleEvent immediately dereferences evt.Type -> nil-pointer panic that crashes the process; if the channel were not closed the loop would spin. Additionally the goroutine uses context.Background() and has no way to be stopped. Because this PR makes searchSupport.init run unconditionally during construction, this goroutine (and the shutdown panic) is now always started. Check the comma-ok receive and return when the channel is closed."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 203,
+   "severity": "medium",
+   "category": "data",
+   "title": "Writes committed between index build and watch subscription are dropped permanently by searchSupport.init",
+   "body": "init builds each index from storage and then calls s.storage.WatchWriteEvents, which for the SQL backend starts polling from the *latest* resource versions at subscription time. The per-index RV returned by s.build (the last RV read during the build) is discarded (`_, _, err = s.build(...)`), so any ADDED/MODIFIED/DELETED committed between the build snapshot and the watcher subscription is never applied to the index. The search index is then permanently stale for those resources (deleted documents keep matching, new documents are missing) until that resource is written again. The window is the whole startup index-build duration, so moving init to startup makes this easy to hit. The watch must start before/at the build RV (or events since that RV must be replayed) instead of from the current latest version."
+  },
+  {
+   "index": 4,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Skipping the postgres variant of the storage-server integration test removes the only DB-backed coverage of the new startup path",
+   "body": "This PR makes NewResourceServer run Init (lifecycle init, search index build via GetResourceStats/ListIterator, and WatchWriteEvents) synchronously during construction. That is exactly the path the storage-server-target integration test exercises, and postgres is the only real database variant left after sqlite is already skipped. Adding a skip with a TODO hides whatever failure the change introduces (e.g. unified-storage tables/migrations not being available when the resource server is constructed, or a startup error/hang) and leaves zero postgres coverage for the storage server target. The underlying failure should be fixed, or at minimum tracked by an issue referenced from the TODO, rather than silently skipping."
+  }
+ ],
+ "finding_count": 5
+}

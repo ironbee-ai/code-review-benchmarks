@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-sonnet-5.5__xhigh__grafana__97529__r2",
+ "model_id": "claude-sonnet-5.5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-17T20:38:42Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55078,
+    "output": 8049,
+    "reasoning": 6026,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 62612,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5655,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55078,
+    "output_tokens": 8049,
+    "output_tokens_details": {
+     "thinking_tokens": 6026
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-17T20:38:42Z",
+   "first_chunk_ms": 2410,
+   "first_text_ms": 49429,
+   "response_id": "msg_bdrk_5z5g3czfud6dhhyojkj67s5t2vaz3ea6pflinzrvqdo655lobmka",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55078,
+  "output": 8049,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 6026
+ },
+ "cost_reported": null,
+ "latency_ms": 62612,
+ "served_model": "claude-sonnet-5-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Removing the BuildIndex lock allows duplicate concurrent builds of the same index\", \"body\": \"The old `cacheMu.Lock()` held for the whole of `BuildIndex` did more than serialize writes. `GetIndex` takes `RLock`, so it blocked while any build was running, and a second caller then found the freshly cached index. After this change `GetIndex` returns nil while a build is in progress. `searchSupport.getOrCreateIndex` (Search requests and the watch-event handler) can therefore start a second `BuildIndex` for the same key, and the search code has only a TODO about this. For file-backed indexes the second `bleve.New(dir, ...)` hits an existing path and fails, so the search errors or the watch event is dropped. For memory indexes the work is duplicated, the `IndexTenants` and `IndexedKinds` metrics are double-counted, and the first index is overwritten in the cache without being closed. A per-key singleflight or in-progress map is needed once the global lock is gone.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs iterates the cache map without taking cacheMu\", \"body\": \"`TotalDocs` ranges over `b.cache` without `RLock`, while `BuildIndex` now writes to the map under `Lock` from many goroutines with no other serialization. This PR adds a `TotalDocs()` call at the end of `searchSupport.init`, after the watch goroutine has already started. A watch event that triggers a lazy build of another index can therefore write the map while it is being iterated. Go's runtime treats that as a fatal 'concurrent map iteration and map write', which kills the process. `TotalDocs` should take `cacheMu.RLock()`.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 189, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Data race on shared `err` and `totalBatchesIndexed` in parallel index init\", \"body\": \"The errgroup goroutines in `init` increment the captured `totalBatchesIndexed` and assign to the outer `err` (`_, _, err = s.build(...)`) with no synchronization. With `WorkerThreads > 1`, which is the case this PR optimizes, this is a data race. A worker can also `return err` after another worker has overwritten the shared variable. A failed build can then be reported as nil, so startup init silently succeeds with a missing index, or it reports another goroutine's error. Now that init runs at startup this path always executes. Use a local `err` inside the closure and `atomic.Int64` for the counter.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Test skipped for postgres instead of investigating the startup-init regression\", \"body\": \"The test is skipped for postgres with 'not working with postgres in Drone'. It exercises the storage-server target, which now runs `ResourceServer.Init` synchronously at construction: backend DB init, index build and watcher start. A test that starts failing in CI right after eager init was introduced is a strong sign of a startup ordering or DB-readiness problem, such as tables or migrations not being ready when the server is built. Skipping it hides that signal, and the 'works locally' claim is unverified. No new test covers the changed behaviors: `NewResourceServer` failing on an init error, the index being built before the server is returned, or the lifecycle/search/watcher ordering.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 321, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Requests are no longer rejected after Stop or a failed init\", \"body\": \"`Stop` sets `s.initErr` to 'service is stopping' or 'service is stopped'. This worked because every handler called `s.Init(ctx)`, which returns `s.initErr` after the `sync.Once`. With those calls removed, nothing reads `initErr` any more. After `Stop`, Create, Update, Delete, Read, List, Watch, Search and the blob endpoints keep running against a stopped backend and a cancelled server context. `IsHealthy` also no longer reports an unhealthy state when the server is stopping. Either keep a cheap stopped check in the handlers or drop the dead `initErr` writes in `Stop`.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Failed eager Init leaks the cancelable context and any started goroutines\", \"body\": \"When `s.Init(ctx)` fails, `NewResourceServer` returns `nil, err` without calling `cancel()` or `lifecycle.Stop`. By then `lifecycle.Init` may have succeeded and `search.init` may have started its event-watching goroutine, so those resources leak. Previously the server object stayed reachable and could be stopped. Call `cancel()` and best-effort `lifecycle.Stop` on the error path. The error is also logged twice, once inside `Init` and once here.\"}, {\"file\": \"pkg/storage/unified/sql/backend.go\", \"line\": 158, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Trace context propagation fix is incomplete\", \"body\": \"The PR is described as fixing trace propagation, but only `GetResourceStats` was changed to keep the span context. `WriteEvent` here still does `_, span := b.tracer.Start(ctx, ...)`. The same applies to `ReadResource` and `ListIterator` in this file and to `bleveBackend.BuildIndex` in bleve.go. The child spans (create/update/delete, the list queries, the bleve index writes) are parented to the caller's span instead of the new one, so traces are still flattened or mis-parented. Use `ctx, span :=` in these places as well.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Removing the BuildIndex lock allows duplicate concurrent builds of the same index",
+   "body": "The old `cacheMu.Lock()` held for the whole of `BuildIndex` did more than serialize writes. `GetIndex` takes `RLock`, so it blocked while any build was running, and a second caller then found the freshly cached index. After this change `GetIndex` returns nil while a build is in progress. `searchSupport.getOrCreateIndex` (Search requests and the watch-event handler) can therefore start a second `BuildIndex` for the same key, and the search code has only a TODO about this. For file-backed indexes the second `bleve.New(dir, ...)` hits an existing path and fails, so the search errors or the watch event is dropped. For memory indexes the work is duplicated, the `IndexTenants` and `IndexedKinds` metrics are double-counted, and the first index is overwritten in the cache without being closed. A per-key singleflight or in-progress map is needed once the global lock is gone."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs iterates the cache map without taking cacheMu",
+   "body": "`TotalDocs` ranges over `b.cache` without `RLock`, while `BuildIndex` now writes to the map under `Lock` from many goroutines with no other serialization. This PR adds a `TotalDocs()` call at the end of `searchSupport.init`, after the watch goroutine has already started. A watch event that triggers a lazy build of another index can therefore write the map while it is being iterated. Go's runtime treats that as a fatal 'concurrent map iteration and map write', which kills the process. `TotalDocs` should take `cacheMu.RLock()`."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 189,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Data race on shared `err` and `totalBatchesIndexed` in parallel index init",
+   "body": "The errgroup goroutines in `init` increment the captured `totalBatchesIndexed` and assign to the outer `err` (`_, _, err = s.build(...)`) with no synchronization. With `WorkerThreads > 1`, which is the case this PR optimizes, this is a data race. A worker can also `return err` after another worker has overwritten the shared variable. A failed build can then be reported as nil, so startup init silently succeeds with a missing index, or it reports another goroutine's error. Now that init runs at startup this path always executes. Use a local `err` inside the closure and `atomic.Int64` for the counter."
+  },
+  {
+   "index": 3,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Test skipped for postgres instead of investigating the startup-init regression",
+   "body": "The test is skipped for postgres with 'not working with postgres in Drone'. It exercises the storage-server target, which now runs `ResourceServer.Init` synchronously at construction: backend DB init, index build and watcher start. A test that starts failing in CI right after eager init was introduced is a strong sign of a startup ordering or DB-readiness problem, such as tables or migrations not being ready when the server is built. Skipping it hides that signal, and the 'works locally' claim is unverified. No new test covers the changed behaviors: `NewResourceServer` failing on an init error, the index being built before the server is returned, or the lifecycle/search/watcher ordering."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 321,
+   "severity": "low",
+   "category": "bug",
+   "title": "Requests are no longer rejected after Stop or a failed init",
+   "body": "`Stop` sets `s.initErr` to 'service is stopping' or 'service is stopped'. This worked because every handler called `s.Init(ctx)`, which returns `s.initErr` after the `sync.Once`. With those calls removed, nothing reads `initErr` any more. After `Stop`, Create, Update, Delete, Read, List, Watch, Search and the blob endpoints keep running against a stopped backend and a cancelled server context. `IsHealthy` also no longer reports an unhealthy state when the server is stopping. Either keep a cheap stopped check in the handlers or drop the dead `initErr` writes in `Stop`."
+  },
+  {
+   "index": 5,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "low",
+   "category": "bug",
+   "title": "Failed eager Init leaks the cancelable context and any started goroutines",
+   "body": "When `s.Init(ctx)` fails, `NewResourceServer` returns `nil, err` without calling `cancel()` or `lifecycle.Stop`. By then `lifecycle.Init` may have succeeded and `search.init` may have started its event-watching goroutine, so those resources leak. Previously the server object stayed reachable and could be stopped. Call `cancel()` and best-effort `lifecycle.Stop` on the error path. The error is also logged twice, once inside `Init` and once here."
+  },
+  {
+   "index": 6,
+   "file": "pkg/storage/unified/sql/backend.go",
+   "line": 158,
+   "severity": "low",
+   "category": "bug",
+   "title": "Trace context propagation fix is incomplete",
+   "body": "The PR is described as fixing trace propagation, but only `GetResourceStats` was changed to keep the span context. `WriteEvent` here still does `_, span := b.tracer.Start(ctx, ...)`. The same applies to `ReadResource` and `ListIterator` in this file and to `bleveBackend.BuildIndex` in bleve.go. The child spans (create/update/delete, the list queries, the bleve index writes) are parented to the caller's span instead of the new one, so traces are still flattened or mis-parented. Use `ctx, span :=` in these places as well."
+  }
+ ],
+ "finding_count": 7
+}

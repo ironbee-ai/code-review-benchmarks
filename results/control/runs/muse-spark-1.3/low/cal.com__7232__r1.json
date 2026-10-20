@@ -1,0 +1,155 @@
+{
+ "run_id": "muse-spark-1.3__low__cal.com__7232__r1",
+ "model_id": "muse-spark-1.3",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-spark-1.3",
+ "provider_pin": null,
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "cal.com__7232",
+ "golden_url": "https://github.com/calcom/cal.com/pull/7232",
+ "repeat": 1,
+ "started_at": "2026-10-17T19:18:40Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 284223,
+  "sha": "a6f4b38037813abd",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system_neutral.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 69947,
+    "output": 4096,
+    "reasoning": 3032,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.10484175,
+   "latency_ms": 72405,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-spark-1.3",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 4520,
+   "raw_usage": {
+    "completion_tokens": 4096,
+    "prompt_tokens": 69947,
+    "total_tokens": 74043,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 3032,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.10484175,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.10484175,
+     "upstream_inference_prompt_cost": 0.08743375,
+     "upstream_inference_completions_cost": 0.017408
+    }
+   },
+   "started_at": "2026-10-17T19:18:40Z",
+   "first_chunk_ms": 5935,
+   "first_text_ms": 58344,
+   "response_id": "gen-1792264720-AlaKWCKJhQxRgKo4cAf0",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 69947,
+  "output": 4096,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 3032
+ },
+ "cost_reported": 0.10484175,
+ "latency_ms": 72405,
+ "served_model": "meta/muse-spark-1.3",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/ee/workflows/lib/reminders/emailReminderManager.ts\", \"line\": 213, \"severity\": \"high\", \"title\": \"immediateDelete cancels SendGrid but never deletes DB row\", \"body\": \"In packages/features/ee/workflows/lib/reminders/emailReminderManager.ts deleteScheduledEmailReminder with immediateDelete=true performs the SendGrid POST /scheduled_sends cancel and then returns without deleting or updating the WorkflowReminder row. Callers like handleNewBooking reschedule rely on this to remove the old reminder, so a stale row with scheduled=true and the old referenceId remains linked to the old booking until the past-date cleanup runs. It leaks DB rows and leaves cancelled state inconsistent.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 44, \"severity\": \"high\", \"title\": \"Cancel query lacks method/scheduled/referenceId filters\", \"body\": \"In packages/features/ee/workflows/api/scheduleEmailReminders.ts remindersToCancel selects every row with cancelled=true and scheduledDate within an hour, without filtering method=EMAIL, scheduled=true, or referenceId NOT NULL. Unscheduled reminders have referenceId null, and SMS reminders should not go through SendGrid. Sending batch_id=null to /v3/user/scheduled_sends fails, throws inside the loop, aborts remaining cancellations and skips the queued DB deletes, so valid emails are never cancelled and are still sent.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 53, \"severity\": \"high\", \"title\": \"Single SendGrid failure aborts whole cancel batch\", \"body\": \"In packages/features/ee/workflows/api/scheduleEmailReminders.ts the for loop awaits client.request sequentially inside one try/catch and only after the loop runs Promise.all of deletes. If any single cancel request throws, control jumps to catch, the loop stops, and none of the collected prisma.workflowReminder.delete operations are executed, even for reminders already cancelled in SendGrid. This leaves cancelled=true rows to be retried and can repeatedly fail, allowing emails to be sent.\"}, {\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 485, \"severity\": \"high\", \"title\": \"Workflow reminder cancellations fired without await\", \"body\": \"In packages/features/bookings/lib/handleCancelBooking.ts updatedBookings.forEach calls deleteScheduledEmailReminder and deleteScheduledSMSReminder which are async and perform the DB update/delete, but forEach does not await them and the handler does not Promise.all them before responding. The cancelled=true flag or SMS delete may not have persisted when the request returns or when the process continues, errors are swallowed, and the cron job may never see the cancellation so the email/SMS is still sent.\"}, {\"file\": \"packages/features/bookings/lib/handleNewBooking.ts\", \"line\": 966, \"severity\": \"high\", \"title\": \"Reschedule reminder cancellation not awaited\", \"body\": \"In packages/features/bookings/lib/handleNewBooking.ts the reschedule branch iterates originalRescheduledBooking.workflowReminders with forEach and calls async deleteScheduledEmailReminder/deleteScheduledSMSReminder without awaiting. The reschedule flow immediately continues to calendar rescheduling and scheduling new reminders. If the old cancellation update has not completed, old scheduled SendGrid batch IDs remain active and both old and new reminders can be sent.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 488, \"severity\": \"medium\", \"title\": \"Reschedule-request cancellations not awaited\", \"body\": \"In packages/trpc/server/routers/viewer/bookings.tsx requestReschedule uses forEach to call async deleteScheduledEmailReminder/deleteScheduledSMSReminder without awaiting. Same consequence as other cancel paths: DB cancelled flag or SMS delete races with subsequent logic and may be lost, leaving the previous booking's reminders scheduled.\"}, {\"file\": \"packages/features/ee/workflows/api/scheduleEmailReminders.ts\", \"line\": 80, \"severity\": \"medium\", \"title\": \"Unscheduled query can re-schedule cancelled reminders\", \"body\": \"In packages/features/ee/workflows/api/scheduleEmailReminders.ts unscheduledReminders selects method=EMAIL, scheduled=false within 72h with no cancelled!=true filter. Any reminder marked cancelled=true while still unscheduled would still be picked up, assigned a new SendGrid batchId, and marked scheduled=true, resurrecting a reminder for a cancelled/rescheduled booking and causing an unwanted email.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/ee/workflows/lib/reminders/emailReminderManager.ts",
+   "line": 213,
+   "severity": "high",
+   "category": null,
+   "title": "immediateDelete cancels SendGrid but never deletes DB row",
+   "body": "In packages/features/ee/workflows/lib/reminders/emailReminderManager.ts deleteScheduledEmailReminder with immediateDelete=true performs the SendGrid POST /scheduled_sends cancel and then returns without deleting or updating the WorkflowReminder row. Callers like handleNewBooking reschedule rely on this to remove the old reminder, so a stale row with scheduled=true and the old referenceId remains linked to the old booking until the past-date cleanup runs. It leaks DB rows and leaves cancelled state inconsistent."
+  },
+  {
+   "index": 1,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 44,
+   "severity": "high",
+   "category": null,
+   "title": "Cancel query lacks method/scheduled/referenceId filters",
+   "body": "In packages/features/ee/workflows/api/scheduleEmailReminders.ts remindersToCancel selects every row with cancelled=true and scheduledDate within an hour, without filtering method=EMAIL, scheduled=true, or referenceId NOT NULL. Unscheduled reminders have referenceId null, and SMS reminders should not go through SendGrid. Sending batch_id=null to /v3/user/scheduled_sends fails, throws inside the loop, aborts remaining cancellations and skips the queued DB deletes, so valid emails are never cancelled and are still sent."
+  },
+  {
+   "index": 2,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 53,
+   "severity": "high",
+   "category": null,
+   "title": "Single SendGrid failure aborts whole cancel batch",
+   "body": "In packages/features/ee/workflows/api/scheduleEmailReminders.ts the for loop awaits client.request sequentially inside one try/catch and only after the loop runs Promise.all of deletes. If any single cancel request throws, control jumps to catch, the loop stops, and none of the collected prisma.workflowReminder.delete operations are executed, even for reminders already cancelled in SendGrid. This leaves cancelled=true rows to be retried and can repeatedly fail, allowing emails to be sent."
+  },
+  {
+   "index": 3,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 485,
+   "severity": "high",
+   "category": null,
+   "title": "Workflow reminder cancellations fired without await",
+   "body": "In packages/features/bookings/lib/handleCancelBooking.ts updatedBookings.forEach calls deleteScheduledEmailReminder and deleteScheduledSMSReminder which are async and perform the DB update/delete, but forEach does not await them and the handler does not Promise.all them before responding. The cancelled=true flag or SMS delete may not have persisted when the request returns or when the process continues, errors are swallowed, and the cron job may never see the cancellation so the email/SMS is still sent."
+  },
+  {
+   "index": 4,
+   "file": "packages/features/bookings/lib/handleNewBooking.ts",
+   "line": 966,
+   "severity": "high",
+   "category": null,
+   "title": "Reschedule reminder cancellation not awaited",
+   "body": "In packages/features/bookings/lib/handleNewBooking.ts the reschedule branch iterates originalRescheduledBooking.workflowReminders with forEach and calls async deleteScheduledEmailReminder/deleteScheduledSMSReminder without awaiting. The reschedule flow immediately continues to calendar rescheduling and scheduling new reminders. If the old cancellation update has not completed, old scheduled SendGrid batch IDs remain active and both old and new reminders can be sent."
+  },
+  {
+   "index": 5,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 488,
+   "severity": "medium",
+   "category": null,
+   "title": "Reschedule-request cancellations not awaited",
+   "body": "In packages/trpc/server/routers/viewer/bookings.tsx requestReschedule uses forEach to call async deleteScheduledEmailReminder/deleteScheduledSMSReminder without awaiting. Same consequence as other cancel paths: DB cancelled flag or SMS delete races with subsequent logic and may be lost, leaving the previous booking's reminders scheduled."
+  },
+  {
+   "index": 6,
+   "file": "packages/features/ee/workflows/api/scheduleEmailReminders.ts",
+   "line": 80,
+   "severity": "medium",
+   "category": null,
+   "title": "Unscheduled query can re-schedule cancelled reminders",
+   "body": "In packages/features/ee/workflows/api/scheduleEmailReminders.ts unscheduledReminders selects method=EMAIL, scheduled=false within 72h with no cancelled!=true filter. Any reminder marked cancelled=true while still unscheduled would still be picked up, assigned a new SendGrid batchId, and marked scheduled=true, resurrecting a reminder for a cancelled/rescheduled booking and causing an unwanted email."
+  }
+ ],
+ "finding_count": 7
+}

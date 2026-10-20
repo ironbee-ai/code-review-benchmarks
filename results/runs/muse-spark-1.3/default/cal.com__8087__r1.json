@@ -1,0 +1,135 @@
+{
+ "run_id": "muse-spark-1.3__default__cal.com__8087__r1",
+ "model_id": "muse-spark-1.3",
+ "family": "meta",
+ "route": "openrouter",
+ "provider_model": "meta/muse-spark-1.3",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "cal.com__8087",
+ "golden_url": "https://github.com/calcom/cal.com/pull/8087",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:32:39Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 155936,
+  "sha": "d18f1306249d481a",
+  "patch_only": [
+   "packages/features/bookings/lib/handleNewBooking.ts"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 38669,
+    "output": 6558,
+    "reasoning": 5521,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": 0.07620775,
+   "latency_ms": 105005,
+   "finish_reason": "stop",
+   "served_model": "meta/muse-spark-1.3",
+   "provider_served": "Meta",
+   "http_attempts": 1,
+   "text_chars": 3956,
+   "raw_usage": {
+    "completion_tokens": 6558,
+    "prompt_tokens": 38669,
+    "total_tokens": 45227,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 5521,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0,
+     "video_tokens": 0
+    },
+    "cost": 0.07620775,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.07620775,
+     "upstream_inference_prompt_cost": 0.04833625,
+     "upstream_inference_completions_cost": 0.0278715
+    }
+   },
+   "started_at": "2026-10-17T11:32:39Z",
+   "first_chunk_ms": 13694,
+   "first_text_ms": 97510,
+   "response_id": "gen-1792236759-hf3b7nwljtJYFDviux1r",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 38669,
+  "output": 6558,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5521
+ },
+ "cost_reported": 0.07620775,
+ "latency_ms": 105005,
+ "served_model": "meta/muse-spark-1.3",
+ "provider_served": "Meta",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/features/bookings/lib/handleCancelBooking.ts\", \"line\": 460, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Recurring cancel deletions never awaited\", \"body\": \"In handleCancelBooking.ts the code iterates calendar credentials with `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { const calendar = await getCalendar(...); ... apiDeletes.push(await calendar?.deleteEvent(...)) })`. A `forEach` with an async callback is fire-and-forget; the outer function does not await the callbacks. Later the code does `await Promise.all(prismaPromises.concat(apiDeletes))`, but at that point `apiDeletes` has not yet been populated by the still-pending callbacks. Consequence: for recurring cancellations with `allRemainingBookings`, calendar deletions are lost or race with the response, leaving stale events on external calendars and incorrect availability.\"}, {\"file\": \"packages/trpc/server/routers/viewer/bookings.tsx\", \"line\": 553, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Reschedule deletions fire-and-forget via async forEach\", \"body\": \"In bookings.tsx `requestReschedule` does `bookingRefsFiltered.forEach(async (bookingRef) => { if (...) { const calendar = await getCalendar(...); return calendar?.deleteEvent(...); } else ... return deleteMeeting(...) })` with no await on the loop and no `Promise.all`. The returned promises from `deleteEvent`/`deleteMeeting` are also not awaited or collected. Consequence: the handler sends the reschedule email and webhooks before old calendar/video events are deleted, failures become unhandled rejections, and old time slots may never be freed, causing double-bookings.\"}, {\"file\": \"packages/app-store/vital/lib/reschedule.ts\", \"line\": 125, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Async forEach leaves calendar/video deletes unawaited\", \"body\": \"In vital/lib/reschedule.ts the code does `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); return calendar?.deleteEvent(...); return deleteMeeting(...) })` inside a `try` block. `forEach` does not await async callbacks, so the `try/catch` cannot catch asynchronous rejections and the function proceeds to send email and `return true` immediately. Consequence: deletion errors are silently lost as unhandled rejections and reschedule can report success while external calendar/video events remain.\"}, {\"file\": \"packages/app-store/wipemycalother/lib/reschedule.ts\", \"line\": 125, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Async forEach leaves calendar/video deletes unawaited\", \"body\": \"In wipemycalother/lib/reschedule.ts the code does `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); return calendar?.deleteEvent(...); return deleteMeeting(...) })` inside a `try` block. `forEach` does not await async callbacks, so the `try/catch` cannot catch asynchronous rejections and the function proceeds to send email and `return true` immediately. Consequence: deletion errors are silently lost as unhandled rejections and reschedule can report success while external calendar/video events remain.\"}, {\"file\": \"packages/core/CalendarManager.ts\", \"line\": 28, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"getCalendarCredentials now returns promises in sync API\", \"body\": \"In CalendarManager.ts `getCalendarCredentials` is still a synchronous function but now does `const calendar = getCalendar(credential)` where `getCalendar` is async and returns `Promise<Calendar|null>`. The returned objects therefore contain `calendar: Promise` instead of `Calendar|null`. Only `getConnectedCalendars` was updated to `await item.calendar`. Any other consumer of this exported function expecting a truthy calendar instance or calling calendar methods directly will get a Promise object (always truthy) and fail. The contract change is invisible in the sync signature and breaks callers and type expectations.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/features/bookings/lib/handleCancelBooking.ts",
+   "line": 460,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Recurring cancel deletions never awaited",
+   "body": "In handleCancelBooking.ts the code iterates calendar credentials with `bookingToDelete.user.credentials.filter(...).forEach(async (credential) => { const calendar = await getCalendar(...); ... apiDeletes.push(await calendar?.deleteEvent(...)) })`. A `forEach` with an async callback is fire-and-forget; the outer function does not await the callbacks. Later the code does `await Promise.all(prismaPromises.concat(apiDeletes))`, but at that point `apiDeletes` has not yet been populated by the still-pending callbacks. Consequence: for recurring cancellations with `allRemainingBookings`, calendar deletions are lost or race with the response, leaving stale events on external calendars and incorrect availability."
+  },
+  {
+   "index": 1,
+   "file": "packages/trpc/server/routers/viewer/bookings.tsx",
+   "line": 553,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Reschedule deletions fire-and-forget via async forEach",
+   "body": "In bookings.tsx `requestReschedule` does `bookingRefsFiltered.forEach(async (bookingRef) => { if (...) { const calendar = await getCalendar(...); return calendar?.deleteEvent(...); } else ... return deleteMeeting(...) })` with no await on the loop and no `Promise.all`. The returned promises from `deleteEvent`/`deleteMeeting` are also not awaited or collected. Consequence: the handler sends the reschedule email and webhooks before old calendar/video events are deleted, failures become unhandled rejections, and old time slots may never be freed, causing double-bookings."
+  },
+  {
+   "index": 2,
+   "file": "packages/app-store/vital/lib/reschedule.ts",
+   "line": 125,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Async forEach leaves calendar/video deletes unawaited",
+   "body": "In vital/lib/reschedule.ts the code does `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); return calendar?.deleteEvent(...); return deleteMeeting(...) })` inside a `try` block. `forEach` does not await async callbacks, so the `try/catch` cannot catch asynchronous rejections and the function proceeds to send email and `return true` immediately. Consequence: deletion errors are silently lost as unhandled rejections and reschedule can report success while external calendar/video events remain."
+  },
+  {
+   "index": 3,
+   "file": "packages/app-store/wipemycalother/lib/reschedule.ts",
+   "line": 125,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Async forEach leaves calendar/video deletes unawaited",
+   "body": "In wipemycalother/lib/reschedule.ts the code does `bookingRefsFiltered.forEach(async (bookingRef) => { ... await getCalendar(...); return calendar?.deleteEvent(...); return deleteMeeting(...) })` inside a `try` block. `forEach` does not await async callbacks, so the `try/catch` cannot catch asynchronous rejections and the function proceeds to send email and `return true` immediately. Consequence: deletion errors are silently lost as unhandled rejections and reschedule can report success while external calendar/video events remain."
+  },
+  {
+   "index": 4,
+   "file": "packages/core/CalendarManager.ts",
+   "line": 28,
+   "severity": "medium",
+   "category": "api",
+   "title": "getCalendarCredentials now returns promises in sync API",
+   "body": "In CalendarManager.ts `getCalendarCredentials` is still a synchronous function but now does `const calendar = getCalendar(credential)` where `getCalendar` is async and returns `Promise<Calendar|null>`. The returned objects therefore contain `calendar: Promise` instead of `Calendar|null`. Only `getConnectedCalendars` was updated to `await item.calendar`. Any other consumer of this exported function expecting a truthy calendar instance or calling calendar methods directly will get a Promise object (always truthy) and fail. The contract change is invisible in the sync signature and breaks callers and type expectations."
+  }
+ ],
+ "finding_count": 5
+}

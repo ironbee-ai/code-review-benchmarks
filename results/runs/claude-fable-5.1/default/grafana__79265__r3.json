@@ -1,0 +1,156 @@
+{
+ "run_id": "claude-fable-5.1__default__grafana__79265__r3",
+ "model_id": "claude-fable-5.1",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-fable-5-1",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "frontier",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:38:51Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 53033,
+    "output": 6034,
+    "reasoning": 3598,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 77366,
+   "finish_reason": "end_turn",
+   "served_model": "claude-fable-5-1",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6689,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 53033,
+    "output_tokens": 6034,
+    "output_tokens_details": {
+     "thinking_tokens": 3598
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T11:38:51Z",
+   "first_chunk_ms": 2543,
+   "first_text_ms": 47739,
+   "response_id": "msg_bdrk_iv3eayjhrm5fvubnht6jrkv5fdkzpwepaxl5442idqizm3jwcu5q",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 53033,
+  "output": 6034,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 3598
+ },
+ "cost_reported": null,
+ "latency_ms": 77366,
+ "served_model": "claude-fable-5-1",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 87, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Local cache is populated before the store rejects the device, so the limit is bypassed on the next request\", \"body\": \"`tagDeviceUI` calls `a.localCache.SetDefault(key, struct{}{})` before `a.anonStore.CreateOrUpdateDevice`. When the store returns `ErrDeviceLimitReached`, the device's cache key has already been written with the 29\u2011minute default TTL. On the very next request from the same (rejected) device, `tagDeviceUI` finds the key in the cache and returns nil, so `TagDevice`/`Authenticate` succeed and the anonymous identity is issued. The device limit therefore only denies the first request per device per instance per ~29 minutes; a browser that simply retries (which the UI does) gets in. The cache entry must only be set after a successful create/update (or must be deleted on error).\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 121, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Device limit is trivially bypassed by omitting the X-Grafana-Device-Id header\", \"body\": \"`TagDevice` returns nil when the `X-Grafana-Device-Id` header is empty (and also when the client IP cannot be parsed), and `Authenticate` only fails on `ErrDeviceLimitReached`. Since the header is set voluntarily by the frontend, any anonymous caller (curl, scripts, embedded dashboards, a browser with the header stripped) that does not send it is never counted and never blocked, regardless of `device_limit`. If the limit is meant to be an enforcement mechanism rather than a best-effort UI metric, requests without a device ID must be treated as over-limit (or at least counted), otherwise the setting gives a false sense of control.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 115, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Count-then-insert is not atomic; limit can be exceeded under concurrent requests\", \"body\": \"`CreateOrUpdateDevice` runs `CountDevices` in one session and then the INSERT/UPSERT in a separate `WithDbSession`, with no transaction or locking. Two or more new devices authenticating at the same time (or across multiple Grafana instances sharing the DB) all read `count < deviceLimit` and all insert, so the number of active devices can exceed `device_limit` by the degree of concurrency. If the limit must be strict, the check and insert need to run in a single transaction with appropriate locking, or the insert must be made conditional on the count in one statement.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 43, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"ProvideAnonDBStore signature change likely breaks wire dependency injection\", \"body\": \"`anonstore.ProvideAnonDBStore` now requires a second `deviceLimit int64` parameter, and `ProvideAnonymousDeviceService` now takes `db.DB` instead of `anonstore.AnonStore`. Before this change `ProvideAnonymousDeviceService` received an `AnonStore`, which means `anonstore.ProvideAnonDBStore` (with a `wire.Bind` to `AnonStore`) is registered as a provider in `pkg/server/wire.go`. That file is not touched in this PR; wire cannot satisfy an `int64` argument, so `wire gen` / `wire_gen.go` compilation will fail until the provider and bind are removed from the wire set.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"Device tagging moved from background goroutine onto the synchronous authentication path\", \"body\": \"Previously `TagDevice` ran in a goroutine with its own 2\u2011minute timeout so DB latency or failures never delayed authentication. It is now called synchronously inside `Authenticate` with the request context. For every anonymous device not present in the local cache this adds a `SELECT COUNT(*) ... BETWEEN` (when a limit is configured) plus an upsert to the critical path of every request, and the cache expires every 29 minutes per device per instance. On busy anonymous instances (public dashboards) this directly increases request latency and DB load, and a slow DB now stalls auth instead of just the tag. Consider keeping the write asynchronous and only doing the (cheap, cached) limit check synchronously.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 46, \"severity\": \"low\", \"category\": \"api\", \"title\": \"ErrDeviceLimitReached is returned as a plain error with no status/user-facing message\", \"body\": \"`Authenticate` returns the raw `fmt.Errorf(\\\"device limit reached\\\")` sentinel. The authn service and HTTP layer map unknown errors to a generic 401/500 with no indication of why the anonymous user was rejected, and the frontend has no way to show a meaningful message (the new `anonymousDeviceLimit` setting alone doesn't tell the UI that *this* device was rejected). Other authn clients use `errutil` errors with a public message and status; `ErrDeviceLimitReached` should be defined the same way so the response and logs are actionable.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database_test.go\", \"line\": 51, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Device-limit tests don't cover the update path, the cache interaction, or Authenticate\", \"body\": \"`TestIntegrationBeyondDeviceLimit` only asserts that a second new device is rejected. There is no test that an already-registered device can still be updated once the limit is reached (the whole point of `updateDevice`), that a device outside the 30\u2011day window counts as a free slot, that `Authenticate` actually fails with `ErrDeviceLimitReached`, or that a rejected device stays rejected on a subsequent request (which would have caught the local-cache bypass in `tagDeviceUI`). `TestIntegrationDeviceService_tag` also keeps using `setting.NewCfg()` with limit 0, so the service-level limit code path is never exercised.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New `device_limit` setting is not added to defaults.ini/sample.ini or documentation\", \"body\": \"`cfg.AnonymousDeviceLimit` is read from `[auth.anonymous] device_limit`, but the PR does not add the key to `conf/defaults.ini`, `conf/sample.ini`, or `docs/sources/setup-grafana/configure-grafana/`. Grafana's convention is that every configuration key appears in both ini files with a comment and in the configuration docs; without this, administrators have no way to discover the option or its semantics (0 = unlimited, counting window of 30 days, behaviour when exceeded). The PR description template is also left unfilled, so reviewers get no statement of intended behaviour.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 87,
+   "severity": "high",
+   "category": "bug",
+   "title": "Local cache is populated before the store rejects the device, so the limit is bypassed on the next request",
+   "body": "`tagDeviceUI` calls `a.localCache.SetDefault(key, struct{}{})` before `a.anonStore.CreateOrUpdateDevice`. When the store returns `ErrDeviceLimitReached`, the device's cache key has already been written with the 29\u2011minute default TTL. On the very next request from the same (rejected) device, `tagDeviceUI` finds the key in the cache and returns nil, so `TagDevice`/`Authenticate` succeed and the anonymous identity is issued. The device limit therefore only denies the first request per device per instance per ~29 minutes; a browser that simply retries (which the UI does) gets in. The cache entry must only be set after a successful create/update (or must be deleted on error)."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 121,
+   "severity": "medium",
+   "category": "security",
+   "title": "Device limit is trivially bypassed by omitting the X-Grafana-Device-Id header",
+   "body": "`TagDevice` returns nil when the `X-Grafana-Device-Id` header is empty (and also when the client IP cannot be parsed), and `Authenticate` only fails on `ErrDeviceLimitReached`. Since the header is set voluntarily by the frontend, any anonymous caller (curl, scripts, embedded dashboards, a browser with the header stripped) that does not send it is never counted and never blocked, regardless of `device_limit`. If the limit is meant to be an enforcement mechanism rather than a best-effort UI metric, requests without a device ID must be treated as over-limit (or at least counted), otherwise the setting gives a false sense of control."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 115,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Count-then-insert is not atomic; limit can be exceeded under concurrent requests",
+   "body": "`CreateOrUpdateDevice` runs `CountDevices` in one session and then the INSERT/UPSERT in a separate `WithDbSession`, with no transaction or locking. Two or more new devices authenticating at the same time (or across multiple Grafana instances sharing the DB) all read `count < deviceLimit` and all insert, so the number of active devices can exceed `device_limit` by the degree of concurrency. If the limit must be strict, the check and insert need to run in a single transaction with appropriate locking, or the insert must be made conditional on the count in one statement."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 43,
+   "severity": "medium",
+   "category": "bug",
+   "title": "ProvideAnonDBStore signature change likely breaks wire dependency injection",
+   "body": "`anonstore.ProvideAnonDBStore` now requires a second `deviceLimit int64` parameter, and `ProvideAnonymousDeviceService` now takes `db.DB` instead of `anonstore.AnonStore`. Before this change `ProvideAnonymousDeviceService` received an `AnonStore`, which means `anonstore.ProvideAnonDBStore` (with a `wire.Bind` to `AnonStore`) is registered as a provider in `pkg/server/wire.go`. That file is not touched in this PR; wire cannot satisfy an `int64` argument, so `wire gen` / `wire_gen.go` compilation will fail until the provider and bind are removed from the wire set."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "medium",
+   "category": "perf",
+   "title": "Device tagging moved from background goroutine onto the synchronous authentication path",
+   "body": "Previously `TagDevice` ran in a goroutine with its own 2\u2011minute timeout so DB latency or failures never delayed authentication. It is now called synchronously inside `Authenticate` with the request context. For every anonymous device not present in the local cache this adds a `SELECT COUNT(*) ... BETWEEN` (when a limit is configured) plus an upsert to the critical path of every request, and the cache expires every 29 minutes per device per instance. On busy anonymous instances (public dashboards) this directly increases request latency and DB load, and a slow DB now stalls auth instead of just the tag. Consider keeping the write asynchronous and only doing the (cheap, cached) limit check synchronously."
+  },
+  {
+   "index": 5,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 46,
+   "severity": "low",
+   "category": "api",
+   "title": "ErrDeviceLimitReached is returned as a plain error with no status/user-facing message",
+   "body": "`Authenticate` returns the raw `fmt.Errorf(\"device limit reached\")` sentinel. The authn service and HTTP layer map unknown errors to a generic 401/500 with no indication of why the anonymous user was rejected, and the frontend has no way to show a meaningful message (the new `anonymousDeviceLimit` setting alone doesn't tell the UI that *this* device was rejected). Other authn clients use `errutil` errors with a public message and status; `ErrDeviceLimitReached` should be defined the same way so the response and logs are actionable."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database_test.go",
+   "line": 51,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Device-limit tests don't cover the update path, the cache interaction, or Authenticate",
+   "body": "`TestIntegrationBeyondDeviceLimit` only asserts that a second new device is rejected. There is no test that an already-registered device can still be updated once the limit is reached (the whole point of `updateDevice`), that a device outside the 30\u2011day window counts as a free slot, that `Authenticate` actually fails with `ErrDeviceLimitReached`, or that a rejected device stays rejected on a subsequent request (which would have caught the local-cache bypass in `tagDeviceUI`). `TestIntegrationDeviceService_tag` also keeps using `setting.NewCfg()` with limit 0, so the service-level limit code path is never exercised."
+  },
+  {
+   "index": 7,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New `device_limit` setting is not added to defaults.ini/sample.ini or documentation",
+   "body": "`cfg.AnonymousDeviceLimit` is read from `[auth.anonymous] device_limit`, but the PR does not add the key to `conf/defaults.ini`, `conf/sample.ini`, or `docs/sources/setup-grafana/configure-grafana/`. Grafana's convention is that every configuration key appears in both ini files with a comment and in the configuration docs; without this, administrators have no way to discover the option or its semantics (0 = unlimited, counting window of 30 days, behaviour when exceeded). The PR description template is also left unfilled, so reviewers get no statement of intended behaviour."
+  }
+ ],
+ "finding_count": 8
+}

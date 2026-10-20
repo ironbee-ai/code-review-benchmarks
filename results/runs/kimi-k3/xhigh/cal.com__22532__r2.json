@@ -1,0 +1,140 @@
+{
+ "run_id": "kimi-k3__xhigh__cal.com__22532__r2",
+ "model_id": "kimi-k3",
+ "family": "moonshot",
+ "route": "bedrock-openai",
+ "provider_model": "global.moonshotai.kimi-k3",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "reasoning_effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "cal.com__22532",
+ "golden_url": "https://github.com/calcom/cal.com/pull/22532",
+ "repeat": 2,
+ "started_at": "2026-10-17T22:57:09Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 190677,
+  "sha": "31c7b0c459ff706c",
+  "patch_only": [
+   "apps/web/public/static/locales/en/common.json",
+   "packages/prisma/schema.prisma"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 50505,
+    "output": 5433,
+    "reasoning": 4187,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 158152,
+   "finish_reason": "stop",
+   "served_model": "global.moonshotai.kimi-k3",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5372,
+   "raw_usage": {
+    "completion_tokens": 5433,
+    "prompt_tokens": 50505,
+    "total_tokens": 55938,
+    "completion_tokens_details": {
+     "accepted_prediction_tokens": 0,
+     "audio_tokens": 0,
+     "reasoning_tokens": 4187,
+     "rejected_prediction_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    }
+   },
+   "started_at": "2026-10-17T22:57:09Z",
+   "first_chunk_ms": 12309,
+   "first_text_ms": 131533,
+   "response_id": "chatcmpl-pz2e27t2u3bq7xxgf4vu4wxiuuszo4fy4kndnezfa3wpdohhedkq",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 50505,
+  "output": 5433,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 4187
+ },
+ "cost_reported": null,
+ "latency_ms": 158152,
+ "served_model": "global.moonshotai.kimi-k3",
+ "provider_served": null,
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts\", \"line\": 28, \"severity\": \"medium\", \"category\": \"perf\", \"title\": \"connectedCalendars handler bypasses the feature-flag/mock and queries calendarCache unconditionally\", \"body\": \"The handler instantiates `new CalendarCacheRepository()` directly and calls `getCacheStatusByCredentialIds()` on every `viewer.calendars.connectedCalendars` query. Everywhere else in the codebase the repository is obtained via `CalendarCache.init(null)`, which returns `CalendarCacheRepositoryMock` when the calendar-cache feature flag is disabled. By constructing the repository directly, this handler (a) runs an extra `groupBy` query against the `CalendarCache` table on every calendar-settings page load even for instances/teams where the feature is off, and (b) makes the newly added `getCacheStatusByCredentialIds()` implementation on the mock dead code \u2014 the mock will never be consulted here. Use the same init/feature-flag path as the rest of the calendar-cache code so the query is skipped when the feature is disabled.\"}, {\"file\": \"packages/lib/getConnectedDestinationCalendars.ts\", \"line\": 23, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"UserWithCalendars type widened to require updatedAt/googleChannelId that nothing in this module consumes\", \"body\": \"`UserWithCalendars` now requires `updatedAt` and `googleChannelId` on both `allSelectedCalendars` and `userLevelSelectedCalendars`, but neither field is read anywhere in `getConnectedDestinationCalendarsAndEnsureDefaultsInDb` or its helpers in this file (the only consumer of the new `updatedAt` write is the frontend reading `CalendarCache.updatedAt` instead, per the PR's own notes). Only `findUnlockedUserForSession` was updated to select the new fields; any other caller of this widely-used function (it is re-exported as `getConnectedDestinationCalendars` for `@calcom/platform-libraries`, plus tests/fixtures constructing this type) that builds the user object without these fields will now fail type-checking. Either consume the fields or revert the type widening to avoid a needless contract break.\"}, {\"file\": \"packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts\", \"line\": 25, \"severity\": \"low\", \"category\": \"api\", \"title\": \"deleteCache handler throws a generic Error instead of a TRPCError\", \"body\": \"When the credential is not found or doesn't belong to the user, the handler does `throw new Error(\\\"Credential not found or access denied\\\")`. tRPC converts a generic `Error` into an `INTERNAL_SERVER_ERROR` (HTTP 500), so clients see a server error for what is actually a not-found/forbidden condition, and it may get reported as an unexpected server fault. Throw a `TRPCError` with code `NOT_FOUND` (or `FORBIDDEN`) to match the convention used elsewhere in the codebase.\"}, {\"file\": \"packages/app-store/googlecalendar/lib/CalendarService.ts\", \"line\": 1024, \"severity\": \"low\", \"category\": \"perf\", \"title\": \"Unconditional empty updateMany write to bump SelectedCalendar.updatedAt whose value is never read\", \"body\": \"`fetchAvailabilityAndSetCache` now ends with `await SelectedCalendarRepository.updateManyByCredentialId(this.credential.id, {})`, an `updateMany` with empty data whose only effect is to touch `updatedAt` on every SelectedCalendar row for the credential. This runs on the webhook/cache-refresh hot path, yet the PR description itself notes that `SelectedCalendar.updatedAt` is not displayed or read anywhere (the UI uses `CalendarCache.updatedAt` via `cacheUpdatedAt`). This is a dead write on a hot path; either remove it or wire it to an actual consumer before merging. Additionally, the method's parameter is typed `Prisma.SelectedCalendarUpdateInput` while `updateMany` expects `SelectedCalendarUpdateManyMutationInput` \u2014 it only compiles because `{}` is passed; any real payload with relation fields would be a type error.\"}, {\"file\": \"scripts/test-gcal-webhooks.sh\", \"line\": 68, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Dev script uses macOS-only `sed -i ''` and a cwd-relative .env path\", \"body\": \"Two portability/correctness issues in the new helper script: (1) `sed -i '' -E ...` is BSD/macOS syntax \u2014 on GNU/Linux `sed -i ''` treats the empty string as a filename and the script fails with \\\"can't read : No such file or directory\\\", so the script silently breaks for Linux developers. (2) `ENV_FILE=\\\"../.env\\\"` is resolved relative to the caller's current working directory, not the script's location; running it from anywhere other than the `scripts/` directory will create or modify a `.env` in an unintended parent directory. Resolve the env file relative to the script's own path (e.g. via `$(dirname \\\"$0\\\")`).\"}, {\"file\": \"packages/features/apps/components/CredentialActionsDropdown.tsx\", \"line\": 89, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"Cache 'last updated' timestamp hardcoded to en-US locale\", \"body\": \"The cache status line formats the timestamp with `new Intl.DateTimeFormat(\\\"en-US\\\", ...)`, ignoring the user's configured locale even though `useLocale()` is already available in the component. Non-US users will see US date/time formatting in a user-facing settings page, inconsistent with the rest of the app. Pass the user's locale (e.g. `i18n.language` from `useLocale`) or use the app's existing date-formatting helpers.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "packages/trpc/server/routers/viewer/calendars/connectedCalendars.handler.ts",
+   "line": 28,
+   "severity": "medium",
+   "category": "perf",
+   "title": "connectedCalendars handler bypasses the feature-flag/mock and queries calendarCache unconditionally",
+   "body": "The handler instantiates `new CalendarCacheRepository()` directly and calls `getCacheStatusByCredentialIds()` on every `viewer.calendars.connectedCalendars` query. Everywhere else in the codebase the repository is obtained via `CalendarCache.init(null)`, which returns `CalendarCacheRepositoryMock` when the calendar-cache feature flag is disabled. By constructing the repository directly, this handler (a) runs an extra `groupBy` query against the `CalendarCache` table on every calendar-settings page load even for instances/teams where the feature is off, and (b) makes the newly added `getCacheStatusByCredentialIds()` implementation on the mock dead code \u2014 the mock will never be consulted here. Use the same init/feature-flag path as the rest of the calendar-cache code so the query is skipped when the feature is disabled."
+  },
+  {
+   "index": 1,
+   "file": "packages/lib/getConnectedDestinationCalendars.ts",
+   "line": 23,
+   "severity": "medium",
+   "category": "api",
+   "title": "UserWithCalendars type widened to require updatedAt/googleChannelId that nothing in this module consumes",
+   "body": "`UserWithCalendars` now requires `updatedAt` and `googleChannelId` on both `allSelectedCalendars` and `userLevelSelectedCalendars`, but neither field is read anywhere in `getConnectedDestinationCalendarsAndEnsureDefaultsInDb` or its helpers in this file (the only consumer of the new `updatedAt` write is the frontend reading `CalendarCache.updatedAt` instead, per the PR's own notes). Only `findUnlockedUserForSession` was updated to select the new fields; any other caller of this widely-used function (it is re-exported as `getConnectedDestinationCalendars` for `@calcom/platform-libraries`, plus tests/fixtures constructing this type) that builds the user object without these fields will now fail type-checking. Either consume the fields or revert the type widening to avoid a needless contract break."
+  },
+  {
+   "index": 2,
+   "file": "packages/trpc/server/routers/viewer/calendars/deleteCache.handler.ts",
+   "line": 25,
+   "severity": "low",
+   "category": "api",
+   "title": "deleteCache handler throws a generic Error instead of a TRPCError",
+   "body": "When the credential is not found or doesn't belong to the user, the handler does `throw new Error(\"Credential not found or access denied\")`. tRPC converts a generic `Error` into an `INTERNAL_SERVER_ERROR` (HTTP 500), so clients see a server error for what is actually a not-found/forbidden condition, and it may get reported as an unexpected server fault. Throw a `TRPCError` with code `NOT_FOUND` (or `FORBIDDEN`) to match the convention used elsewhere in the codebase."
+  },
+  {
+   "index": 3,
+   "file": "packages/app-store/googlecalendar/lib/CalendarService.ts",
+   "line": 1024,
+   "severity": "low",
+   "category": "perf",
+   "title": "Unconditional empty updateMany write to bump SelectedCalendar.updatedAt whose value is never read",
+   "body": "`fetchAvailabilityAndSetCache` now ends with `await SelectedCalendarRepository.updateManyByCredentialId(this.credential.id, {})`, an `updateMany` with empty data whose only effect is to touch `updatedAt` on every SelectedCalendar row for the credential. This runs on the webhook/cache-refresh hot path, yet the PR description itself notes that `SelectedCalendar.updatedAt` is not displayed or read anywhere (the UI uses `CalendarCache.updatedAt` via `cacheUpdatedAt`). This is a dead write on a hot path; either remove it or wire it to an actual consumer before merging. Additionally, the method's parameter is typed `Prisma.SelectedCalendarUpdateInput` while `updateMany` expects `SelectedCalendarUpdateManyMutationInput` \u2014 it only compiles because `{}` is passed; any real payload with relation fields would be a type error."
+  },
+  {
+   "index": 4,
+   "file": "scripts/test-gcal-webhooks.sh",
+   "line": 68,
+   "severity": "low",
+   "category": "bug",
+   "title": "Dev script uses macOS-only `sed -i ''` and a cwd-relative .env path",
+   "body": "Two portability/correctness issues in the new helper script: (1) `sed -i '' -E ...` is BSD/macOS syntax \u2014 on GNU/Linux `sed -i ''` treats the empty string as a filename and the script fails with \"can't read : No such file or directory\", so the script silently breaks for Linux developers. (2) `ENV_FILE=\"../.env\"` is resolved relative to the caller's current working directory, not the script's location; running it from anywhere other than the `scripts/` directory will create or modify a `.env` in an unintended parent directory. Resolve the env file relative to the script's own path (e.g. via `$(dirname \"$0\")`)."
+  },
+  {
+   "index": 5,
+   "file": "packages/features/apps/components/CredentialActionsDropdown.tsx",
+   "line": 89,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "Cache 'last updated' timestamp hardcoded to en-US locale",
+   "body": "The cache status line formats the timestamp with `new Intl.DateTimeFormat(\"en-US\", ...)`, ignoring the user's configured locale even though `useLocale()` is already available in the component. Non-US users will see US date/time formatting in a user-facing settings page, inconsistent with the rest of the app. Pass the user's locale (e.g. `i18n.language` from `useLocale`) or use the app's existing date-formatting helpers."
+  }
+ ],
+ "finding_count": 6
+}

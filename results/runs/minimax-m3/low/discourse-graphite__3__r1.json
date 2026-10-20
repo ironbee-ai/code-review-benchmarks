@@ -1,0 +1,207 @@
+{
+ "run_id": "minimax-m3__low__discourse-graphite__3__r1",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 1,
+ "started_at": "2026-10-17T11:26:09Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 18115,
+    "output": 6768,
+    "reasoning": 4384,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.01356378,
+   "latency_ms": 31358,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 10371,
+   "raw_usage": {
+    "completion_tokens": 6768,
+    "prompt_tokens": 18243,
+    "total_tokens": 25011,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 4384,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.01356378,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.01356378,
+     "upstream_inference_prompt_cost": 0.00544218,
+     "upstream_inference_completions_cost": 0.0081216
+    }
+   },
+   "started_at": "2026-10-17T11:26:09Z",
+   "first_chunk_ms": 1194,
+   "first_text_ms": 20910,
+   "response_id": "gen-1792236369-Rh9AKX4vY8oB2gsBIMRx",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 18115,
+  "output": 6768,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 4384
+ },
+ "cost_reported": 0.01356378,
+ "latency_ms": 31358,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "```json\n{\n  \"findings\": [\n    {\n      \"file\": \"app/models/blocked_email.rb\",\n      \"line\": 11,\n      \"severity\": \"high\",\n      \"category\": \"concurrency\",\n      \"title\": \"Race condition causes lost match_count increments\",\n      \"body\": \"BlockedEmail.should_block? does a read-modify-write on match_count (record.match_count += 1; record.save) without any locking. Two concurrent signup attempts with the same blocked email will each read the same match_count, both increment to N+1 in memory, and both persist N+1, losing one increment. Because this is invoked from the EmailValidator on the signup path, multiple simultaneous attempts to register with a blocked email will undercount the hits, breaking the audit/statistics this feature is built around. Use an atomic SQL update (e.g., BlockedEmail.where(id: record.id).update_all('match_count = match_count + 1, last_match_at = ?', Time.zone.now)) or wrap in a row-level lock / SELECT FOR UPDATE.\"\n    },\n    {\n      \"file\": \"app/models/blocked_email.rb\",\n      \"line\": 11,\n      \"severity\": \"high\",\n      \"category\": \"data\",\n      \"title\": \"should_block? performs a DB write during read-only validation\",\n      \"body\": \"should_block? is named like a predicate but has the side effect of incrementing match_count and updating last_match_at whenever a record exists. The EmailValidator (lib/validators/email_validator.rb) calls it on every email validation, including runs that ultimately fail to save the user. Consequences: (1) match_count gets incremented even when the signup ultimately fails for unrelated reasons, distorting statistics; (2) every blocked-email signup now performs an extra UPDATE on the blocked_emails table inside what should be a validation pass, increasing contention; (3) if record.save fails it is silently swallowed, leaving an inconsistent mix of \\\"returned true because record existed\\\" but with no recorded hit. The hit-recording logic should be split from the block check (e.g., a separate should_record_hit?) and only run on successful user creation, or at least on a successful save of the record.\"\n    },\n    {\n      \"file\": \"lib/validators/email_validator.rb\",\n      \"line\": 13,\n      \"severity\": \"high\",\n      \"category\": \"security\",\n      \"title\": \"Case-sensitive blocked-email lookup lets blocked addresses slip through\",\n      \"body\": \"EmailValidator calls BlockedEmail.should_block?(value) with the raw, mixed-case value supplied by the user. BlockedEmail.where(email: email).first is case-sensitive, and the migration's add_index :blocked_emails, :email, unique: true is a plain btree unique index (not citext / functional lower(email) index). Existing flows normalize emails to lowercase in some places (e.g., users_controller#change_email uses Email.downcase), but neither the BlockedEmail model nor the validator does any normalization. An admin who adds 'Spammer@Evil.com' to the blocklist will not stop a signup from 'spammer@evil.com', 'SPAMMER@evil.com', etc. Worse, because the unique index is case-sensitive, you cannot even add both casings as separate rows. Normalize via before_validation (self.email = Email.downcase(self.email.to_s).strip) and either store lowercase + add a functional unique index, or use a citext column.\"\n    },\n    {\n      \"file\": \"db/migrate/20130724201552_create_blocked_emails.rb\",\n      \"line\": 10,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"Unique index on email does not enforce case-insensitive uniqueness\",\n      \"body\": \"add_index :blocked_emails, :email, unique: true uses the raw column values, so 'spam@x.com' and 'SPAM@x.com' are treated as distinct and both can be inserted. Combined with the case-sensitive lookup in BlockedEmail.should_block?, this is the underlying cause of the bypass above and also makes it impossible for admins to comprehensively block an address. Use a case-insensitive column (citext) or a functional index such as add_index :blocked_emails, 'lower(email)', unique: true, name: 'index_blocked_emails_on_lower_email'.\"\n    },\n    {\n      \"file\": \"app/models/blocked_email.rb\",\n      \"line\": 16,\n      \"severity\": \"medium\",\n      \"category\": \"data\",\n      \"title\": \"record.save failure is silently swallowed\",\n      \"body\": \"should_block? calls record.save with no error handling. If the save raises or returns false (e.g., a validation error on the BlockedEmail record, a DB error, or an ActionView::Template::Error from a future before_save), the exception bubbles up out of the EmailValidator and aborts user signup. The user sees a generic 500 instead of a clean validation message. At minimum, wrap in a rescue and log; ideally restructure so hit recording is not coupled to the block decision (see the related side-effect finding).\"\n    },\n    {\n      \"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\",\n      \"line\": 17,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"rejectedEmails list never cleared and is case-sensitive\",\n      \"body\": \"rejectedEmails is initialized once as Em.A([]) and only ever pushObject'd to. It is never cleared, and the contains(email) check is case-sensitive. Consequences: (1) once a controller instance flags an email as rejected, the user cannot clear that rejection (e.g., if they fix a typo and try the corrected address it's fine, but if they re-type the same address with different casing, e.g. 'Bad@Spam.com' vs 'bad@spam.com', the rejection check silently misses it because the case-sensitive contains returns false even though the server already rejected it); (2) the array grows without bound for the lifetime of the controller. The pushObject site should normalize the email (e.g., toLowerCase()) on both insert and check, and there should be a way to clear it on success/reset.\"\n    },\n    {\n      \"file\": \"lib/validators/email_validator.rb\",\n      \"line\": 13,\n      \"severity\": \"medium\",\n      \"category\": \"bug\",\n      \"title\": \"Blocked-email check runs even when whitelist/blacklist already rejected the email\",\n      \"body\": \"The validator checks the whitelist/blacklist first and adds an error if appropriate, then separately calls BlockedEmail.should_block?(value). The condition guards with `if record.errors[attribute].blank?`, which is correct in isolation. But should_block? also has the side effect of doing a DB write (updating match_count/last_match_at) for the matched record. When a blocked email also trips the whitelist/blacklist (e.g., admin added both), match_count will still be incremented because the guard only checks the in-memory errors hash for the current validator, not the prior-pass state. That aside, the bigger concern is that should_block? runs an additional SELECT and potentially an UPDATE on the hot path of every signup even when the email was just rejected for whitelist/blacklist reasons. Restructure so should_block? is a pure read with no side effects, and do hit-recording only on successful user save.\"\n    },\n    {\n      \"file\": \"spec/components/validators/email_validator_spec.rb\",\n      \"line\": 9,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"Whitelist/blacklist branches of EmailValidator are untested\",\n      \"body\": \"The only tests stub BlockedEmail.should_block? and never exercise the whitelist/blacklist code paths (SiteSetting.email_domains_whitelist / email_domains_blacklist). These paths were carried over verbatim from user.rb and were never tested before either, but now that the logic has been moved into a shared validator it's the right time to add coverage: an email rejected by the whitelist, an email rejected by the blacklist, and an email that passes both. Without tests, regressions in the gsub('.', '\\\\.') / regexp interpolation (which is also unsafe if the setting contains regex metacharacters like '|' or '*') will slip in.\"\n    },\n    {\n      \"file\": \"spec/models/blocked_email_spec.rb\",\n      \"line\": 19,\n      \"severity\": \"medium\",\n      \"category\": \"test_gap\",\n      \"title\": \"No test covers case-insensitive matching or the race condition\",\n      \"body\": \"The model spec only exercises should_block? with an exact-case email and a single call. It does not cover (1) case-insensitive lookup, which is the main correctness gap of this PR (see EmailValidator finding), and (2) the lost-update race condition in match_count. At least one spec should demonstrate that 'Foo@Spam.com' blocks 'FOO@spam.com' (after the model is fixed), and a spec using threads or raw SQL should illustrate the concurrent-update behavior so the regression is caught if someone removes the atomic update later.\"\n    },\n    {\n      \"file\": \"app/models/blocked_email.rb\",\n      \"line\": 5,\n      \"severity\": \"low\",\n      \"category\": \"data\",\n      \"title\": \"action_type not constrained to the Enum's values\",\n      \"body\": \"validates :email, presence: true, uniqueness: true does not validate action_type, so the model will accept any integer (including ones not produced by BlockedEmail.actions). Add `validates :action_type, inclusion: { in: BlockedEmail.actions.values }` to fail fast on bad data. The `||=` in set_defaults only handles nil, not arbitrary invalid integers.\"\n    },\n    {\n      \"file\": \"lib/validators/email_validator.rb\",\n      \"line\": 24,\n      \"severity\": \"low\",\n      \"category\": \"bug\",\n      \"title\": \"Missing trailing newline in email_validator.rb\",\n      \"body\": \"The new file ends without a final newline (the diff explicitly notes \\\"\\\\ No newline at end of file\\\"). Most Ruby tools, editors, and POSIX conventions expect source files to end with a newline. Add a trailing newline.\"\n    },\n    {\n      \"file\": \"lib/validators/email_validator.rb\",\n      \"line\": 19,\n      \"severity\": \"low\",\n      \"category\": \"security\",\n      \"title\": \"Domain setting interpolated directly into a regex\",\n      \"body\": \"email_in_restriction_setting? builds the regex as Regexp.new(\\\"@(#{domains})\\\", true). If the setting contains regex metacharacters other than '.' (e.g., '|', '*', '+', '(', '['), they are interpreted as regex syntax. This was carried over from the original user.rb implementation, but since the file is being touched anyway this is a good place to fix it: split the setting on commas/whitespace, Regexp.escape each entry, and join with '|'. Otherwise an admin who accidentally types 'foo.com|bar.com' (intending a list) silently changes the semantics.\"\n    }\n  ]\n}\n```",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 11,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Race condition causes lost match_count increments",
+   "body": "BlockedEmail.should_block? does a read-modify-write on match_count (record.match_count += 1; record.save) without any locking. Two concurrent signup attempts with the same blocked email will each read the same match_count, both increment to N+1 in memory, and both persist N+1, losing one increment. Because this is invoked from the EmailValidator on the signup path, multiple simultaneous attempts to register with a blocked email will undercount the hits, breaking the audit/statistics this feature is built around. Use an atomic SQL update (e.g., BlockedEmail.where(id: record.id).update_all('match_count = match_count + 1, last_match_at = ?', Time.zone.now)) or wrap in a row-level lock / SELECT FOR UPDATE."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 11,
+   "severity": "high",
+   "category": "data",
+   "title": "should_block? performs a DB write during read-only validation",
+   "body": "should_block? is named like a predicate but has the side effect of incrementing match_count and updating last_match_at whenever a record exists. The EmailValidator (lib/validators/email_validator.rb) calls it on every email validation, including runs that ultimately fail to save the user. Consequences: (1) match_count gets incremented even when the signup ultimately fails for unrelated reasons, distorting statistics; (2) every blocked-email signup now performs an extra UPDATE on the blocked_emails table inside what should be a validation pass, increasing contention; (3) if record.save fails it is silently swallowed, leaving an inconsistent mix of \"returned true because record existed\" but with no recorded hit. The hit-recording logic should be split from the block check (e.g., a separate should_record_hit?) and only run on successful user creation, or at least on a successful save of the record."
+  },
+  {
+   "index": 2,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "high",
+   "category": "security",
+   "title": "Case-sensitive blocked-email lookup lets blocked addresses slip through",
+   "body": "EmailValidator calls BlockedEmail.should_block?(value) with the raw, mixed-case value supplied by the user. BlockedEmail.where(email: email).first is case-sensitive, and the migration's add_index :blocked_emails, :email, unique: true is a plain btree unique index (not citext / functional lower(email) index). Existing flows normalize emails to lowercase in some places (e.g., users_controller#change_email uses Email.downcase), but neither the BlockedEmail model nor the validator does any normalization. An admin who adds 'Spammer@Evil.com' to the blocklist will not stop a signup from 'spammer@evil.com', 'SPAMMER@evil.com', etc. Worse, because the unique index is case-sensitive, you cannot even add both casings as separate rows. Normalize via before_validation (self.email = Email.downcase(self.email.to_s).strip) and either store lowercase + add a functional unique index, or use a citext column."
+  },
+  {
+   "index": 3,
+   "file": "db/migrate/20130724201552_create_blocked_emails.rb",
+   "line": 10,
+   "severity": "medium",
+   "category": "data",
+   "title": "Unique index on email does not enforce case-insensitive uniqueness",
+   "body": "add_index :blocked_emails, :email, unique: true uses the raw column values, so 'spam@x.com' and 'SPAM@x.com' are treated as distinct and both can be inserted. Combined with the case-sensitive lookup in BlockedEmail.should_block?, this is the underlying cause of the bypass above and also makes it impossible for admins to comprehensively block an address. Use a case-insensitive column (citext) or a functional index such as add_index :blocked_emails, 'lower(email)', unique: true, name: 'index_blocked_emails_on_lower_email'."
+  },
+  {
+   "index": 4,
+   "file": "app/models/blocked_email.rb",
+   "line": 16,
+   "severity": "medium",
+   "category": "data",
+   "title": "record.save failure is silently swallowed",
+   "body": "should_block? calls record.save with no error handling. If the save raises or returns false (e.g., a validation error on the BlockedEmail record, a DB error, or an ActionView::Template::Error from a future before_save), the exception bubbles up out of the EmailValidator and aborts user signup. The user sees a generic 500 instead of a clean validation message. At minimum, wrap in a rescue and log; ideally restructure so hit recording is not coupled to the block decision (see the related side-effect finding)."
+  },
+  {
+   "index": 5,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 17,
+   "severity": "medium",
+   "category": "bug",
+   "title": "rejectedEmails list never cleared and is case-sensitive",
+   "body": "rejectedEmails is initialized once as Em.A([]) and only ever pushObject'd to. It is never cleared, and the contains(email) check is case-sensitive. Consequences: (1) once a controller instance flags an email as rejected, the user cannot clear that rejection (e.g., if they fix a typo and try the corrected address it's fine, but if they re-type the same address with different casing, e.g. 'Bad@Spam.com' vs 'bad@spam.com', the rejection check silently misses it because the case-sensitive contains returns false even though the server already rejected it); (2) the array grows without bound for the lifetime of the controller. The pushObject site should normalize the email (e.g., toLowerCase()) on both insert and check, and there should be a way to clear it on success/reset."
+  },
+  {
+   "index": 6,
+   "file": "lib/validators/email_validator.rb",
+   "line": 13,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Blocked-email check runs even when whitelist/blacklist already rejected the email",
+   "body": "The validator checks the whitelist/blacklist first and adds an error if appropriate, then separately calls BlockedEmail.should_block?(value). The condition guards with `if record.errors[attribute].blank?`, which is correct in isolation. But should_block? also has the side effect of doing a DB write (updating match_count/last_match_at) for the matched record. When a blocked email also trips the whitelist/blacklist (e.g., admin added both), match_count will still be incremented because the guard only checks the in-memory errors hash for the current validator, not the prior-pass state. That aside, the bigger concern is that should_block? runs an additional SELECT and potentially an UPDATE on the hot path of every signup even when the email was just rejected for whitelist/blacklist reasons. Restructure so should_block? is a pure read with no side effects, and do hit-recording only on successful user save."
+  },
+  {
+   "index": 7,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 9,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Whitelist/blacklist branches of EmailValidator are untested",
+   "body": "The only tests stub BlockedEmail.should_block? and never exercise the whitelist/blacklist code paths (SiteSetting.email_domains_whitelist / email_domains_blacklist). These paths were carried over verbatim from user.rb and were never tested before either, but now that the logic has been moved into a shared validator it's the right time to add coverage: an email rejected by the whitelist, an email rejected by the blacklist, and an email that passes both. Without tests, regressions in the gsub('.', '\\.') / regexp interpolation (which is also unsafe if the setting contains regex metacharacters like '|' or '*') will slip in."
+  },
+  {
+   "index": 8,
+   "file": "spec/models/blocked_email_spec.rb",
+   "line": 19,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "No test covers case-insensitive matching or the race condition",
+   "body": "The model spec only exercises should_block? with an exact-case email and a single call. It does not cover (1) case-insensitive lookup, which is the main correctness gap of this PR (see EmailValidator finding), and (2) the lost-update race condition in match_count. At least one spec should demonstrate that 'Foo@Spam.com' blocks 'FOO@spam.com' (after the model is fixed), and a spec using threads or raw SQL should illustrate the concurrent-update behavior so the regression is caught if someone removes the atomic update later."
+  },
+  {
+   "index": 9,
+   "file": "app/models/blocked_email.rb",
+   "line": 5,
+   "severity": "low",
+   "category": "data",
+   "title": "action_type not constrained to the Enum's values",
+   "body": "validates :email, presence: true, uniqueness: true does not validate action_type, so the model will accept any integer (including ones not produced by BlockedEmail.actions). Add `validates :action_type, inclusion: { in: BlockedEmail.actions.values }` to fail fast on bad data. The `||=` in set_defaults only handles nil, not arbitrary invalid integers."
+  },
+  {
+   "index": 10,
+   "file": "lib/validators/email_validator.rb",
+   "line": 24,
+   "severity": "low",
+   "category": "bug",
+   "title": "Missing trailing newline in email_validator.rb",
+   "body": "The new file ends without a final newline (the diff explicitly notes \"\\ No newline at end of file\"). Most Ruby tools, editors, and POSIX conventions expect source files to end with a newline. Add a trailing newline."
+  },
+  {
+   "index": 11,
+   "file": "lib/validators/email_validator.rb",
+   "line": 19,
+   "severity": "low",
+   "category": "security",
+   "title": "Domain setting interpolated directly into a regex",
+   "body": "email_in_restriction_setting? builds the regex as Regexp.new(\"@(#{domains})\", true). If the setting contains regex metacharacters other than '.' (e.g., '|', '*', '+', '(', '['), they are interpreted as regex syntax. This was carried over from the original user.rb implementation, but since the file is being touched anyway this is a good place to fix it: split the setting on commas/whitespace, Regexp.escape each entry, and join with '|'. Otherwise an admin who accidentally types 'foo.com|bar.com' (intending a list) silently changes the semantics."
+  }
+ ],
+ "finding_count": 12
+}

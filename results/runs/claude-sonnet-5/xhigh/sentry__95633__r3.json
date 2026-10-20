@@ -1,0 +1,158 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__sentry__95633__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "sentry__95633",
+ "golden_url": "https://github.com/getsentry/sentry/pull/95633",
+ "repeat": 3,
+ "started_at": "2026-10-18T23:14:05Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 134206,
+  "sha": "1fb278bc32f77975",
+  "patch_only": [
+   "tests/sentry/uptime/consumers/test_results_consumer.py"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 51298,
+    "output": 54252,
+    "reasoning": 51381,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 497162,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 8076,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 51298,
+    "output_tokens": 54252,
+    "output_tokens_details": {
+     "thinking_tokens": 51381
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T23:14:05Z",
+   "first_chunk_ms": 2222,
+   "first_text_ms": 472158,
+   "response_id": "msg_bdrk_pv64qijlvl7ezala5y5mhuiitws5o227anu5bnzwn6ap6fgbnc4a",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 51298,
+  "output": 54252,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 51381
+ },
+ "cost_reported": null,
+ "latency_ms": 497162,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 338, \"severity\": \"critical\", \"title\": \"close()/terminate() destroy the factory-level shared queue pool, breaking processing after every rebalance\", \"body\": \"SimpleQueueProcessingStrategy.close() and terminate() call self.queue_pool.shutdown(), which shuts down every worker thread and all underlying queues. However, FixedQueuePool is created exactly once in ResultsStrategyFactory.__init__ (result_consumer.py) and is reused unchanged across every subsequent create_with_partitions() call (create_thread_queue_parallel_worker just returns a new SimpleQueueProcessingStrategy wrapping the same self.queue_pool). Arroyo's StreamProcessor calls close()/join() on the current strategy on every partition revoke (which happens on every consumer-group rebalance, e.g. deploys/scaling) before calling create_with_partitions() again for the new assignment. Since the pool is never recreated, the new strategy instance submits work into queues that have already been shut down. In FixedQueuePool.submit(), add_offset() runs before work_queue.put(); when put() then fails against the shut-down queue, SimpleQueueProcessingStrategy.submit()'s except branch calls add_offset()+complete_offset() again, marking the offset as processed even though the message was never handed to a worker. The periodic commit loop then commits these offsets. The net effect is that after the very first rebalance, the consumer silently stops doing any real work while continuing to advance/commit offsets, i.e. permanent, hard-to-notice data loss until logs are inspected.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 185, \"severity\": \"high\", \"title\": \"Worker queues are unbounded, so there is no actual backpressure\", \"body\": \"Each per-queue work_queue is created with queue.Queue() (no maxsize), so put() never blocks. The class docstring for SimpleQueueProcessingStrategy explicitly claims 'Natural backpressure when queues fill up', but there is nothing enforcing that: submit() is always non-blocking regardless of how backlogged a given group's queue is. Combined with WorkItem retaining the full original Message (including raw payload), a single slow group under sustained load will cause unbounded memory growth in that queue instead of applying backpressure, which is exactly the scenario (a slow item clogging processing) this PR claims to address \u2014 here it manifests as a potential OOM rather than a batch stall.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 238, \"severity\": \"high\", \"title\": \"Reliance on queue.Queue.shutdown()/queue.ShutDown, which require Python 3.13+\", \"body\": \"queue.Queue.shutdown() and the queue.ShutDown exception were only added to the standard library in Python 3.13. If the deployed runtime is on an older Python version, q.shutdown(immediate=False) raises AttributeError, which is swallowed by the surrounding `except Exception: logger.exception(...)` in FixedQueuePool.shutdown() (lines 236-240). Because this is the only mechanism used to interrupt the blocking self.work_queue.get() call in OrderedQueueWorker.run() (lines 131-133), the worker threads never actually unblock when the AttributeError path is hit, so they keep running (or block forever) despite shutdown() ostensibly having completed. This needs to be verified against Sentry's supported Python version; if unsupported, graceful shutdown silently never happens (thread leak and no real teardown).\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 243, \"severity\": \"medium\", \"title\": \"Worker shutdown joins threads sequentially, so shutdown time scales with num_queues\", \"body\": \"FixedQueuePool.shutdown() joins each worker thread sequentially with a 5 second timeout per worker (`for worker in self.workers: worker.join(timeout=5.0)`). With the default of 20 queues/workers, if workers are stuck (e.g. due to the queue.Queue.shutdown compatibility issue noted elsewhere, or simply slow in-flight processing), this loop can take up to num_queues * 5 seconds (100s by default) to return, rather than a bounded ~5s. This can make consumer shutdown unexpectedly slow and risks the process being force-killed by orchestration before a graceful stop completes.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/result_consumer.py\", \"line\": 188, \"severity\": \"medium\", \"title\": \"decode_payload asserts against FilteredPayload, but the queue strategy's decoder contract requires handling it\", \"body\": \"decode_payload has `assert not isinstance(payload, FilteredPayload)`. create_thread_queue_parallel_worker passes `partial(self.decode_payload, self.topic_for_codec)` as the `decoder` for SimpleQueueProcessingStrategy, whose declared type is `Callable[[KafkaPayload | FilteredPayload], T | None]` \u2014 i.e. it is expected to tolerate FilteredPayload inputs and return None. Instead, any FilteredPayload reaching submit() causes decode_payload to raise AssertionError, which is caught by the generic `except Exception` in SimpleQueueProcessingStrategy.submit() and logged as 'Error submitting message to queue' even though a filtered payload is an expected, non-error condition. This produces misleading error-level log noise for a normal case and masks real decode errors among the noise.\"}, {\"file\": \"src/sentry/remote_subscriptions/consumers/queue_consumer.py\", \"line\": 344, \"severity\": \"medium\", \"title\": \"join(timeout) ignores the supplied timeout and re-runs close() with hard-coded internal timeouts\", \"body\": \"SimpleQueueProcessingStrategy.join(self, timeout=None) simply calls self.close() again, discarding the caller-supplied timeout entirely. close() internally uses fixed 5.0s timeouts for the commit thread join and (via FixedQueuePool.shutdown) for each worker join. This means any operator-configured join timeout (e.g. via the consumer's --join-timeout / join_timeout plumbing in sentry/consumers/__init__.py) has no effect for the thread-queue-parallel mode, and shutdown duration is not actually controlled by the configured value, which can surprise operators expecting a bounded, configurable shutdown.\"}, {\"file\": \"tests/sentry/uptime/consumers/test_results_consumer.py\", \"line\": 1874, \"severity\": \"medium\", \"title\": \"test_thread_queue_parallel_error_handling asserts an invariant the implementation does not provide\", \"body\": \"This test expects that when the first of two same-group messages raises during processing, offsets are not committed (`assert len(committed_offsets) == 0 or test_partition not in committed_offsets`). However OrderedQueueWorker.run() unconditionally calls offset_tracker.complete_offset() in a `finally` block regardless of whether result_processor raised, so both submitted offsets (100 and 101) become 'complete' and thus committable as soon as the periodic (1s-interval) commit loop runs. Given the test waits up to ~2 seconds for processing/queue-draining before asserting, the commit loop is very likely to have already run and committed by the time the assertion executes, making the assertion either reliably false or flaky depending on timing, rather than verifying a real guarantee.\"}, {\"file\": \"tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py\", \"line\": 237, \"severity\": \"medium\", \"title\": \"Test decoder diverges from production decode_payload, masking the FilteredPayload assertion bug\", \"body\": \"TestSimpleQueueProcessingStrategy.setUp defines a custom `decoder` function that explicitly checks `isinstance(payload, FilteredPayload)` and returns None, unlike the actual production decoder (ResultsStrategyFactory.decode_payload) which asserts the payload is NOT a FilteredPayload and raises otherwise (see the separate finding on result_consumer.py). Because none of the added tests exercise SimpleQueueProcessingStrategy with the real decode_payload function against a FilteredPayload input, the mismatch between the declared decoder contract and the actual production implementation is not caught by this test suite.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 338,
+   "severity": "critical",
+   "category": null,
+   "title": "close()/terminate() destroy the factory-level shared queue pool, breaking processing after every rebalance",
+   "body": "SimpleQueueProcessingStrategy.close() and terminate() call self.queue_pool.shutdown(), which shuts down every worker thread and all underlying queues. However, FixedQueuePool is created exactly once in ResultsStrategyFactory.__init__ (result_consumer.py) and is reused unchanged across every subsequent create_with_partitions() call (create_thread_queue_parallel_worker just returns a new SimpleQueueProcessingStrategy wrapping the same self.queue_pool). Arroyo's StreamProcessor calls close()/join() on the current strategy on every partition revoke (which happens on every consumer-group rebalance, e.g. deploys/scaling) before calling create_with_partitions() again for the new assignment. Since the pool is never recreated, the new strategy instance submits work into queues that have already been shut down. In FixedQueuePool.submit(), add_offset() runs before work_queue.put(); when put() then fails against the shut-down queue, SimpleQueueProcessingStrategy.submit()'s except branch calls add_offset()+complete_offset() again, marking the offset as processed even though the message was never handed to a worker. The periodic commit loop then commits these offsets. The net effect is that after the very first rebalance, the consumer silently stops doing any real work while continuing to advance/commit offsets, i.e. permanent, hard-to-notice data loss until logs are inspected."
+  },
+  {
+   "index": 1,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 185,
+   "severity": "high",
+   "category": null,
+   "title": "Worker queues are unbounded, so there is no actual backpressure",
+   "body": "Each per-queue work_queue is created with queue.Queue() (no maxsize), so put() never blocks. The class docstring for SimpleQueueProcessingStrategy explicitly claims 'Natural backpressure when queues fill up', but there is nothing enforcing that: submit() is always non-blocking regardless of how backlogged a given group's queue is. Combined with WorkItem retaining the full original Message (including raw payload), a single slow group under sustained load will cause unbounded memory growth in that queue instead of applying backpressure, which is exactly the scenario (a slow item clogging processing) this PR claims to address \u2014 here it manifests as a potential OOM rather than a batch stall."
+  },
+  {
+   "index": 2,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 238,
+   "severity": "high",
+   "category": null,
+   "title": "Reliance on queue.Queue.shutdown()/queue.ShutDown, which require Python 3.13+",
+   "body": "queue.Queue.shutdown() and the queue.ShutDown exception were only added to the standard library in Python 3.13. If the deployed runtime is on an older Python version, q.shutdown(immediate=False) raises AttributeError, which is swallowed by the surrounding `except Exception: logger.exception(...)` in FixedQueuePool.shutdown() (lines 236-240). Because this is the only mechanism used to interrupt the blocking self.work_queue.get() call in OrderedQueueWorker.run() (lines 131-133), the worker threads never actually unblock when the AttributeError path is hit, so they keep running (or block forever) despite shutdown() ostensibly having completed. This needs to be verified against Sentry's supported Python version; if unsupported, graceful shutdown silently never happens (thread leak and no real teardown)."
+  },
+  {
+   "index": 3,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 243,
+   "severity": "medium",
+   "category": null,
+   "title": "Worker shutdown joins threads sequentially, so shutdown time scales with num_queues",
+   "body": "FixedQueuePool.shutdown() joins each worker thread sequentially with a 5 second timeout per worker (`for worker in self.workers: worker.join(timeout=5.0)`). With the default of 20 queues/workers, if workers are stuck (e.g. due to the queue.Queue.shutdown compatibility issue noted elsewhere, or simply slow in-flight processing), this loop can take up to num_queues * 5 seconds (100s by default) to return, rather than a bounded ~5s. This can make consumer shutdown unexpectedly slow and risks the process being force-killed by orchestration before a graceful stop completes."
+  },
+  {
+   "index": 4,
+   "file": "src/sentry/remote_subscriptions/consumers/result_consumer.py",
+   "line": 188,
+   "severity": "medium",
+   "category": null,
+   "title": "decode_payload asserts against FilteredPayload, but the queue strategy's decoder contract requires handling it",
+   "body": "decode_payload has `assert not isinstance(payload, FilteredPayload)`. create_thread_queue_parallel_worker passes `partial(self.decode_payload, self.topic_for_codec)` as the `decoder` for SimpleQueueProcessingStrategy, whose declared type is `Callable[[KafkaPayload | FilteredPayload], T | None]` \u2014 i.e. it is expected to tolerate FilteredPayload inputs and return None. Instead, any FilteredPayload reaching submit() causes decode_payload to raise AssertionError, which is caught by the generic `except Exception` in SimpleQueueProcessingStrategy.submit() and logged as 'Error submitting message to queue' even though a filtered payload is an expected, non-error condition. This produces misleading error-level log noise for a normal case and masks real decode errors among the noise."
+  },
+  {
+   "index": 5,
+   "file": "src/sentry/remote_subscriptions/consumers/queue_consumer.py",
+   "line": 344,
+   "severity": "medium",
+   "category": null,
+   "title": "join(timeout) ignores the supplied timeout and re-runs close() with hard-coded internal timeouts",
+   "body": "SimpleQueueProcessingStrategy.join(self, timeout=None) simply calls self.close() again, discarding the caller-supplied timeout entirely. close() internally uses fixed 5.0s timeouts for the commit thread join and (via FixedQueuePool.shutdown) for each worker join. This means any operator-configured join timeout (e.g. via the consumer's --join-timeout / join_timeout plumbing in sentry/consumers/__init__.py) has no effect for the thread-queue-parallel mode, and shutdown duration is not actually controlled by the configured value, which can surprise operators expecting a bounded, configurable shutdown."
+  },
+  {
+   "index": 6,
+   "file": "tests/sentry/uptime/consumers/test_results_consumer.py",
+   "line": 1874,
+   "severity": "medium",
+   "category": null,
+   "title": "test_thread_queue_parallel_error_handling asserts an invariant the implementation does not provide",
+   "body": "This test expects that when the first of two same-group messages raises during processing, offsets are not committed (`assert len(committed_offsets) == 0 or test_partition not in committed_offsets`). However OrderedQueueWorker.run() unconditionally calls offset_tracker.complete_offset() in a `finally` block regardless of whether result_processor raised, so both submitted offsets (100 and 101) become 'complete' and thus committable as soon as the periodic (1s-interval) commit loop runs. Given the test waits up to ~2 seconds for processing/queue-draining before asserting, the commit loop is very likely to have already run and committed by the time the assertion executes, making the assertion either reliably false or flaky depending on timing, rather than verifying a real guarantee."
+  },
+  {
+   "index": 7,
+   "file": "tests/sentry/remote_subscriptions/consumers/test_queue_consumer.py",
+   "line": 237,
+   "severity": "medium",
+   "category": null,
+   "title": "Test decoder diverges from production decode_payload, masking the FilteredPayload assertion bug",
+   "body": "TestSimpleQueueProcessingStrategy.setUp defines a custom `decoder` function that explicitly checks `isinstance(payload, FilteredPayload)` and returns None, unlike the actual production decoder (ResultsStrategyFactory.decode_payload) which asserts the payload is NOT a FilteredPayload and raises otherwise (see the separate finding on result_consumer.py). Because none of the added tests exercise SimpleQueueProcessingStrategy with the real decode_payload function against a FilteredPayload input, the mismatch between the declared decoder contract and the actual production implementation is not caught by this test suite."
+  }
+ ],
+ "finding_count": 8
+}

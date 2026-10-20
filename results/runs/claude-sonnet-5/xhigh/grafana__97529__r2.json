@@ -1,0 +1,138 @@
+{
+ "run_id": "claude-sonnet-5__xhigh__grafana__97529__r2",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "xhigh",
+ "params": {
+  "effort": "xhigh"
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 2,
+ "started_at": "2026-10-18T22:25:53Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 55076,
+    "output": 28448,
+    "reasoning": 26299,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 306982,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 6491,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 55076,
+    "output_tokens": 28448,
+    "output_tokens_details": {
+     "thinking_tokens": 26299
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T22:25:53Z",
+   "first_chunk_ms": 2230,
+   "first_text_ms": 285287,
+   "response_id": "msg_bdrk_u7whwf5677xuc2hsfjjpg6pldxj2b5fqshg2cbferw6rtavpjaya",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 55076,
+  "output": 28448,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 26299
+ },
+ "cost_reported": null,
+ "latency_ms": 306982,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 146, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"TotalDocs() reads the index cache map without holding cacheMu, racing with concurrent writes\", \"body\": \"bleveBackend.TotalDocs() iterates over b.cache without acquiring cacheMu (neither RLock nor Lock), while BuildIndex() now writes to the same map under a lock that only protects the final cache assignment (b.cache[key] = idx). This PR adds a new call site for TotalDocs() in resource/search.go's searchSupport.init(), invoked immediately after the background watch-event goroutine is started (which can trigger new BuildIndex calls via getOrCreateIndex). This creates a genuine unsynchronized concurrent map read/write, which in Go can panic at runtime (\\\"fatal error: concurrent map read and map write\\\") or produce corrupted/garbage results. TotalDocs should take cacheMu.RLock()/RUnlock() like GetIndex does.\"}, {\"file\": \"pkg/storage/unified/resource/search.go\", \"line\": 190, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"Shared `err` and `totalBatchesIndexed` variables are written concurrently by multiple goroutines in searchSupport.init\", \"body\": \"In searchSupport.init(), the errgroup with SetLimit(s.initWorkers) launches one goroutine per namespace that does `totalBatchesIndexed++` and `_, _, err = s.build(...)` followed by `return err`, where both `err` and `totalBatchesIndexed` are variables shared across all goroutines without any synchronization (mutex/atomic). Previously this race was largely masked because bleve.BuildIndex held a single mutex across its entire body, effectively serializing the actual work done inside s.build() for different namespaces. This PR's locking change in bleve.go (lock now only guards the final cache write) removes that serialization, so multiple goroutines can now genuinely run s.build() concurrently, widening the race window. The consequence is real: one goroutine's error can be overwritten by another's success (or vice versa) before its own `return err` executes, so group.Wait() may incorrectly report success even though a particular namespace failed to build its index (or report a failure for a namespace that actually succeeded), and totalBatchesIndexed can lose increments. Given this path now runs synchronously at every server startup and failures are supposed to block startup, silently losing an error here is a data-integrity risk (a namespace could end up with a stale/missing index with no error surfaced).\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"NewResourceServer now blocks indefinitely on search index build with no timeout or cancellation path\", \"body\": \"NewResourceServer calls s.Init(ctx) synchronously before returning, and Init in turn calls searchSupport.init which builds the full search index for every namespace returned by GetResourceStats. The context used is derived from context.Background() with no deadline, so there is no bound on how long server construction can take for large installations with many/large namespaces. Previously this cost was paid lazily on the first gRPC call (which had its own problems per the PR description), but now any process that constructs a ResourceServer (app startup, tests, other callers) will block for however long index building takes, with no way to time out, report partial progress, or fail fast. This can turn into very long or hanging startups in production without any visible health/readiness signal during that window.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 293, \"severity\": \"medium\", \"category\": \"api\", \"title\": \"Init() is now a no-op if called again after construction, which may silently break other callers relying on it\", \"body\": \"Init() still uses sync.Once and is now invoked internally during NewResourceServer. Any other code path in the codebase that calls ResourceServer.Init(ctx) later (e.g. as part of a module/service lifecycle contract, with a different context carrying its own cancellation/tracing) will be a silent no-op because the Once has already fired during construction with an internally-created background context. The PR description itself raises this exact concern (\\\"Does anything else depend on initializing US lazily? What could this break?\\\") but the diff does not show any audit or update of such callers. If any lifecycle manager expects Init(ctx) to perform the actual initialization work tied to its own context, that expectation is now silently violated.\"}, {\"file\": \"pkg/storage/unified/sql/backend.go\", \"line\": 158, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"Trace-context propagation fix is incomplete \\u2014 several spans still discard the updated context\", \"body\": \"The PR fixes span-context propagation in resource/search.go and in sql/backend.go's GetResourceStats (ctx, span := ...), but other methods in the same file still discard the span-carrying context with `_, span := b.tracer.Start(ctx, ...)` and then pass the original (un-updated) ctx to nested calls, e.g. WriteEvent (line 158, passing ctx to b.create/b.update/b.delete), ReadResource (line 353), and ListIterator (line 388, passing ctx to listAtRevision/listLatest). As a result, spans created inside create/update/delete, dbutil.QueryRow calls in ReadResource, and listAtRevision/listLatest will not be properly parented under the WriteEvent/Read/List spans, leaving the exact trace-propagation bug the PR claims to fix still present in several high-traffic code paths.\"}, {\"file\": \"pkg/server/module_server_test.go\", \"line\": 36, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"Postgres integration test skipped rather than fixed, potentially masking a startup regression from the new synchronous Init\", \"body\": \"This test exercises ResourceServer/module startup (waiting only 500ms for the HTTP server to become available) and is now skipped for postgres with the comment \\\"test not working with postgres in Drone. Works locally.\\\" Given this PR moves ResourceServer initialization (including search index building) to be synchronous at construction time, it is plausible that the added latency is exactly what causes this test to fail intermittently under Drone's resource constraints for postgres. Skipping the test instead of investigating removes coverage for the very scenario (server startup timing) that this PR changes, and may hide a real regression rather than fixing it.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 146,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "TotalDocs() reads the index cache map without holding cacheMu, racing with concurrent writes",
+   "body": "bleveBackend.TotalDocs() iterates over b.cache without acquiring cacheMu (neither RLock nor Lock), while BuildIndex() now writes to the same map under a lock that only protects the final cache assignment (b.cache[key] = idx). This PR adds a new call site for TotalDocs() in resource/search.go's searchSupport.init(), invoked immediately after the background watch-event goroutine is started (which can trigger new BuildIndex calls via getOrCreateIndex). This creates a genuine unsynchronized concurrent map read/write, which in Go can panic at runtime (\"fatal error: concurrent map read and map write\") or produce corrupted/garbage results. TotalDocs should take cacheMu.RLock()/RUnlock() like GetIndex does."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/resource/search.go",
+   "line": 190,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "Shared `err` and `totalBatchesIndexed` variables are written concurrently by multiple goroutines in searchSupport.init",
+   "body": "In searchSupport.init(), the errgroup with SetLimit(s.initWorkers) launches one goroutine per namespace that does `totalBatchesIndexed++` and `_, _, err = s.build(...)` followed by `return err`, where both `err` and `totalBatchesIndexed` are variables shared across all goroutines without any synchronization (mutex/atomic). Previously this race was largely masked because bleve.BuildIndex held a single mutex across its entire body, effectively serializing the actual work done inside s.build() for different namespaces. This PR's locking change in bleve.go (lock now only guards the final cache write) removes that serialization, so multiple goroutines can now genuinely run s.build() concurrently, widening the race window. The consequence is real: one goroutine's error can be overwritten by another's success (or vice versa) before its own `return err` executes, so group.Wait() may incorrectly report success even though a particular namespace failed to build its index (or report a failure for a namespace that actually succeeded), and totalBatchesIndexed can lose increments. Given this path now runs synchronously at every server startup and failures are supposed to block startup, silently losing an error here is a data-integrity risk (a namespace could end up with a stale/missing index with no error surfaced)."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "medium",
+   "category": "bug",
+   "title": "NewResourceServer now blocks indefinitely on search index build with no timeout or cancellation path",
+   "body": "NewResourceServer calls s.Init(ctx) synchronously before returning, and Init in turn calls searchSupport.init which builds the full search index for every namespace returned by GetResourceStats. The context used is derived from context.Background() with no deadline, so there is no bound on how long server construction can take for large installations with many/large namespaces. Previously this cost was paid lazily on the first gRPC call (which had its own problems per the PR description), but now any process that constructs a ResourceServer (app startup, tests, other callers) will block for however long index building takes, with no way to time out, report partial progress, or fail fast. This can turn into very long or hanging startups in production without any visible health/readiness signal during that window."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 293,
+   "severity": "medium",
+   "category": "api",
+   "title": "Init() is now a no-op if called again after construction, which may silently break other callers relying on it",
+   "body": "Init() still uses sync.Once and is now invoked internally during NewResourceServer. Any other code path in the codebase that calls ResourceServer.Init(ctx) later (e.g. as part of a module/service lifecycle contract, with a different context carrying its own cancellation/tracing) will be a silent no-op because the Once has already fired during construction with an internally-created background context. The PR description itself raises this exact concern (\"Does anything else depend on initializing US lazily? What could this break?\") but the diff does not show any audit or update of such callers. If any lifecycle manager expects Init(ctx) to perform the actual initialization work tied to its own context, that expectation is now silently violated."
+  },
+  {
+   "index": 4,
+   "file": "pkg/storage/unified/sql/backend.go",
+   "line": 158,
+   "severity": "medium",
+   "category": "bug",
+   "title": "Trace-context propagation fix is incomplete \u2014 several spans still discard the updated context",
+   "body": "The PR fixes span-context propagation in resource/search.go and in sql/backend.go's GetResourceStats (ctx, span := ...), but other methods in the same file still discard the span-carrying context with `_, span := b.tracer.Start(ctx, ...)` and then pass the original (un-updated) ctx to nested calls, e.g. WriteEvent (line 158, passing ctx to b.create/b.update/b.delete), ReadResource (line 353), and ListIterator (line 388, passing ctx to listAtRevision/listLatest). As a result, spans created inside create/update/delete, dbutil.QueryRow calls in ReadResource, and listAtRevision/listLatest will not be properly parented under the WriteEvent/Read/List spans, leaving the exact trace-propagation bug the PR claims to fix still present in several high-traffic code paths."
+  },
+  {
+   "index": 5,
+   "file": "pkg/server/module_server_test.go",
+   "line": 36,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "Postgres integration test skipped rather than fixed, potentially masking a startup regression from the new synchronous Init",
+   "body": "This test exercises ResourceServer/module startup (waiting only 500ms for the HTTP server to become available) and is now skipped for postgres with the comment \"test not working with postgres in Drone. Works locally.\" Given this PR moves ResourceServer initialization (including search index building) to be synchronous at construction time, it is plausible that the added latency is exactly what causes this test to fail intermittently under Drone's resource constraints for postgres. Skipping the test instead of investigating removes coverage for the very scenario (server startup timing) that this PR changes, and may hide a real regression rather than fixing it."
+  }
+ ],
+ "finding_count": 6
+}

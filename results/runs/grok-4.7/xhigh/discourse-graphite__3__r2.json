@@ -1,0 +1,162 @@
+{
+ "run_id": "grok-4.7__xhigh__discourse-graphite__3__r2",
+ "model_id": "grok-4.7",
+ "family": "xai",
+ "route": "openrouter",
+ "provider_model": "x-ai/grok-4.7",
+ "provider_pin": {
+  "order": [
+   "xai"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "xhigh",
+ "params": {
+  "reasoning": {
+   "effort": "xhigh"
+  }
+ },
+ "set": "full",
+ "pr_id": "discourse-graphite__3",
+ "golden_url": "https://github.com/ai-code-review-evaluation/discourse-graphite/pull/3",
+ "repeat": 2,
+ "started_at": "2026-10-17T22:44:27Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 68127,
+  "sha": "69d79387ebe62f53",
+  "patch_only": [
+   "config/locales/server.en.yml"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 19904,
+    "output": 75870,
+    "reasoning": 74196,
+    "cache_read": 1152,
+    "cache_write": 0
+   },
+   "cost_reported": 0.495604,
+   "latency_ms": 807800,
+   "finish_reason": "stop",
+   "served_model": "x-ai/grok-4.7",
+   "provider_served": "xAI",
+   "http_attempts": 1,
+   "text_chars": 7341,
+   "raw_usage": {
+    "completion_tokens": 75870,
+    "prompt_tokens": 21056,
+    "total_tokens": 96926,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 74196,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 1152,
+     "video_tokens": 0
+    },
+    "cost": 0.495604,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.495604,
+     "upstream_inference_prompt_cost": 0.040384,
+     "upstream_inference_completions_cost": 0.45522
+    }
+   },
+   "started_at": "2026-10-17T22:44:27Z",
+   "first_chunk_ms": 2011,
+   "first_text_ms": 802881,
+   "response_id": "gen-1792277067-OgRmBvWyabOYRudxEgq7",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 19904,
+  "output": 75870,
+  "cache_read": 1152,
+  "cache_write": 0,
+  "reasoning": 74196
+ },
+ "cost_reported": 0.495604,
+ "latency_ms": 807800,
+ "served_model": "x-ai/grok-4.7",
+ "provider_served": "xAI",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"app/models/blocked_email.rb\", \"line\": 8, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"BlockedEmail.actions calls Enum with the wrong constructor\", \"body\": \"BlockedEmail.actions does Enum.new(:block, :do_nothing). Enum in this application (lib/enum.rb) takes a single hash of name => stable integer, the same form used by every other enum (for example PostActionType). Passing two symbols raises ArgumentError (wrong number of arguments). actions is invoked from set_defaults on every BlockedEmail save, from should_block? once a matching row is loaded (both record.save's before_validation and the action_type comparison), and from the fabricator, where action_type BlockedEmail.actions[:block] is evaluated when fabricators load. Blocked emails cannot be created through ActiveRecord, the new specs error, and if a row is inserted another way any signup whose email matches that row 500s inside validation instead of returning the blocked-email error. Define it as Enum.new(:block => 1, :do_nothing => 2) so stored action_type values are explicit and do not change if symbols are reordered.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 12, \"severity\": \"high\", \"category\": \"security\", \"title\": \"Blocklist lookup is case-sensitive and not normalized\", \"body\": \"should_block? loads BlockedEmail.where(email: email) with the raw address, and nothing downcases or strips email before the uniqueness validation or insert. The rest of this app already normalizes addresses with Email.downcase and strip (UsersController#change_email, User.find_by_username_or_email), and the domain allow/deny regex is case-insensitive, but this blocklist is an exact match. PostgreSQL's unique index on blocked_emails.email is case-sensitive as well, so Spam@evil.com and spam@evil.com are different rows. A blocked address such as spam@evil.com can register by changing case or adding surrounding whitespace; the client rejectedEmails list has the same exact-string hole because it stores and compares result.values.email unchanged. Normalize with Email.downcase and strip in a before_validation callback and again inside should_block? before the query, so the block cannot be bypassed and case-variants cannot both be inserted.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Match stats written during validation are rolled back or double-counted\", \"body\": \"should_block? increments match_count and last_match_at and calls save while User email validation is running. User#save wraps validation in a transaction that Rails rolls back when save returns false, and a nested BlockedEmail save joins that transaction. On paths that only call save or save! (User.create_for_email and any other creator), a blocked address fails validation and the statistic update is rolled back, so the attempt is never recorded. UsersController#create makes the count path-dependent: it always calls user.valid? first, outside a transaction, which commits one increment, then user.save validates again. If the address is blocked, the second increment is rolled back (net +1). If action_type is do_nothing and the user is otherwise valid, both increments commit (net +2 per signup). save's false return is also ignored, so a failed stat write is silent. Record the match with an explicitly committed atomic update after the allow/block decision, not as a side effect of validation.\"}, {\"file\": \"app/models/blocked_email.rb\", \"line\": 14, \"severity\": \"low\", \"category\": \"concurrency\", \"title\": \"match_count update is a lost-update race\", \"body\": \"The counter is updated by reading match_count, adding 1 in memory, and calling save, with no row lock and no atomic SQL increment. Two concurrent signups that both load the same blocked_emails row each write old+1, so one attempt is dropped; last_match_at can also be overwritten by the slower request. A burst of registrations against one blocked address silently undercounts. Use a single UPDATE ... SET match_count = match_count + 1, last_match_at = ? WHERE id = ? (or increment_counter) so concurrent matches are not lost.\"}, {\"file\": \"lib/validators/email_validator.rb\", \"line\": 20, \"severity\": \"medium\", \"category\": \"security\", \"title\": \"Domain allow/deny regex is unanchored and barely escaped\", \"body\": \"email_in_restriction_setting? builds a case-insensitive regexp of @(domain-list) after only replacing dots with backslash-dot, and the pattern is not anchored at the end of the address. A whitelist of company.com therefore matches user@company.com.attacker.example, and that signup is allowed. That defeats email_domains_whitelist as an access control: any host that merely starts with an allowed domain plus a dot is treated as allowed. The same prefix match makes a blacklist of spam.com also reject user@spam.com.legitimate.example. Only dots are escaped before interpolation, so a setting value that contains other regexp metacharacters (an unmatched parenthesis, +, *) either matches the wrong addresses or raises RegexpError during validation and 500s every signup and email change. This was moved unchanged from User#email_validator. Escape each domain and anchor the match at a domain boundary and at the end of the string before relying on these settings.\"}, {\"file\": \"spec/components/validators/email_validator_spec.rb\", \"line\": 11, \"severity\": \"medium\", \"category\": \"test_gap\", \"title\": \"Block and domain checks are stubbed away, so the new rules are untested\", \"body\": \"The validator spec stubs BlockedEmail.should_block? and only asserts that some email error is present or absent. It never checks that the message is user.email.blocked, never exercises email_domains_whitelist or email_domains_blacklist (so the unanchored-domain bypass stays green), and never runs User validations, so a broken validates :email, email: true wiring would still pass. blocked_email_spec only looks up the exact casing it inserted, so Spam@evil.com bypassing a spam@evil.com block is not caught, and nothing asserts match_count across UsersController#create's valid?-then-save path. There is also no example that a failed create returns errors and values, which the signup UI now depends on. Those cases need real records, not stubs.\"}, {\"file\": \"app/assets/javascripts/discourse/controllers/create_account_controller.js\", \"line\": 275, \"severity\": \"low\", \"category\": \"bug\", \"title\": \"Every email error is cached as a permanent format failure\", \"body\": \"On a failed create, the client pushObjects result.values.email whenever result.errors.email is set. That key is present for every email validation failure (already taken, domain not allowed, or blocked), not only blocklist hits. emailValidation then fails that exact string with I18n.t('user.email.invalid') \u2014 the same copy used for a malformed address \u2014 and submit stays disabled until the address text changes. The flash is the only place the real server reason appears; afterward the field says the address is invalid, and it cannot be resubmitted even if the failure was transient or the conflicting account is removed. rejectedEmails is also a prototype Em.A([]) and is never cleared when the modal closes, so the rejection sticks for the life of the page. Only cache blocklist rejections, or show the server's error string, and do not reuse the format-invalid translation.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "app/models/blocked_email.rb",
+   "line": 8,
+   "severity": "high",
+   "category": "bug",
+   "title": "BlockedEmail.actions calls Enum with the wrong constructor",
+   "body": "BlockedEmail.actions does Enum.new(:block, :do_nothing). Enum in this application (lib/enum.rb) takes a single hash of name => stable integer, the same form used by every other enum (for example PostActionType). Passing two symbols raises ArgumentError (wrong number of arguments). actions is invoked from set_defaults on every BlockedEmail save, from should_block? once a matching row is loaded (both record.save's before_validation and the action_type comparison), and from the fabricator, where action_type BlockedEmail.actions[:block] is evaluated when fabricators load. Blocked emails cannot be created through ActiveRecord, the new specs error, and if a row is inserted another way any signup whose email matches that row 500s inside validation instead of returning the blocked-email error. Define it as Enum.new(:block => 1, :do_nothing => 2) so stored action_type values are explicit and do not change if symbols are reordered."
+  },
+  {
+   "index": 1,
+   "file": "app/models/blocked_email.rb",
+   "line": 12,
+   "severity": "high",
+   "category": "security",
+   "title": "Blocklist lookup is case-sensitive and not normalized",
+   "body": "should_block? loads BlockedEmail.where(email: email) with the raw address, and nothing downcases or strips email before the uniqueness validation or insert. The rest of this app already normalizes addresses with Email.downcase and strip (UsersController#change_email, User.find_by_username_or_email), and the domain allow/deny regex is case-insensitive, but this blocklist is an exact match. PostgreSQL's unique index on blocked_emails.email is case-sensitive as well, so Spam@evil.com and spam@evil.com are different rows. A blocked address such as spam@evil.com can register by changing case or adding surrounding whitespace; the client rejectedEmails list has the same exact-string hole because it stores and compares result.values.email unchanged. Normalize with Email.downcase and strip in a before_validation callback and again inside should_block? before the query, so the block cannot be bypassed and case-variants cannot both be inserted."
+  },
+  {
+   "index": 2,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "medium",
+   "category": "data",
+   "title": "Match stats written during validation are rolled back or double-counted",
+   "body": "should_block? increments match_count and last_match_at and calls save while User email validation is running. User#save wraps validation in a transaction that Rails rolls back when save returns false, and a nested BlockedEmail save joins that transaction. On paths that only call save or save! (User.create_for_email and any other creator), a blocked address fails validation and the statistic update is rolled back, so the attempt is never recorded. UsersController#create makes the count path-dependent: it always calls user.valid? first, outside a transaction, which commits one increment, then user.save validates again. If the address is blocked, the second increment is rolled back (net +1). If action_type is do_nothing and the user is otherwise valid, both increments commit (net +2 per signup). save's false return is also ignored, so a failed stat write is silent. Record the match with an explicitly committed atomic update after the allow/block decision, not as a side effect of validation."
+  },
+  {
+   "index": 3,
+   "file": "app/models/blocked_email.rb",
+   "line": 14,
+   "severity": "low",
+   "category": "concurrency",
+   "title": "match_count update is a lost-update race",
+   "body": "The counter is updated by reading match_count, adding 1 in memory, and calling save, with no row lock and no atomic SQL increment. Two concurrent signups that both load the same blocked_emails row each write old+1, so one attempt is dropped; last_match_at can also be overwritten by the slower request. A burst of registrations against one blocked address silently undercounts. Use a single UPDATE ... SET match_count = match_count + 1, last_match_at = ? WHERE id = ? (or increment_counter) so concurrent matches are not lost."
+  },
+  {
+   "index": 4,
+   "file": "lib/validators/email_validator.rb",
+   "line": 20,
+   "severity": "medium",
+   "category": "security",
+   "title": "Domain allow/deny regex is unanchored and barely escaped",
+   "body": "email_in_restriction_setting? builds a case-insensitive regexp of @(domain-list) after only replacing dots with backslash-dot, and the pattern is not anchored at the end of the address. A whitelist of company.com therefore matches user@company.com.attacker.example, and that signup is allowed. That defeats email_domains_whitelist as an access control: any host that merely starts with an allowed domain plus a dot is treated as allowed. The same prefix match makes a blacklist of spam.com also reject user@spam.com.legitimate.example. Only dots are escaped before interpolation, so a setting value that contains other regexp metacharacters (an unmatched parenthesis, +, *) either matches the wrong addresses or raises RegexpError during validation and 500s every signup and email change. This was moved unchanged from User#email_validator. Escape each domain and anchor the match at a domain boundary and at the end of the string before relying on these settings."
+  },
+  {
+   "index": 5,
+   "file": "spec/components/validators/email_validator_spec.rb",
+   "line": 11,
+   "severity": "medium",
+   "category": "test_gap",
+   "title": "Block and domain checks are stubbed away, so the new rules are untested",
+   "body": "The validator spec stubs BlockedEmail.should_block? and only asserts that some email error is present or absent. It never checks that the message is user.email.blocked, never exercises email_domains_whitelist or email_domains_blacklist (so the unanchored-domain bypass stays green), and never runs User validations, so a broken validates :email, email: true wiring would still pass. blocked_email_spec only looks up the exact casing it inserted, so Spam@evil.com bypassing a spam@evil.com block is not caught, and nothing asserts match_count across UsersController#create's valid?-then-save path. There is also no example that a failed create returns errors and values, which the signup UI now depends on. Those cases need real records, not stubs."
+  },
+  {
+   "index": 6,
+   "file": "app/assets/javascripts/discourse/controllers/create_account_controller.js",
+   "line": 275,
+   "severity": "low",
+   "category": "bug",
+   "title": "Every email error is cached as a permanent format failure",
+   "body": "On a failed create, the client pushObjects result.values.email whenever result.errors.email is set. That key is present for every email validation failure (already taken, domain not allowed, or blocked), not only blocklist hits. emailValidation then fails that exact string with I18n.t('user.email.invalid') \u2014 the same copy used for a malformed address \u2014 and submit stays disabled until the address text changes. The flash is the only place the real server reason appears; afterward the field says the address is invalid, and it cannot be resubmitted even if the failure was transient or the conflicting account is removed. rejectedEmails is also a prototype Em.A([]) and is never cleared when the modal closes, so the rejection sticks for the life of the page. Only cache blocklist rejections, or show the server's error string, and do not reuse the format-invalid translation."
+  }
+ ],
+ "finding_count": 7
+}

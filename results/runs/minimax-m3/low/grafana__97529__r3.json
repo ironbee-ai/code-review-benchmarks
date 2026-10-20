@@ -1,0 +1,133 @@
+{
+ "run_id": "minimax-m3__low__grafana__97529__r3",
+ "model_id": "minimax-m3",
+ "family": "minimax",
+ "route": "openrouter",
+ "provider_model": "minimax/minimax-m3",
+ "provider_pin": {
+  "order": [
+   "minimax"
+  ],
+  "allow_fallbacks": false
+ },
+ "tier": "low",
+ "params": {
+  "reasoning": {
+   "effort": "low"
+  }
+ },
+ "set": "full",
+ "pr_id": "grafana__97529",
+ "golden_url": "https://github.com/grafana/grafana/pull/97529",
+ "repeat": 3,
+ "started_at": "2026-10-18T11:49:02Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 109993,
+  "sha": "f9bc8eb0e0068785",
+  "patch_only": [],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 33771,
+    "output": 12099,
+    "reasoning": 10853,
+    "cache_read": 128,
+    "cache_write": 0
+   },
+   "cost_reported": 0.02465778,
+   "latency_ms": 59667,
+   "finish_reason": "stop",
+   "served_model": "minimax/minimax-m3",
+   "provider_served": "Minimax",
+   "http_attempts": 1,
+   "text_chars": 5440,
+   "raw_usage": {
+    "completion_tokens": 12099,
+    "prompt_tokens": 33899,
+    "total_tokens": 45998,
+    "completion_tokens_details": {
+     "audio_tokens": 0,
+     "reasoning_tokens": 10853,
+     "image_tokens": 0
+    },
+    "prompt_tokens_details": {
+     "audio_tokens": 0,
+     "cache_write_tokens": 0,
+     "cached_tokens": 128,
+     "video_tokens": 0
+    },
+    "cost": 0.02465778,
+    "is_byok": false,
+    "cost_details": {
+     "upstream_inference_cost": 0.02465778,
+     "upstream_inference_prompt_cost": 0.01013898,
+     "upstream_inference_completions_cost": 0.0145188
+    }
+   },
+   "started_at": "2026-10-18T11:49:02Z",
+   "first_chunk_ms": 1945,
+   "first_text_ms": 53804,
+   "response_id": "gen-1792324142-UrxGJJl3s3pxAeIK06te",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 33771,
+  "output": 12099,
+  "cache_read": 128,
+  "cache_write": 0,
+  "reasoning": 10853
+ },
+ "cost_reported": 0.02465778,
+ "latency_ms": 59667,
+ "served_model": "minimax/minimax-m3",
+ "provider_served": "Minimax",
+ "finish_reason": "stop",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 137, \"severity\": \"high\", \"category\": \"concurrency\", \"title\": \"BuildIndex no longer serializes same-key builds; risk of corrupted file index\", \"body\": \"The diff removes the outer `b.cacheMu.Lock(); defer b.cacheMu.Unlock()` that wrapped all of `BuildIndex` and replaces it with a narrow lock around only the `b.cache[key] = idx` assignment. `getOrCreateIndex` calls `s.search.GetIndex` and then `s.build`, so the cache read and the cache update are not atomic. The OLD code at least serialized any two concurrent `BuildIndex` calls for the same key via the global write lock; the NEW code allows them to run in parallel. For file-based indices this is dangerous: `bleve.New(dir, mapper)` opens the same on-disk directory (`filepath.Join(b.opts.Root, key.Namespace, fmt.Sprintf(\\\"%s.%s\\\", key.Resource, key.Group))`) in two goroutines, and bleve (bolt/badger-backed) does not safely tolerate concurrent openers/writers on the same path, so the on-disk index can be corrupted and subsequent reads will fail or return garbage. For memory-backed indices, both goroutines still build a full index and the loser is orphaned (CPU + memory leak). The intended concurrency win is for different keys; same-key concurrency needs per-key serialization (e.g. a `sync.Map` of per-key mutexes) before opening the bleve index.\"}, {\"file\": \"pkg/storage/unified/search/bleve.go\", \"line\": 145, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"TotalDocs reads cache without holding the cache lock\", \"body\": \"`TotalDocs` does `for _, v := range b.cache { ... }` with no lock acquisition, while `BuildIndex` (now able to run concurrently with other builds and with any caller of `TotalDocs`) writes to `b.cache` under `b.cacheMu`. Iterating a Go map while it is being written to is a data race and is documented as able to panic with \\\"fatal error: concurrent map read and map write\\\" or \\\"concurrent map writes\\\". `TotalDocs` is part of the `SearchBackend` interface and is called from `searchSupport.init` via `s.search.TotalDocs()` immediately after `group.Wait()`, but it may also be invoked from elsewhere (metrics endpoints, future callers). It should at least take `b.cacheMu.RLock()` for the duration of the iteration. Previously this was masked because the lock was held during the whole `BuildIndex`; with the finer-grained locking the race window is now larger.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 293, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Init triggers two WatchWriteEvents calls; SQL backend spawns two pollers\", \"body\": \"`(*server).Init` is now called from `NewResourceServer` and unconditionally runs both `s.search.init(ctx)` and `s.initWatcher()`. `search.init` itself calls `s.storage.WatchWriteEvents(watchctx)` and starts a long-lived goroutine that consumes from that channel. `initWatcher` then constructs a `Broadcaster` whose subscriber-setup callback also calls `s.backend.WatchWriteEvents(s.ctx)` the first time a client subscribes via `Watch`. For the SQL backend, `WatchWriteEvents` is implemented as `go b.poller(ctx, since, stream)` (pkg/storage/unified/sql/backend.go:566), so every call spins up a new poller goroutine that polls the database every 100ms. After this PR, every Grafana process with unified storage enabled runs two such pollers against the same database and reads the same history rows, doubling query load and (for `search.init`'s consumer) processing events from a completely separate stream than the `Broadcaster`. The PR explicitly reorders the init code but does not address this; the right fix is to have `search.init` subscribe to the existing `Broadcaster` instead of opening a second watcher. This was pre-existing but is directly within the scope of the init restructuring and should be resolved in the same change.\"}, {\"file\": \"pkg/storage/unified/resource/server.go\", \"line\": 258, \"severity\": \"low\", \"category\": \"api\", \"title\": \"NewResourceServer now blocks on full index build and leaks partial state on Init failure\", \"body\": \"`NewResourceServer` now calls `s.Init(ctx)` synchronously and returns `(nil, err)` if it fails. There are three consequences a maintainer should be aware of: (1) every caller of the constructor now blocks for as long as it takes to build every search index, which is a contract change from the previous \\\"return fast, build on first gRPC call\\\" behavior; this can affect test fixtures, alternate startup paths, and any code that constructs a `ResourceServer` and expects immediate return. (2) If `search.init` fails partway through, indexes that were successfully built remain in the bleve cache and any partially-started watcher goroutine is not torn down, because `Stop` is not called when returning `(nil, err)`. (3) The internal `ctx, cancel := context.WithCancel(...)` pair is created on the success path of construction but on the failure path the `cancel` function (held in `s.cancel`) is never invoked and the context has no parent cancellation. The constructor should either run init with a `defer cancel()` so failure cleans up, or document the new contract explicitly. Note also that `pkg/server/module_server_test.go` now skips postgres for the storage server target \u2014 likely a symptom of this new blocking init interacting with the test harness, which suggests the contract change is observable from outside the unified storage package.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 137,
+   "severity": "high",
+   "category": "concurrency",
+   "title": "BuildIndex no longer serializes same-key builds; risk of corrupted file index",
+   "body": "The diff removes the outer `b.cacheMu.Lock(); defer b.cacheMu.Unlock()` that wrapped all of `BuildIndex` and replaces it with a narrow lock around only the `b.cache[key] = idx` assignment. `getOrCreateIndex` calls `s.search.GetIndex` and then `s.build`, so the cache read and the cache update are not atomic. The OLD code at least serialized any two concurrent `BuildIndex` calls for the same key via the global write lock; the NEW code allows them to run in parallel. For file-based indices this is dangerous: `bleve.New(dir, mapper)` opens the same on-disk directory (`filepath.Join(b.opts.Root, key.Namespace, fmt.Sprintf(\"%s.%s\", key.Resource, key.Group))`) in two goroutines, and bleve (bolt/badger-backed) does not safely tolerate concurrent openers/writers on the same path, so the on-disk index can be corrupted and subsequent reads will fail or return garbage. For memory-backed indices, both goroutines still build a full index and the loser is orphaned (CPU + memory leak). The intended concurrency win is for different keys; same-key concurrency needs per-key serialization (e.g. a `sync.Map` of per-key mutexes) before opening the bleve index."
+  },
+  {
+   "index": 1,
+   "file": "pkg/storage/unified/search/bleve.go",
+   "line": 145,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "TotalDocs reads cache without holding the cache lock",
+   "body": "`TotalDocs` does `for _, v := range b.cache { ... }` with no lock acquisition, while `BuildIndex` (now able to run concurrently with other builds and with any caller of `TotalDocs`) writes to `b.cache` under `b.cacheMu`. Iterating a Go map while it is being written to is a data race and is documented as able to panic with \"fatal error: concurrent map read and map write\" or \"concurrent map writes\". `TotalDocs` is part of the `SearchBackend` interface and is called from `searchSupport.init` via `s.search.TotalDocs()` immediately after `group.Wait()`, but it may also be invoked from elsewhere (metrics endpoints, future callers). It should at least take `b.cacheMu.RLock()` for the duration of the iteration. Previously this was masked because the lock was held during the whole `BuildIndex`; with the finer-grained locking the race window is now larger."
+  },
+  {
+   "index": 2,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 293,
+   "severity": "medium",
+   "category": "data",
+   "title": "Init triggers two WatchWriteEvents calls; SQL backend spawns two pollers",
+   "body": "`(*server).Init` is now called from `NewResourceServer` and unconditionally runs both `s.search.init(ctx)` and `s.initWatcher()`. `search.init` itself calls `s.storage.WatchWriteEvents(watchctx)` and starts a long-lived goroutine that consumes from that channel. `initWatcher` then constructs a `Broadcaster` whose subscriber-setup callback also calls `s.backend.WatchWriteEvents(s.ctx)` the first time a client subscribes via `Watch`. For the SQL backend, `WatchWriteEvents` is implemented as `go b.poller(ctx, since, stream)` (pkg/storage/unified/sql/backend.go:566), so every call spins up a new poller goroutine that polls the database every 100ms. After this PR, every Grafana process with unified storage enabled runs two such pollers against the same database and reads the same history rows, doubling query load and (for `search.init`'s consumer) processing events from a completely separate stream than the `Broadcaster`. The PR explicitly reorders the init code but does not address this; the right fix is to have `search.init` subscribe to the existing `Broadcaster` instead of opening a second watcher. This was pre-existing but is directly within the scope of the init restructuring and should be resolved in the same change."
+  },
+  {
+   "index": 3,
+   "file": "pkg/storage/unified/resource/server.go",
+   "line": 258,
+   "severity": "low",
+   "category": "api",
+   "title": "NewResourceServer now blocks on full index build and leaks partial state on Init failure",
+   "body": "`NewResourceServer` now calls `s.Init(ctx)` synchronously and returns `(nil, err)` if it fails. There are three consequences a maintainer should be aware of: (1) every caller of the constructor now blocks for as long as it takes to build every search index, which is a contract change from the previous \"return fast, build on first gRPC call\" behavior; this can affect test fixtures, alternate startup paths, and any code that constructs a `ResourceServer` and expects immediate return. (2) If `search.init` fails partway through, indexes that were successfully built remain in the bleve cache and any partially-started watcher goroutine is not torn down, because `Stop` is not called when returning `(nil, err)`. (3) The internal `ctx, cancel := context.WithCancel(...)` pair is created on the success path of construction but on the failure path the `cancel` function (held in `s.cancel`) is never invoked and the context has no parent cancellation. The constructor should either run init with a `defer cancel()` so failure cleans up, or document the new contract explicitly. Note also that `pkg/server/module_server_test.go` now skips postgres for the storage server target \u2014 likely a symptom of this new blocking init interacting with the test harness, which suggests the contract change is observable from outside the unified storage package."
+  }
+ ],
+ "finding_count": 4
+}

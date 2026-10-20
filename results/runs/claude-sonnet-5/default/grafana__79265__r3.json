@@ -1,0 +1,147 @@
+{
+ "run_id": "claude-sonnet-5__default__grafana__79265__r3",
+ "model_id": "claude-sonnet-5",
+ "family": "anthropic",
+ "route": "bedrock-anthropic",
+ "provider_model": "global.anthropic.claude-sonnet-5",
+ "provider_pin": null,
+ "tier": "default",
+ "params": {},
+ "set": "full",
+ "pr_id": "grafana__79265",
+ "golden_url": "https://github.com/grafana/grafana/pull/79265",
+ "repeat": 3,
+ "started_at": "2026-10-18T20:57:04Z",
+ "mode": "diff-only",
+ "prompt": {
+  "chars": 104014,
+  "sha": "91c77553936826d0",
+  "patch_only": [
+   "pkg/setting/setting.go"
+  ],
+  "cut_patches": [],
+  "system_path": "configs/prompts/review_system.md",
+  "user_path": "configs/prompts/review_user.md"
+ },
+ "attempts": 1,
+ "calls": [
+  {
+   "usage": {
+    "input": 53031,
+    "output": 7661,
+    "reasoning": 5848,
+    "cache_read": 0,
+    "cache_write": 0
+   },
+   "cost_reported": null,
+   "latency_ms": 84629,
+   "finish_reason": "end_turn",
+   "served_model": "claude-sonnet-5",
+   "provider_served": null,
+   "http_attempts": 1,
+   "text_chars": 5142,
+   "raw_usage": {
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": null,
+    "input_tokens": 53031,
+    "output_tokens": 7661,
+    "output_tokens_details": {
+     "thinking_tokens": 5848
+    },
+    "server_tool_use": null,
+    "service_tier": "standard",
+    "speed": null
+   },
+   "started_at": "2026-10-18T20:57:04Z",
+   "first_chunk_ms": 2264,
+   "first_text_ms": 68182,
+   "response_id": "msg_bdrk_hfmfvpg5jvuwv7myhpjfbvuldfr6q3u7zx2ax2aty74x7pjxsoka",
+   "failed_attempts": []
+  }
+ ],
+ "status": "ok",
+ "usage": {
+  "input": 53031,
+  "output": 7661,
+  "cache_read": 0,
+  "cache_write": 0,
+  "reasoning": 5848
+ },
+ "cost_reported": null,
+ "latency_ms": 84629,
+ "served_model": "claude-sonnet-5",
+ "provider_served": null,
+ "finish_reason": "end_turn",
+ "response_text": "{\"findings\": [{\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"high\", \"category\": \"perf\", \"title\": \"Device tagging changed from async best-effort to synchronous blocking call on auth hot path\", \"body\": \"Previously TagDevice was called in a background goroutine with its own timeout context and a `recover()` to protect against panics, decoupling device bookkeeping from the request path. The new code calls `a.anonDeviceService.TagDevice(ctx, httpReqCopy, anonymous.AnonDeviceUI)` synchronously inside `Authenticate`, using the request's own context. Every anonymous request (which can be very high volume, e.g. for public dashboards) now performs a blocking DB round trip (CountDevices + insert/update) as part of authentication, adding latency to all anonymous traffic and removing the panic-safety net that previously prevented a tagging failure/panic from affecting the authenticated request.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/client.go\", \"line\": 44, \"severity\": \"high\", \"category\": \"bug\", \"title\": \"Reaching the device limit now fails anonymous authentication entirely instead of only skipping tagging\", \"body\": \"When `TagDevice` returns `anonstore.ErrDeviceLimitReached`, `Authenticate` now returns `nil, err`, causing the entire anonymous authentication attempt to fail. Previously, any tagging error (including this one, since it ran async) was only logged and never affected the resulting Identity. Since anonymous access is often the sole/last-resort auth client for public dashboards or orgs with anonymous access enabled, once the global device limit is reached, all subsequent anonymous requests may fail to authenticate at all (not just fail to be tracked), effectively locking out anonymous users instance-wide instead of degrading gracefully.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 105, \"severity\": \"medium\", \"category\": \"concurrency\", \"title\": \"Check-then-act race condition in device limit enforcement\", \"body\": \"`CreateOrUpdateDevice` first calls `CountDevices` to check whether the limit is reached, then performs either an insert or an update, as two separate, unsynchronized DB operations with no transaction or locking between them. Multiple concurrent requests for different new device IDs can all read a count below the limit before any of them commits its insert, allowing the number of distinct devices to exceed `deviceLimit`. There is no unique constraint or atomic counter preventing this overshoot.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl.go\", \"line\": 144, \"severity\": \"medium\", \"category\": \"bug\", \"title\": \"TagDevice now propagates tagging errors (including device-limit errors) up the call stack\", \"body\": \"`TagDevice` previously only logged a tagging failure and always returned `nil`. The change adds `return err` after logging, so any failure from `tagDeviceUI` (e.g. `ErrDeviceLimitReached`) is now returned to callers. Combined with the change in client.go that treats this error specially, this converts an internal bookkeeping failure into a hard authentication failure, which is a behavioral change not called out in the PR description and lacks test coverage for the new failure path through the full `AnonDeviceService`/`Anonymous` client stack.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/anonstore/database.go\", \"line\": 158, \"severity\": \"medium\", \"category\": \"data\", \"title\": \"Device limit is enforced globally across all organizations, not per anonymous org\", \"body\": \"`CountDevices` queries `anon_device` without any organization filter, so the single global `AnonymousDeviceLimit` config value is applied across the entire Grafana instance. If multiple orgs have anonymous access enabled, devices from one org count against the limit for all other orgs, which may not match the intended per-deployment or per-org licensing semantics implied by a configurable 'device limit' feature.\"}, {\"file\": \"pkg/setting/setting.go\", \"line\": 1654, \"severity\": \"low\", \"category\": \"doc_defect\", \"title\": \"New `device_limit` configuration option is undocumented\", \"body\": \"A new ini setting `auth.anonymous.device_limit` is introduced (`cfg.AnonymousDeviceLimit = anonSection.Key(\\\"device_limit\\\").MustInt64(0)`), but no corresponding entries were added to `conf/sample.ini`/`conf/defaults.ini` or the configuration documentation. Admins have no discoverable way to learn about or configure this new feature flag.\"}, {\"file\": \"pkg/services/anonymous/anonimpl/impl_test.go\", \"line\": 116, \"severity\": \"low\", \"category\": \"test_gap\", \"title\": \"No test exercises device-limit enforcement through the full service/client stack\", \"body\": \"The updated tests only call `ProvideAnonymousDeviceService` with a default `setting.NewCfg()` (device limit 0, i.e. unlimited), so the new device-limit behavior is only verified at the `anonstore` layer (`database_test.go`). There is no integration test confirming that `AnonDeviceService.TagDevice` or `Anonymous.Authenticate` correctly surfaces `ErrDeviceLimitReached` once the configured limit is exceeded, despite this being a user-facing behavior change in `client.go`/`impl.go`.\"}]}",
+ "findings": [
+  {
+   "index": 0,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "high",
+   "category": "perf",
+   "title": "Device tagging changed from async best-effort to synchronous blocking call on auth hot path",
+   "body": "Previously TagDevice was called in a background goroutine with its own timeout context and a `recover()` to protect against panics, decoupling device bookkeeping from the request path. The new code calls `a.anonDeviceService.TagDevice(ctx, httpReqCopy, anonymous.AnonDeviceUI)` synchronously inside `Authenticate`, using the request's own context. Every anonymous request (which can be very high volume, e.g. for public dashboards) now performs a blocking DB round trip (CountDevices + insert/update) as part of authentication, adding latency to all anonymous traffic and removing the panic-safety net that previously prevented a tagging failure/panic from affecting the authenticated request."
+  },
+  {
+   "index": 1,
+   "file": "pkg/services/anonymous/anonimpl/client.go",
+   "line": 44,
+   "severity": "high",
+   "category": "bug",
+   "title": "Reaching the device limit now fails anonymous authentication entirely instead of only skipping tagging",
+   "body": "When `TagDevice` returns `anonstore.ErrDeviceLimitReached`, `Authenticate` now returns `nil, err`, causing the entire anonymous authentication attempt to fail. Previously, any tagging error (including this one, since it ran async) was only logged and never affected the resulting Identity. Since anonymous access is often the sole/last-resort auth client for public dashboards or orgs with anonymous access enabled, once the global device limit is reached, all subsequent anonymous requests may fail to authenticate at all (not just fail to be tracked), effectively locking out anonymous users instance-wide instead of degrading gracefully."
+  },
+  {
+   "index": 2,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 105,
+   "severity": "medium",
+   "category": "concurrency",
+   "title": "Check-then-act race condition in device limit enforcement",
+   "body": "`CreateOrUpdateDevice` first calls `CountDevices` to check whether the limit is reached, then performs either an insert or an update, as two separate, unsynchronized DB operations with no transaction or locking between them. Multiple concurrent requests for different new device IDs can all read a count below the limit before any of them commits its insert, allowing the number of distinct devices to exceed `deviceLimit`. There is no unique constraint or atomic counter preventing this overshoot."
+  },
+  {
+   "index": 3,
+   "file": "pkg/services/anonymous/anonimpl/impl.go",
+   "line": 144,
+   "severity": "medium",
+   "category": "bug",
+   "title": "TagDevice now propagates tagging errors (including device-limit errors) up the call stack",
+   "body": "`TagDevice` previously only logged a tagging failure and always returned `nil`. The change adds `return err` after logging, so any failure from `tagDeviceUI` (e.g. `ErrDeviceLimitReached`) is now returned to callers. Combined with the change in client.go that treats this error specially, this converts an internal bookkeeping failure into a hard authentication failure, which is a behavioral change not called out in the PR description and lacks test coverage for the new failure path through the full `AnonDeviceService`/`Anonymous` client stack."
+  },
+  {
+   "index": 4,
+   "file": "pkg/services/anonymous/anonimpl/anonstore/database.go",
+   "line": 158,
+   "severity": "medium",
+   "category": "data",
+   "title": "Device limit is enforced globally across all organizations, not per anonymous org",
+   "body": "`CountDevices` queries `anon_device` without any organization filter, so the single global `AnonymousDeviceLimit` config value is applied across the entire Grafana instance. If multiple orgs have anonymous access enabled, devices from one org count against the limit for all other orgs, which may not match the intended per-deployment or per-org licensing semantics implied by a configurable 'device limit' feature."
+  },
+  {
+   "index": 5,
+   "file": "pkg/setting/setting.go",
+   "line": 1654,
+   "severity": "low",
+   "category": "doc_defect",
+   "title": "New `device_limit` configuration option is undocumented",
+   "body": "A new ini setting `auth.anonymous.device_limit` is introduced (`cfg.AnonymousDeviceLimit = anonSection.Key(\"device_limit\").MustInt64(0)`), but no corresponding entries were added to `conf/sample.ini`/`conf/defaults.ini` or the configuration documentation. Admins have no discoverable way to learn about or configure this new feature flag."
+  },
+  {
+   "index": 6,
+   "file": "pkg/services/anonymous/anonimpl/impl_test.go",
+   "line": 116,
+   "severity": "low",
+   "category": "test_gap",
+   "title": "No test exercises device-limit enforcement through the full service/client stack",
+   "body": "The updated tests only call `ProvideAnonymousDeviceService` with a default `setting.NewCfg()` (device limit 0, i.e. unlimited), so the new device-limit behavior is only verified at the `anonstore` layer (`database_test.go`). There is no integration test confirming that `AnonDeviceService.TagDevice` or `Anonymous.Authenticate` correctly surfaces `ErrDeviceLimitReached` once the configured limit is exceeded, despite this being a user-facing behavior change in `client.go`/`impl.go`."
+  }
+ ],
+ "finding_count": 7
+}
